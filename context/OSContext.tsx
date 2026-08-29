@@ -7,6 +7,7 @@ import { clampClaudeTemperature, modelRejectsSamplingParams, stripSamplingParams
 import { buildMalformedImageDiagnostics, extractImagesInPlace, deepCloneForExport, parseImageDataUrlForBackup, type BackupObjectPath, type MalformedBackupImageDiagnostic } from '../utils/backupExport';
 import { isBlobRef, getBlobForRef, restoreBlobRef, migrateDataUrlToRef, migrateAppearancePresetBlobRefs, migrateChatThemeBlobRefs, resolveBlobRefsDeep, resolveRefToDataUrl, BLOBREF_PREFIX, deleteBlobRefIfUnreferenced } from '../utils/blobRef';
 import { resolveBlobRefsInRequestBody } from '../utils/apiBlobRefs';
+import { readAgentRoutingConfig, readBearerFromHeaders } from '../utils/agentRouting';
 import { collectBlobRefs, writeBlobsToZip, readBlobsIndex, restoreBlobsFromZip } from '../utils/backupBlobs';
 import { initPwaIcon, clearPwaIcon } from '../utils/appIcon';
 import { LEGACY_DEFAULT_WALLPAPER, isLegacyDefaultWallpaper, shouldPreserveLegacyDefaultWallpaper } from '../utils/wallpaperCompat';
@@ -1151,6 +1152,39 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const bodyWithImages = await resolveBlobRefsInRequestBody(bodyBeforeRefs);
               if (bodyWithImages !== bodyBeforeRefs) {
                   sendArgs = [sendArgs[0], { ...(sendArgs[1] as RequestInit), body: bodyWithImages as BodyInit }];
+              }
+
+              // ── VPS 主代理中转（预设联动，可选）──────────────────────────────
+              // 设置里填了 agentUrl（os_api_config.agentUrl）后，所有 /chat/completions
+              // 改发 ${agentUrl}/agent/v1/chat/completions：原供应商 baseUrl/apiKey/model
+              // 打包进 body.llm 随请求直传（主代理零落盘、换预设即时生效），鉴权换成
+              // X-Client-Token。留空 = 原状直连供应商；agent 返回的 SSE 额外事件
+              // （tool_call/tool_result/done）无 choices，下游逐行解析器天然忽略。
+              const agentCfg = readAgentRoutingConfig();
+              if (agentCfg.agentUrl && !urlStr.includes(agentCfg.agentUrl.replace(/\/+$/, ''))) {
+                  const rawAgentBody = (sendArgs[1] as RequestInit | undefined)?.body;
+                  if (typeof rawAgentBody === 'string') {
+                      try {
+                          const parsedAgent = JSON.parse(rawAgentBody);
+                          const init = sendArgs[1] as RequestInit;
+                          const authRaw = readBearerFromHeaders(init.headers);
+                          const apiKey = authRaw.replace(/^Bearer\s+/i, '') || parsedAgent.apiKey || '';
+                          const providerBase = urlStr.replace(/\/chat\/completions(\?.*)?$/, '');
+                          const agentHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+                          if (agentCfg.agentToken) agentHeaders['X-Client-Token'] = agentCfg.agentToken;
+                          sendArgs = [
+                              `${agentCfg.agentUrl.replace(/\/+$/, '')}/agent/v1/chat/completions`,
+                              {
+                                  ...init,
+                                  headers: agentHeaders,
+                                  body: JSON.stringify({
+                                      ...parsedAgent,
+                                      llm: { baseUrl: providerBase, apiKey, model: parsedAgent.model },
+                                  }),
+                              },
+                          ];
+                      } catch { /* body 非 JSON：原样放行 */ }
+                  }
               }
           }
 

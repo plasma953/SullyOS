@@ -475,6 +475,8 @@ const Settings: React.FC = () => {
   
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
   const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
+  const [localAgentUrl, setLocalAgentUrl] = useState(apiConfig.agentUrl || '');
+  const [localAgentToken, setLocalAgentToken] = useState(apiConfig.agentToken || '');
   const [localModel, setLocalModel] = useState(String(apiConfig.model || ''));
   const [localStream, setLocalStream] = useState<boolean>(apiConfig.stream === true);
   const [localTemperature, setLocalTemperature] = useState<number>(
@@ -907,7 +909,9 @@ const Settings: React.FC = () => {
       setLocalModel(String(apiConfig.model || ''));
       setLocalStream(apiConfig.stream === true);
       setLocalTemperature(typeof apiConfig.temperature === 'number' ? apiConfig.temperature : 0.85);
-  }, [apiConfig.baseUrl, apiConfig.apiKey, apiConfig.model, apiConfig.stream, apiConfig.temperature]);
+      setLocalAgentUrl(apiConfig.agentUrl || '');
+      setLocalAgentToken(apiConfig.agentToken || '');
+  }, [apiConfig.baseUrl, apiConfig.apiKey, apiConfig.model, apiConfig.stream, apiConfig.temperature, apiConfig.agentUrl, apiConfig.agentToken]);
 
   useEffect(() => {
       setLocalVisionEnabled(apiConfig.visionApi?.enabled === true);
@@ -1097,10 +1101,14 @@ const Settings: React.FC = () => {
       model: normalizeApiModel(localModel),
       stream: localStream,
       temperature: localTemperature,
+      agentUrl: String(localAgentUrl || '').trim().replace(/\/+$/, ''),
+      agentToken: String(localAgentToken || '').trim(),
     };
     setLocalKey(nextConfig.apiKey);
     setLocalUrl(nextConfig.baseUrl);
     setLocalModel(nextConfig.model);
+    setLocalAgentUrl(nextConfig.agentUrl);
+    setLocalAgentToken(nextConfig.agentToken);
     commitApiConfig(nextConfig);
     setStatusMsg('配置已保存');
     setTimeout(() => setStatusMsg(''), 2000);
@@ -2346,6 +2354,13 @@ const Settings: React.FC = () => {
                 <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">URL</label>
                     <input type="text" value={localUrl} onChange={(e) => setLocalUrl(e.target.value)} placeholder="https://..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                </div>
+
+                <div className="group">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">主代理中转（预设联动 · 可选，留空=直连）</label>
+                    <input type="text" value={localAgentUrl} onChange={(e) => setLocalAgentUrl(e.target.value)} placeholder="https://43451695.xyz" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <input type="password" value={localAgentToken} onChange={(e) => setLocalAgentToken(e.target.value)} placeholder="X-Client-Token（VPS 的 AMSG_CLIENT_TOKEN）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all mt-2" />
+                    <p className="text-[9px] text-slate-400 mt-1 pl-1">填了 URL 后，所有聊天请求经 VPS 主代理中转（预设直传、换预设即时生效）；Token 未配置鉴权时留空。</p>
                 </div>
 
                 <div className="group">

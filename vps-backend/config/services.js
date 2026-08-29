@@ -109,24 +109,25 @@ export const services = [
   {
     name: 'wake-bridge',
     port: 8834,
-    enabled: false, // Step 3（主代理联动）
+    enabled: true, // ★ Step 3：唤醒桥（主代理 ↔ 推送链路转发，token 门 + 白名单 relay）
     bundle: path.join(repoRoot, 'worker/wake-bridge/worker.bundle.js'),
-    envKeys: ['WAKE_BRIDGE_TOKEN'],
+    envKeys: ['WAKE_BRIDGE_TOKEN', 'AMSG_CLIENT_TOKEN', 'INSTANT_PUSH_URL', 'PROACTIVE_PUSH_URL'],
     crons: [],
   },
   {
     name: 'heartbeat',
     port: 8835,
-    enabled: false, // Step 3
+    enabled: true, // ★ Step 3：独立心跳收集器（报活/存活视图/死条目清理）
     bundle: path.join(repoRoot, 'worker/heartbeat/worker.bundle.js'),
-    envKeys: ['AMSG_CLIENT_TOKEN', 'HEARTBEAT_INTERVAL_SEC'],
+    envKeys: ['AMSG_CLIENT_TOKEN', 'HEARTBEAT_INTERVAL_SEC', 'HEARTBEAT_WINDOW_MS'],
     db: {
       bindKey: 'DB',
-      pathEnv: 'AMSG_DB_PATH',
+      pathEnv: 'HEARTBEAT_DB_PATH',
       defaultPath: path.join(dataDir, 'heartbeat.sqlite'),
+      schemaPath: path.join(repoRoot, 'worker/heartbeat/schema.sql'),
       enableIf: () => true,
     },
-    crons: [{ expr: '*/1 * * * *', name: 'heartbeat-ping' }],
+    crons: [{ expr: '*/1 * * * *', name: 'heartbeat-sweep' }],
   },
 ];
 

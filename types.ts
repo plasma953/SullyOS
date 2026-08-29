@@ -306,6 +306,15 @@ export interface APIConfig {
   stream?: boolean;
   // Per-API temperature for chat / 约会 main calls. Missing → 0.85.
   temperature?: number;
+  /**
+   * VPS 主代理中转（预设联动，可选）。填了之后，所有 /chat/completions 请求
+   * 经 `${agentUrl}/agent/v1/chat/completions` 中转：本配置里的 baseUrl/apiKey/model
+   * 打包进请求体 llm 字段随请求直传（后端零落盘、换预设即时生效），并带 X-Client-Token。
+   * 留空 = 维持原状直连供应商。
+   */
+  agentUrl?: string;
+  /** 主代理的 X-Client-Token（VPS .env 的 AMSG_CLIENT_TOKEN）；未配置鉴权时留空。 */
+  agentToken?: string;
 }
 
 export interface InstantPushConfig {
