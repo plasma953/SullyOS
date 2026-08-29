@@ -22,9 +22,15 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "[backup] 缺少 $ENV_FILE，退出" >&2
   exit 1
 fi
-# shellcheck disable=SC1090
-set -a; . "$ENV_FILE"; set +a
-
+# 安全读取（不 source：值可能含 JSON/空格/引号，避免被 shell 重新解析）
+get_env() {
+  sed -n "s/^$1=//p" "$ENV_FILE" | head -1 | tr -d "\"'"
+}
+GITHUB_PAT=$(get_env GITHUB_PAT)
+GITHUB_BACKUP_REPO=$(get_env GITHUB_BACKUP_REPO)
+DUFS_ROOT=$(get_env DUFS_ROOT)
+BACKUP_KEEP=$(get_env BACKUP_KEEP)
+BACKUP_ENCRYPT_PASSPHRASE=$(get_env BACKUP_ENCRYPT_PASSPHRASE)
 REPO=/opt/sullyos/sullyos-repo
 DATA_DIR=${AMSG_DATA_DIR:-/opt/sullyos/data}
 BACKUP_DIR=${DUFS_ROOT:-/opt/sullyos/backups/webdav}
@@ -51,10 +57,21 @@ if [ -d "$REPO/.git" ]; then
       echo "[backup] 通道1(GitHub): 备份仓推送失败" >&2; FAIL=1
     fi
   else
-    if (cd "$REPO" && git push origin HEAD >/dev/null 2>&1); then
-      echo "[backup] 通道1(GitHub): 已推送到 origin"
+    # 推送到自身 origin；优先用 GITHUB_PAT 内联（.git-credentials 可能存有旧令牌）
+    BR=$(cd "$REPO" && git rev-parse --abbrev-ref HEAD)
+    if [ -n "${GITHUB_PAT:-}" ]; then
+      ORIGIN_URL=$(cd "$REPO" && git config --get remote.origin.url | sed 's|^https://||')
+      if (cd "$REPO" && git push "https://${GITHUB_PAT}@${ORIGIN_URL}" "HEAD:${BR}" >/dev/null 2>&1); then
+        echo "[backup] 通道1(GitHub): 已推送到 origin（PAT 内联）"
+      else
+        echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
+      fi
     else
-      echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
+      if (cd "$REPO" && git push origin "HEAD:${BR}" >/dev/null 2>&1); then
+        echo "[backup] 通道1(GitHub): 已推送到 origin"
+      else
+        echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
+      fi
     fi
   fi
 else

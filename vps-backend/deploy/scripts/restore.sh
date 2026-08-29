@@ -12,8 +12,12 @@ set -uo pipefail
 
 ENV_FILE=/opt/sullyos/.env
 [ -f "$ENV_FILE" ] || { echo "缺少 $ENV_FILE" >&2; exit 1; }
-# shellcheck disable=SC1090
-set -a; . "$ENV_FILE"; set +a
+# 安全读取（不 source：值可能含 JSON/空格/引号）
+get_env() {
+  sed -n "s/^$1=//p" "$ENV_FILE" | head -1 | tr -d "\"'"
+}
+BACKUP_ENCRYPT_PASSPHRASE=$(get_env BACKUP_ENCRYPT_PASSPHRASE)
+AMSG_DATA_DIR=$(get_env AMSG_DATA_DIR)
 
 AUTO=0
 TARGET="${1:-}"
