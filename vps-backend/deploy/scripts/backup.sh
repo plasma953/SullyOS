@@ -1,116 +1,118 @@
 #!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════
+# SullyOS VPS · 双通道自动备份
 #
-# SullyOS VPS 备份（双通道）
+# 通道 1（GitHub）：/opt/sullyos/sullyos-repo 自动 commit + push。
+#   代码级连续性备份（.env / *.sqlite 已由 .gitignore 排除，永不入库）。
+#   - 若配置了 GITHUB_BACKUP_REPO + GITHUB_PAT → 推送到专用备份仓；
+#   - 否则推送到仓库自身 origin（凭据走 ~/.git-credentials）。
 #
-# 通道 A（GitHub 私有仓）：
-#   1. sqlite3 VACUUM INTO 干净快照（*.db → 快照文件）
-#   2. openssl enc -aes-256-cbc -pbkdf2 加密（BACKUP_ENCRYPT_PASSPHRASE）
-#   3. 用 GITHUB_PAT 推送到 GITHUB_BACKUP_REPO 的 snapshots/ 目录
-# 通道 B（WebDAV/dufs，前端直连）：
-#   1. 拷贝 .env + 快照到 DUFS_ROOT（密钥文件本身已由 .env 权限保护）
-#   2. 保留 BACKUP_KEEP 份轮转
+# 通道 2（WebDAV/dufs 本机盘）：/opt/sullyos/data/*.sqlite
+#   → VACUUM INTO 一致性快照 → tar → AES-256-CBC 加密 → 滚动保留
+#   BACKUP_KEEP（默认 7）份。文件落在 DUFS_ROOT（默认 /opt/sullyos/backups/webdav），
+#   由 main-agent /webdav/* 认证注入中转对外提供。
 #
-# 安全：PAT 与 passphrase 只读自 /opt/sullyos/.env（600），永不出现在命令行与日志。
-# 用法：bash deploy/scripts/backup.sh [--channel github|webdav|all]
-
+# 建议 cron（避开 04:30 的 cove 清理任务）：
+#   15 4 * * * /opt/sullyos/vps-backend/deploy/scripts/backup.sh >> /var/log/sullyos-backup.log 2>&1
+# ═══════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-APP_DIR="${APP_DIR:-/opt/sullyos}"
-ENV_FILE="$APP_DIR/.env"
-DATA_DIR="$APP_DIR/data"
-WORK_DIR="$APP_DIR/backups/work"
-GH_WORK="$APP_DIR/backups/gh-repo"
+ENV_FILE=/opt/sullyos/.env
+if [ ! -f "$ENV_FILE" ]; then
+  echo "[backup] 缺少 $ENV_FILE，退出" >&2
+  exit 1
+fi
 # shellcheck disable=SC1090
-[ -f "$ENV_FILE" ] && { set -a; source "$ENV_FILE"; set +a; }
+set -a; . "$ENV_FILE"; set +a
 
-CHANNEL="${1:-all}"
-if [ "$CHANNEL" != "all" ]; then
-  shift
-  while [ $# -gt 0 ]; do
-    case "$1" in --channel) CHANNEL="$2"; shift 2;; *) shift;; esac
-  done
+REPO=/opt/sullyos/sullyos-repo
+DATA_DIR=${AMSG_DATA_DIR:-/opt/sullyos/data}
+BACKUP_DIR=${DUFS_ROOT:-/opt/sullyos/backups/webdav}
+KEEP=${BACKUP_KEEP:-7}
+TS=$(date -u '+%Y%m%d-%H%M%S')
+FAIL=0
+
+echo "════════ $(date -u '+%Y-%m-%d %H:%M:%S UTC') 备份开始 ════════"
+
+# ── 通道 1：GitHub ──────────────────────────────────────────────
+if [ -d "$REPO/.git" ]; then
+  if (cd "$REPO" && git add -A 2>/dev/null && ! git diff --cached --quiet); then
+    (cd "$REPO" && git -c user.name='sullyos-backup' -c user.email='backup@sullyos.local' \
+      commit -m "backup: auto snapshot $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >/dev/null 2>&1)
+    echo "[backup] 通道1(GitHub): 本地已提交自动快照"
+  else
+    echo "[backup] 通道1(GitHub): 无本地变更"
+  fi
+  if [ -n "${GITHUB_BACKUP_REPO:-}" ] && [ -n "${GITHUB_PAT:-}" ]; then
+    REPO_URL="${GITHUB_BACKUP_REPO#https://}"
+    if (cd "$REPO" && git push "https://${GITHUB_PAT}@${REPO_URL}" HEAD:master >/dev/null 2>&1); then
+      echo "[backup] 通道1(GitHub): 已推送到备份仓"
+    else
+      echo "[backup] 通道1(GitHub): 备份仓推送失败" >&2; FAIL=1
+    fi
+  else
+    if (cd "$REPO" && git push origin HEAD >/dev/null 2>&1); then
+      echo "[backup] 通道1(GitHub): 已推送到 origin"
+    else
+      echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
+    fi
+  fi
+else
+  echo "[backup] 通道1(GitHub): 仓库不存在，跳过" >&2
 fi
 
-BACKUP_KEEP="${BACKUP_KEEP:-7}"
-STAMP="$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$WORK_DIR"
-
-log() { echo "[backup] $*"; }
-
-# ── 快照 + 加密 ────────────────────────────────────────────
-make_snapshot() {
-  local out_dir="$1"
-  mkdir -p "$out_dir"
-  # sqlite 文件只保留主文件快照（WAL 已随 VACUUM INTO 合并）
+# ── 通道 2：WebDAV 加密快照 ─────────────────────────────────────
+mkdir -p "$BACKUP_DIR"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+COUNT=0
+if [ -d "$DATA_DIR" ]; then
   for db in "$DATA_DIR"/*.sqlite; do
     [ -f "$db" ] || continue
-    local name
-    name="$(basename "$db" .sqlite)"
-    if command -v sqlite3 >/dev/null 2>&1; then
-      sqlite3 "$db" "VACUUM INTO '$out_dir/${name}.db'" || cp "$db" "$out_dir/${name}.db"
+    name=$(basename "$db")
+    if node /opt/sullyos/vps-backend/deploy/scripts/vacuum-snapshot.cjs "$db" "$TMP/$name" >/dev/null 2>&1; then
+      COUNT=$((COUNT + 1))
     else
-      cp "$db" "$out_dir/${name}.db"
+      echo "[backup] 通道2: 快照失败 $name" >&2
     fi
   done
-  cp "$ENV_FILE" "$out_dir/.env" 2>/dev/null || true
-  tar -C "$out_dir" -czf "$WORK_DIR/sullyos-${STAMP}.tar.gz" . 2>/dev/null || \
-    tar -C "$APP_DIR" -czf "$WORK_DIR/sullyos-${STAMP}.tar.gz" data .env 2>/dev/null || true
-
-  local enc_out="$WORK_DIR/sullyos-${STAMP}.tar.gz.enc"
-  if [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ]; then
-    openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 \
-      -pass "env:BACKUP_ENCRYPT_PASSPHRASE" \
-      -in "$WORK_DIR/sullyos-${STAMP}.tar.gz" -out "$enc_out"
-    echo "$enc_out"
+fi
+if [ "$COUNT" -gt 0 ]; then
+  TARBALL="$TMP/sullyos-data-$TS.tar.gz"
+  if tar -czf "$TARBALL" -C "$TMP" ./*.sqlite 2>/dev/null; then
+    if [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ]; then
+      if openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt \
+        -pass "env:BACKUP_ENCRYPT_PASSPHRASE" \
+        -in "$TARBALL" -out "$BACKUP_DIR/sullyos-data-$TS.tar.gz.enc" 2>/dev/null; then
+        echo "[backup] 通道2(WebDAV): $TS → $COUNT 个库，已 AES-256 加密"
+      else
+        echo "[backup] 通道2(WebDAV): 加密失败" >&2; FAIL=1
+      fi
+    else
+      if cp "$TARBALL" "$BACKUP_DIR/sullyos-data-$TS.tar.gz"; then
+        echo "[backup] 通道2(WebDAV): $TS → $COUNT 个库（未加密，建议设置 BACKUP_ENCRYPT_PASSPHRASE）"
+      else
+        echo "[backup] 通道2(WebDAV): 拷贝失败" >&2; FAIL=1
+      fi
+    fi
+    # 滚动清理
+    ls -1t "$BACKUP_DIR"/sullyos-data-*.tar.gz* 2>/dev/null | tail -n "+$((KEEP + 1))" | xargs -r rm -f
   else
-    log "⚠ BACKUP_ENCRYPT_PASSPHRASE 未设置，产物不加密"
-    echo "$WORK_DIR/sullyos-${STAMP}.tar.gz"
+    echo "[backup] 通道2(WebDAV): 打包失败" >&2; FAIL=1
   fi
-}
+else
+  echo "[backup] 通道2(WebDAV): 无 sqlite 数据，跳过"
+fi
 
-# ── 通道 A：GitHub ─────────────────────────────────────────
-backup_github() {
-  [ -n "${GITHUB_PAT:-}" ] || { log "✗ 缺 GITHUB_PAT，跳过 GitHub 通道"; return 1; }
-  [ -n "${GITHUB_BACKUP_REPO:-}" ] || { log "✗ 缺 GITHUB_BACKUP_REPO，跳过 GitHub 通道"; return 1; }
-  local artifact="$1"
+# 日志防膨胀（>5MB 截断）
+LOG=/var/log/sullyos-backup.log
+if [ -f "$LOG" ] && [ "$(stat -c%s "$LOG" 2>/dev/null || echo 0)" -gt 5242880 ]; then
+  tail -c 1048576 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi
 
-  rm -rf "$GH_WORK"; mkdir -p "$GH_WORK"
-  GIT_TERMINAL_PROMPT=0 git clone --depth 1 \
-    "https://x-access-token:${GITHUB_PAT}@github.com/${GITHUB_BACKUP_REPO}.git" \
-    "$GH_WORK" 2>/dev/null || git init "$GH_WORK" >/dev/null
-
-  mkdir -p "$GH_WORK/snapshots"
-  cp "$artifact" "$GH_WORK/snapshots/"
-  git -C "$GH_WORK" config user.name  "sullyos-backup"
-  git -C "$GH_WORK" config user.email "backup@sullyos.local"
-  git -C "$GH_WORK" add -A
-  git -C "$GH_WORK" commit -m "backup: ${STAMP}" >/dev/null 2>&1 || true
-  GIT_TERMINAL_PROMPT=0 git -C "$GH_WORK" push \
-    "https://x-access-token:${GITHUB_PAT}@github.com/${GITHUB_BACKUP_REPO}.git" \
-    HEAD:main --force 2>/dev/null || \
-  GIT_TERMINAL_PROMPT=0 git -C "$GH_WORK" push \
-    "https://x-access-token:${GITHUB_PAT}@github.com/${GITHUB_BACKUP_REPO}.git" \
-    HEAD:master --force
-  log "✔ GitHub 备份完成: ${GITHUB_BACKUP_REPO}@snapshots/$(basename "$artifact")"
-}
-
-# ── 通道 B：WebDAV（dufs 根目录直接落盘）───────────────────
-backup_webdav() {
-  local root="${DUFS_ROOT:-/opt/sullyos/backups/webdav}"
-  mkdir -p "$root/snapshots"
-  cp "$1" "$root/snapshots/"
-  # 轮转
-  ls -1t "$root/snapshots/" 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | \
-    while read -r f; do rm -f "$root/snapshots/$f"; done
-  log "✔ WebDAV 备份完成（保留最近 ${BACKUP_KEEP} 份）: $root/snapshots"
-}
-
-# ── 执行 ───────────────────────────────────────────────────
-log "开始备份（${STAMP}，通道=${CHANNEL}）"
-case "$CHANNEL" in
-  github)  A="$(make_snapshot "$WORK_DIR/snap")"; backup_github "$A" ;;
-  webdav)  A="$(make_snapshot "$WORK_DIR/snap")"; backup_webdav "$A" ;;
-  all)     A="$(make_snapshot "$WORK_DIR/snap")"; backup_github "$A"; backup_webdav "$A" ;;
-  *) log "未知通道: $CHANNEL（github|webdav|all）"; exit 2 ;;
-esac
-log "完成"
+if [ "$FAIL" -eq 0 ]; then
+  echo "[backup] ✔ 备份完成（$TS）"
+else
+  echo "[backup] ⚠ 备份完成但有失败项（$TS）"
+fi
+exit "$FAIL"

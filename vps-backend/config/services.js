@@ -43,11 +43,13 @@ export const services = [
   {
     name: 'main-agent',
     port: 8830,
-    enabled: false, // Step 3：MCP 循环重构（MAX_LOOPS=12、参考类工具钉住）落地后开启
+    enabled: true, // ★ Step 3：MCP 循环已落地（MAX_LOOPS 可配默认 12、参考类工具钉住、WebDAV 认证注入）
     bundle: path.join(repoRoot, 'worker/main-agent/worker.bundle.js'),
     envKeys: [
       'LLM_BASE_URL', 'LLM_API_KEY', 'LLM_MODEL', 'LLM_FALLBACKS',
-      'LLM_TIMEOUT_MS', 'MCP_MAX_LOOPS', 'AMSG_CLIENT_TOKEN',
+      'LLM_TIMEOUT_MS', 'MCP_MAX_LOOPS', 'MCP_PINNED_TOOLS', 'MCP_SERVERS',
+      'AMSG_CLIENT_TOKEN',
+      'DUFS_PORT', 'DUFS_AUTH', 'DUFS_ROOT',
       'INSTANT_PUSH_URL', 'AMSG_URL', 'PROACTIVE_PUSH_URL',
     ],
     crons: [],
@@ -77,7 +79,7 @@ export const services = [
   {
     name: 'amsg',
     port: 8832,
-    enabled: false, // Step 2：确认其 bundle 依赖面后开启
+    enabled: true, // ★ Step 2：已移植（DB 经 better-sqlite3 D1 适配器绑定，cron 每分钟 due-check）
     bundle: path.join(repoRoot, 'worker/amsg/worker.bundle.js'),
     envKeys: ['AMSG_SECRET_KEY', 'AMSG_DB_PATH', 'AMSG_CLIENT_TOKEN'],
     db: {
@@ -91,12 +93,12 @@ export const services = [
   {
     name: 'proactive-push',
     port: 8833,
-    enabled: false, // Step 2
+    enabled: true, // ★ Step 2：已移植（DB 绑定 + cron 每 5 分钟 proactive-sweep）
     bundle: path.join(repoRoot, 'worker/proactive-push/worker.bundle.js'),
-    envKeys: ['AMSG_CLIENT_TOKEN', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_EMAIL'],
+    envKeys: ['AMSG_CLIENT_TOKEN', 'CLIENT_TOKEN', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_EMAIL', 'VAPID_SUBJECT', 'HEARTBEAT_WINDOW_MS'],
     db: {
       bindKey: 'DB',
-      pathEnv: 'AMSG_DB_PATH',
+      pathEnv: 'PROACTIVE_DB_PATH',
       defaultPath: path.join(dataDir, 'proactive-push.sqlite'),
       enableIf: () => true,
     },

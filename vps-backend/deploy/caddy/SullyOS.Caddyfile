@@ -1,65 +1,71 @@
-# SullyOS VPS · Caddy 反代配置
+# ═══════════════════════════════════════════════════════════════
+# SullyOS VPS · Caddy 反代配置（canonical，与生产 /etc/caddy/Caddyfile 同步）
 # 安装时由 deploy/scripts/install.sh 用 sed 替换 ${SULLYOS_DOMAIN} / ${ACME_EMAIL}。
 # 所有后端仅监听 127.0.0.1；这里只暴露 80/443（自动 HTTPS）。
 #
-# 前端（Vercel）按路径访问：
-#   /instant-push/* → 8831   /amsg/* → 8832        /proactive-push/* → 8833
-#   /agent/*        → 8830   /wake-bridge/* → 8834  /heartbeat/* → 8835
-#   /webdav/*       → dufs 8890（备份直连，主代理负责注入认证）
-
-{
+# 端口矩阵：main-agent 8830 · instant-push 8831 · amsg 8832 · proactive-push 8833
+#           wake-bridge 8834 · heartbeat 8835
+# 既有 MCP 服务：xhs-mcp-http 8810 · xhs-mcp 8809 · ruota 8790 · kaleidoscope 8788
+#                theseus-brain 8787 · phone-gateway 8795
+# ═══════════════════════════════════════════════════════════════
+${SULLYOS_DOMAIN}, mcp.${SULLYOS_DOMAIN} {
 	email ${ACME_EMAIL}
-	admin off
-}
 
-${SULLYOS_DOMAIN} {
-	encode gzip zstd
+	# 小红书 MCP (xhs-mcp) - Streamable HTTP
+	handle_path /xhs-mcp-http* {
+		reverse_proxy 127.0.0.1:8810
+	}
+	# Ruota della Fortuna MCP
+	handle_path /ruota* {
+		reverse_proxy 127.0.0.1:8790
+	}
+	# Kaleidoscope MCP (kaleidoscope-rp)
+	handle_path /kaleidoscope* {
+		reverse_proxy 127.0.0.1:8788
+	}
+	# 忒修斯之脑 MCP (theseus-brain)
+	handle_path /theseus-brain* {
+		reverse_proxy 127.0.0.1:8787
+	}
+	# 小红书 MCP (xhs-mcp)
+	handle_path /xhs-mcp* {
+		reverse_proxy 127.0.0.1:8809
+	}
+	# VPS 中转回复网关 (phone-chat-gateway)
+	handle_path /phone-gateway* {
+		reverse_proxy 127.0.0.1:8795
+	}
 
-	# ── 主代理（LLM + MCP）──────────────────────────────
-	handle /agent/* {
-		uri strip_prefix /agent
+	# ── SullyOS VPS 后端（8830-8835）─────────────────────
+	# 主代理（LLM + MCP 循环；SSE 长连接：禁用缓冲逐包透传）
+	handle_path /agent/* {
 		reverse_proxy 127.0.0.1:8830 {
 			flush_interval -1
 		}
 	}
-
-	# ── instant-push（Web Push）─────────────────────────
-	handle /instant-push/* {
-		uri strip_prefix /instant-push
+	# instant-push（Web Push）
+	handle_path /instant-push/* {
 		reverse_proxy 127.0.0.1:8831
 	}
-
-	# ── amsg 定时消息 ───────────────────────────────────
-	handle /amsg/* {
-		uri strip_prefix /amsg
+	# amsg 定时消息
+	handle_path /amsg/* {
 		reverse_proxy 127.0.0.1:8832
 	}
-
-	# ── proactive-push ──────────────────────────────────
-	handle /proactive-push/* {
-		uri strip_prefix /proactive-push
+	# proactive-push 主动消息
+	handle_path /proactive-push/* {
 		reverse_proxy 127.0.0.1:8833
 	}
-
-	# ── 唤醒桥 ──────────────────────────────────────────
-	handle /wake-bridge/* {
-		uri strip_prefix /wake-bridge
+	# 唤醒桥
+	handle_path /wake-bridge/* {
 		reverse_proxy 127.0.0.1:8834
 	}
-
-	# ── 心跳 ────────────────────────────────────────────
-	handle /heartbeat/* {
-		uri strip_prefix /heartbeat
+	# 心跳
+	handle_path /heartbeat/* {
 		reverse_proxy 127.0.0.1:8835
 	}
 
-	# ── 备份 WebDAV（dufs；主代理中转并注入 DUFS_AUTH）──
-	handle /webdav/* {
-		reverse_proxy 127.0.0.1:8890
-	}
-
-	# 兜底：503（后端未就绪时明确报错，不暴露目录）
+	# 其余路径明确返回 404
 	handle {
-		respond "SullyOS backend route not found" 404
+		respond 404
 	}
 }

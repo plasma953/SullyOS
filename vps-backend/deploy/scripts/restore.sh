@@ -1,57 +1,65 @@
 #!/usr/bin/env bash
-#
-# SullyOS VPS 恢复
+# ═══════════════════════════════════════════════════════════════════
+# SullyOS VPS · 备份恢复
 #
 # 用法：
-#   bash deploy/scripts/restore.sh <加密备份文件> [--passphrase 环境变量 BACKUP_ENCRYPT_PASSPHRASE]
-#   bash deploy/scripts/restore.sh webdav   # 自动取 WebDAV 目录最新一份
+#   restore.sh <备份文件>           # 预览模式：解密/解压到临时目录，不落盘
+#   restore.sh --auto <备份文件>    # 自动模式：停 sullyos → 覆盖 data/*.sqlite → 重启
 #
-# 步骤：解密（如需）→ 解包 → 覆盖 data/*.sqlite 与 /opt/sullyos/.env → 提示重启 sullyos。
-
+# 支持 backup.sh 产物：sullyos-data-*.tar.gz 或 .tar.gz.enc
+# ═══════════════════════════════════════════════════════════════════
 set -uo pipefail
 
-APP_DIR="${APP_DIR:-/opt/sullyos}"
-ENV_FILE="$APP_DIR/.env"
-DATA_DIR="$APP_DIR/data"
-TMP="$APP_DIR/backups/restore.tmp"
+ENV_FILE=/opt/sullyos/.env
+[ -f "$ENV_FILE" ] || { echo "缺少 $ENV_FILE" >&2; exit 1; }
 # shellcheck disable=SC1090
-[ -f "$ENV_FILE" ] && { set -a; source "$ENV_FILE"; set +a; }
+set -a; . "$ENV_FILE"; set +a
 
-log() { echo "[restore] $*"; }
-
-SRC="$1"
-if [ "$SRC" = "webdav" ]; then
-  ROOT="${DUFS_ROOT:-/opt/sullyos/backups/webdav}"
-  SRC="$(ls -1t "$ROOT/snapshots/" 2>/dev/null | head -1)"
-  [ -n "$SRC" ] || { echo "[restore] ✗ WebDAV 目录无备份" >&2; exit 1; }
-  SRC="$ROOT/snapshots/$SRC"
+AUTO=0
+TARGET="${1:-}"
+if [ "$TARGET" = "--auto" ]; then AUTO=1; TARGET="${2:-}"; fi
+if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
+  echo "用法: restore.sh [--auto] <sullyos-data-*.tar.gz|.tar.gz.enc>" >&2
+  exit 2
 fi
-[ -f "$SRC" ] || { echo "[restore] ✗ 备份文件不存在: $SRC" >&2; exit 1; }
 
-rm -rf "$TMP"; mkdir -p "$TMP"
+DATA_DIR=${AMSG_DATA_DIR:-/opt/sullyos/data}
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+PLAIN="$TMP/data.tar.gz"
 
-# 解密（.enc 结尾才需要）
-if [[ "$SRC" == *.enc ]]; then
-  [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ] || { echo "[restore] ✗ 缺 BACKUP_ENCRYPT_PASSPHRASE（无法解密）" >&2; exit 1; }
-  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-    -pass "env:BACKUP_ENCRYPT_PASSPHRASE" \
-    -in "$SRC" -out "$TMP/plain.tar.gz"
-  TARBALL="$TMP/plain.tar.gz"
+case "$TARGET" in
+  *.tar.gz.enc)
+    [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ] || { echo "需要 BACKUP_ENCRYPT_PASSPHRASE 解密" >&2; exit 1; }
+    openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -salt \
+      -pass "env:BACKUP_ENCRYPT_PASSPHRASE" -in "$TARGET" -out "$PLAIN" || { echo "解密失败" >&2; exit 1; }
+    ;;
+  *.tar.gz)
+    cp "$TARGET" "$PLAIN" || exit 1
+    ;;
+  *)
+    echo "不支持的备份格式（需 .tar.gz 或 .tar.gz.enc）" >&2; exit 2
+    ;;
+esac
+
+tar -xzf "$PLAIN" -C "$TMP" || { echo "解压失败" >&2; exit 1; }
+SQLITES=$(find "$TMP" -maxdepth 1 -name '*.sqlite' | wc -l)
+echo "发现 $SQLITES 个 sqlite 快照："
+ls -la "$TMP"/*.sqlite 2>/dev/null | awk '{print "  " $5, $9}'
+
+if [ "$AUTO" -eq 1 ]; then
+  systemctl stop sullyos.service 2>/dev/null || true
+  mkdir -p "$DATA_DIR"
+  for db in "$TMP"/*.sqlite; do
+    [ -f "$db" ] || continue
+    name=$(basename "$db")
+    echo "恢复 $name ..."
+    cp -f "$db" "$DATA_DIR/$name"
+    rm -f "$DATA_DIR/$name-wal" "$DATA_DIR/$name-shm" 2>/dev/null || true
+    chmod 600 "$DATA_DIR/$name"
+  done
+  systemctl start sullyos.service 2>/dev/null || true
+  echo "✔ 恢复完成，sullyos 服务已重启"
 else
-  TARBALL="$SRC"
+  echo "预览模式完成：快照已解压于临时目录。确认后执行: restore.sh --auto $TARGET"
 fi
-
-tar -xzf "$TARBALL" -C "$TMP" || { echo "[restore] ✗ 解包失败" >&2; exit 1; }
-
-log "恢复 sqlite → $DATA_DIR"
-mkdir -p "$DATA_DIR"
-find "$TMP" -name '*.db' | while read -r f; do
-  cp "$f" "$DATA_DIR/$(basename "$f" .db).sqlite"
-done
-if [ -f "$TMP/.env" ]; then
-  cp "$TMP/.env" "$ENV_FILE"; chmod 600 "$ENV_FILE"
-  log "已恢复 $ENV_FILE"
-fi
-
-rm -rf "$TMP"
-log "✔ 恢复完成。重启服务: systemctl restart sullyos"
