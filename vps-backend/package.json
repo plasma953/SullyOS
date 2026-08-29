@@ -1,0 +1,28 @@
+{
+  "name": "sullyos-vps-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SullyOS backend fully self-hosted on VPS (Node.js) — Cloudflare Workers port + main agent + heartbeat / wake bridge.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node bin/run-all.js",
+    "start:all": "node bin/run-all.js",
+    "service": "node bin/sullyos-service.js",
+    "gen-vapid": "node bin/gen-vapid.js",
+    "backup": "bash deploy/scripts/backup.sh",
+    "restore": "bash deploy/scripts/restore.sh",
+    "secret-scan": "bash deploy/scripts/secret-scan.sh"
+  },
+  "dependencies": {
+    "node-cron": "^3.0.3"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.3.0"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true
+  }
+}

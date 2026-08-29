@@ -1,0 +1,19 @@
+# 密钥：任何 .env 都不入库（模板除外）
+.env
+.env.*
+!.env.example
+
+# 依赖与产物
+node_modules/
+data/
+logs/
+backups/
+bundles/
+
+# sqlite 运行时文件
+*.db
+*.db-wal
+*.db-shm
+
+# 本地备份暂存（GitHub 备份工作目录）
+deploy/scripts/.gh-backup-repo/
