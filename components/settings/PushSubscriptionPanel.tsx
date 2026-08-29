@@ -6,7 +6,7 @@
 // 登记」正是拆穿静默失联的那一行。
 //
 // 只读诊断走 pushSubscribeShared 的 readBrowserPushState（各推送层共用同一份判定），
-// 重置走 ActiveMsgClient 的 amsg2 路径——退订、按 worker 自己的 VAPID 重订、再覆盖
+// 重置走 ActiveMsgClient 的 amsg2 路径——退订、按云端自己的 VAPID 重订、再覆盖
 // 登记回 worker。三步缺一不可，少了最后一步就是把这个面板要治的病再犯一遍。
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -52,8 +52,8 @@ const Row: React.FC<{ label: string; value: string; bad?: boolean }> = ({ label,
 
 
 const REGISTRATION_TEXT: Record<AmsgPushRegistrationState, { value: string; bad: boolean }> = {
-  'worker-unset': { value: '还没填 Worker 地址', bad: true },
-  unreachable: { value: '问不到（Worker 连不上，或版本太旧没这个接口）', bad: true },
+  'worker-unset': { value: '还没填云端地址', bad: true },
+  unreachable: { value: '问不到（云端连不上，或版本太旧没这个接口）', bad: true },
   missing: { value: '没有登记', bad: true },
   'other-endpoint': { value: '登记的是别的设备', bad: true },
   matched: { value: '已登记（就是这台设备）', bad: false },
@@ -62,8 +62,8 @@ const REGISTRATION_TEXT: Record<AmsgPushRegistrationState, { value: string; bad:
 const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast }) => {
   const [browser, setBrowser] = useState<BrowserPushState | null>(null);
   const [remote, setRemote] = useState<AmsgRemotePushSubscription | null>(null);
-  // 「登记的确实是这台设备，但推送根本送不到」——只有 Worker 那侧的投递结果知道这件事。
-  // null = 还没问到（没填 Worker / 连不上），那时这一行照实说「没查到」。
+  // 「登记的确实是这台设备，但推送根本送不到」——只有云端那侧的投递结果知道这件事。
+  // null = 还没问到（没填云端 / 连不上），那时这一行照实说「没查到」。
   const [delivery, setDelivery] = useState<AmsgPushDeliveryProbe | null>(null);
   const [workerConfigured, setWorkerConfigured] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -77,12 +77,12 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
     try {
       const browserState = await readBrowserPushState();
       setBrowser(browserState);
-      // 没填 Worker 地址就别去问了——问也是白问，还会在控制台留一串没用的报错。
+      // 没填云端地址就别去问了——问也是白问，还会在控制台留一串没用的报错。
       const config = await ActiveMsgClient.getGlobalConfig().catch(() => null);
       const configured = Boolean(config?.workerUrl?.trim());
       setWorkerConfigured(configured);
       setRemote(configured ? await ActiveMsgClient.getRemotePushSubscription() : null);
-      // 「推送有没有真的送出去」是 Worker 那侧算好的（见 /debug 的 pushDelivery）。
+      // 「推送有没有真的送出去」是云端那侧算好的（见 /debug 的 pushDelivery）。
       // 这一行和体检面板读的是同一份，不会一个说红一个说绿。
       const probe = configured ? await fetchWorkerDiagnostics() : null;
       setDelivery(probe?.reachable ? probe.report.storage.pushDelivery ?? null : null);
@@ -105,7 +105,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         await ActiveMsgClient.resetPushSubscription();
       }
       setZombieStreak(0);
-      addToast('订阅已重建，并登记到了 Worker 上。', 'success');
+      addToast('订阅已重建，并登记到了云端上。', 'success');
       // 只报「成不成 / 是哪一档 / 之前失败了几次」，全是源码里写死的枚举。
       trackEvent(deepMode ? '深度重置推送订阅' : '重置推送订阅', {
         result: 'success',
@@ -114,7 +114,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
     } catch (error: any) {
       const failKind = readAmsgFailKind(error);
       // 僵尸端点是「重试也没用」的那一类，攒够次数把按钮升级成深度重置。
-      // 别的失败（没配 VAPID、权限被拒、断网）换深度重置一点用没有，不计数。
+      // 别的失败（云端侧问题、权限被拒、断网）换深度重置一点用没有，不计数。
       if (failKind === '端点僵尸') setZombieStreak((count) => count + 1);
       // 报错原文可能带 push endpoint，只留在 toast 和控制台里，不进上报。
       addToast(error?.message || '重置订阅失败。', 'error');
@@ -173,9 +173,9 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   // 用户会看到一个红一个绿，而这正是他判断该不该重置订阅的唯一依据。
   const deliveryVerdict = judgePushDeliveryFailure(delivery);
   const deliveryText: { value: string; bad: boolean } = !workerConfigured || !delivery
-    ? { value: '没查到（要先连上 Worker）', bad: false }
+    ? { value: '没查到（要先连上云端）', bad: false }
     : !delivery.probed
-      ? { value: delivery.reason === 'unsupported' ? '这台 Worker 还不查' : '没查成', bad: false }
+      ? { value: delivery.reason === 'unsupported' ? '云端还不支持查询' : '没查成', bad: false }
       : delivery.gone && deliveryVerdict
         ? { value: `被推送服务退回（${delivery.gone.status}）`, bad: true }
         // 有旧账但已经不算数了：说清楚「那是上一条订阅的事」，别让人以为从来没坏过。
@@ -285,7 +285,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
               }`}>
                 <p className="font-semibold mb-1">推送被退回了</p>
                 <p>{deliveryVerdict.what}。</p>
-                {/* 这段解释只在坐实了的时候说：warn 那档是 Worker 问不到，上面几行本来
+                {/* 这段解释只在坐实了的时候说：warn 那档是云端问不到，上面几行本来
                     就红着，再说一句「上面都没问题」只会自相矛盾。 */}
                 {deliveryVerdict.level === 'bad' && (
                   <p className="mt-1.5 pt-1.5 border-t border-current/20">
@@ -298,8 +298,8 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
             )}
             {registration === 'other-endpoint' && (
               <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-[10px] text-rose-700 leading-relaxed">
-                Worker 上登记的订阅不是这台设备——主动消息到点会推到<b>别处</b>，这台收不到。
-                换过设备、换过浏览器、或者换过 Worker 之后会这样（一个账号只存一份订阅，后登记的顶掉先前的）。
+                云端登记的订阅不是这台设备——主动消息到点会推到<b>别处</b>，这台收不到。
+                换过设备、换过浏览器、或者换过云端之后会这样（一个账号只存一份订阅，后登记的顶掉先前的）。
                 点「重置订阅」把它改成这台。
               </div>
             )}
@@ -307,7 +307,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
                 登记根本轮不到，上面那个失败框才是这台设备真正的结论。 */}
             {registration === 'missing' && !isSupportBad(browser) && (
               <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-[10px] text-rose-700 leading-relaxed">
-                Worker 上一份订阅都没有，到点没地方推。点「重置订阅」登记一下这台设备。
+                云端一份订阅都没有，到点没地方推。点「重置订阅」登记一下这台设备。
               </div>
             )}
             {browser.iosNeedsPwa && (
@@ -341,7 +341,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
           {resetLabel}
         </button>
         <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-          「重置订阅」会清掉现在这条、重建一条，再登记到 Worker 上。换了浏览器、换了 Worker、
+          「重置订阅」会清掉现在这条、重建一条，再登记到云端上。换了浏览器、换了云端、
           或者订阅被吊销之后点它。
           {deepMode && <><br/>连着几次都没成，已经切到「深度重置」——它会把 Service Worker 整个装一遍，更彻底。</>}
         </p>

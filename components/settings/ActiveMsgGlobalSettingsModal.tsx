@@ -20,7 +20,7 @@ import {
 } from '../../utils/instantPushClient';
 import { trackEvent } from '../../utils/analytics';
 
-// 主动消息 2.0 的后端自 VPS 迁移完成后即由 VPS 宿主统一承载：前端默认指向
+// 主动消息的后端自 VPS 迁移完成后即由 VPS 宿主统一承载：前端默认指向
 // 官方 VPS 端点，普通用户填一个用户 ID 就能用，不再有「自部署 Worker」这一步。
 // 想自建的用户仍可把地址换成自己的实例（协议与原 amsg worker 完全一致）。
 const DEFAULT_VPS_WORKER_URL = 'https://43451695.xyz/amsg';
@@ -78,8 +78,6 @@ interface ActiveMsgGlobalSettingsModalProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   /** 「清空云端数据」清完要立刻把工具凭据补传回去，所以这里需要当前这份配置。 */
   realtimeConfig: RealtimeConfig;
-  /** 由 Settings 注入：点「去推送凭据面板」时打开顶层 PushVapidSettingsModal */
-  onOpenVapid?: () => void;
 }
 
 const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> = ({
@@ -87,7 +85,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   onClose,
   addToast,
   realtimeConfig,
-  onOpenVapid,
 }) => {
   const [config, setConfig] = useState<ActiveMsg2GlobalConfig | null>(null);
   const [loading, setLoading] = useState(false);
@@ -288,8 +285,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       });
       const { warnings } = await ActiveMsgClient.connect();
       await refresh();
-      addToast('已连接成功，主动消息 2.0 可以用了。', 'success');
-      // 连上了但有一块是哑的（最典型是 VAPID 没配齐：任务建得成、到点一条都推不出去，
+      addToast('已连接成功，主动消息可以用了。', 'success');
+      // 连上了但有一块是哑的（最典型是推送通道没通：任务建得成、到点一条都推不出去，
       // 而界面上没有任何异常）。这类问题用户自己发现不了，连接这一刻不说就没人说了。
       warnings.forEach((warning) => addToast(warning.message, 'info'));
       // 只报「这次连接成没成 / 卡在哪一类」。连接串 / tenantToken / 错误原文一概不带。
@@ -387,7 +384,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   return (
     <Modal
       isOpen={isOpen}
-      title="主动消息 2.0"
+      title="主动消息"
       onClose={onClose}
       footer={(
         <button
@@ -399,7 +396,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       )}
     >
       <div className="space-y-4 text-sm text-slate-600">
-        {/* 体检。主动消息坏掉的那几种方式在界面上全是隐形的：表结构是旧的、VAPID 没配、
+        {/* 体检。主动消息坏掉的那几种方式在界面上全是隐形的：表结构是旧的、推送通道断了、
             云端没登记收件设备——任务照建、面板照常，就是一条都不发。后端的 /debug 一直
             算得出这些，这里只是把它摆到看得见的地方。 */}
         {config.workerUrl?.trim() ? (
@@ -467,7 +464,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-2">
             <div className="font-bold text-amber-900 text-sm">旧版 Instant Push 还开着</div>
             <p className="text-xs leading-relaxed text-amber-800">
-              检测到旧版 Instant Push 还开着。即时对话已经覆盖了它的能力（发完就自由、云端跑工具、断网补收），两条路只能留一条。点下面把旧版关掉，聊天就交给主动消息 2.0。
+              检测到旧版 Instant Push 还开着。即时对话已经覆盖了它的能力（发完就自由、云端跑工具、断网补收），两条路只能留一条。点下面把旧版关掉，聊天就交给主动消息。
             </p>
             <button
               type="button"
@@ -571,15 +568,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           {pushStatus?.detail ? (
             <p className="text-xs leading-relaxed text-amber-600">{pushStatus.detail}</p>
           ) : null}
-          {onOpenVapid ? (
-            <button
-              type="button"
-              onClick={onOpenVapid}
-              className="w-full py-2.5 text-[11px] rounded-xl font-bold bg-white border border-slate-200 text-slate-600 active:scale-95 transition-transform"
-            >
-              去推送凭据面板（VAPID）
-            </button>
-          ) : null}
           <button
             onClick={handleCreateSubscription}
             disabled={loading}
@@ -628,9 +616,9 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
         </div>
         <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs leading-relaxed text-amber-700 space-y-2">
           <div className="font-bold text-amber-800">风险说明</div>
-          <p>开了 2.0 以后，主动消息内容、提示词、相关配置，都会进入后端服务及其数据库。</p>
+          <p>开了主动消息以后，主动消息内容、提示词、相关配置，都会进入后端服务及其数据库。</p>
           <p>自建后端的话那是你自己的库；连官方后端的话，能碰到这台服务器的人（服务运营者）就能看到这些内容。项目本身不会额外接一个中心服务器之外的中转。</p>
-          <p>如果你不接受把私密提示词、API Key 放进后端服务，就不要开 2.0。</p>
+          <p>如果你不接受把私密提示词、API Key 放进后端服务，就不要开主动消息。</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
           <button

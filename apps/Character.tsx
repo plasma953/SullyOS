@@ -2075,7 +2075,7 @@ ${isInitialGeneration ? `
             </div>}
         >
             <p className="text-sm text-slate-600 leading-relaxed py-2">
-                ta 名下还有主动消息 2.0 任务没能在云端取消（可能是断网或 Worker 没响应），角色暂时没有删除。<br/>
+                ta 名下还有主动消息任务没能在云端取消（可能是断网或云端没响应），角色暂时没有删除。<br/>
                 <span className="text-xs text-red-400 font-bold">选「仍然删除」的话，残留的任务之后可能仍会到点推送</span>
                 <span className="text-xs text-slate-400">——届时可去设置里「清除云端状态」兜底。</span>
             </p>

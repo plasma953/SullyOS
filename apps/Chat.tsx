@@ -45,7 +45,6 @@ import FavoritesPortal from '../components/chat/VoiceFavoritesPortal';
 import McpMemoryModal from '../components/chat/McpMemoryModal';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
-import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import ActiveMsg2SettingsModal from '../components/chat/ActiveMsg2SettingsModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import ScheduleChangeNotice from '../components/chat/ScheduleChangeNotice';
@@ -245,7 +244,6 @@ const Chat: React.FC = () => {
     const [editContent, setEditContent] = useState('');
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [archiveProgress, setArchiveProgress] = useState('');
-    const [showProactiveModal, setShowProactiveModal] = useState(false);
     const [showActiveMsg2Modal, setShowActiveMsg2Modal] = useState(false);
     const [showThinkingChainModal, setShowThinkingChainModal] = useState(false);
 
@@ -399,7 +397,7 @@ const Chat: React.FC = () => {
     }, [activeCharacterId]);
 
     // --- Initialize Hook ---
-    const { isTyping, streamingBubbles, streamingThinking, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
+    const { isTyping, streamingBubbles, streamingThinking, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI } = useChatAI({
         char,
         userProfile,
         apiConfig,
@@ -1685,7 +1683,7 @@ const Chat: React.FC = () => {
         // 选表情、选分类之类的动作不上报。
         if ([
             'transfer', 'archive', 'settings', 'chrome-css', 'chrome-sound', 'fine-tune',
-            'meetup', 'proactive', 'active-msg-2', 'schedule', 'mcd-request', 'luckin-request',
+            'meetup', 'active-msg-2', 'schedule', 'mcd-request', 'luckin-request',
             'html-mode-toggle', 'html-mode-settings', 'thinking-settings', 'favorites',
             // 独立小功能：点一下就是用了一次，跟「打开某个面板」同一性质。
             // send-emoji / select-category 这些是「挑哪一个」，不进名单。
@@ -1713,7 +1711,6 @@ const Chat: React.FC = () => {
             case 'category-options': setSelectedCategory(payload); setModalType('category-options'); break;
             case 'delete-category-req': setSelectedCategory(payload); setModalType('delete-category'); break;
             case 'meetup': if (char) { setShowPanel('none'); openDateWithChar(char.id); } break;
-            case 'proactive': setShowProactiveModal(true); break;
             case 'active-msg-2': setShowActiveMsg2Modal(true); break;
             case 'emotion': setModalType('schedule'); break; // 情绪已并入日程，打开同一 modal
             case 'schedule': setModalType('schedule'); break;
@@ -4146,7 +4143,6 @@ const Chat: React.FC = () => {
                     activeCategory={activeCategory}
                     onReroll={handleReroll}
                     canReroll={canReroll}
-                    isProactiveActive={isProactiveActive}
                     mcdConfigured={mcdConfiguredFlag}
                     mcdActivated={mcdActivated}
                     luckinConfigured={luckinConfiguredFlag}
@@ -4159,42 +4155,6 @@ const Chat: React.FC = () => {
                     acnh={acnh}
                 />
             </div>
-
-
-            {/* Proactive Settings Modal */}
-            {char && (
-                <ProactiveSettingsModal
-                    isOpen={showProactiveModal}
-                    onClose={() => setShowProactiveModal(false)}
-                    char={char}
-                    isProactiveActive={isProactiveActive}
-                    onSave={(config) => {
-                        updateCharacter(char.id, { proactiveConfig: config });
-                        if (config.enabled) {
-                            startProactiveChat(config.intervalMinutes);
-                            // 界面只给 7 个档，但这个值是从持久化状态读回来的——导入的备份、
-                            // 老版本写进去的都可能是任意整数。收敛到写死的档位，其余归 custom。
-                            trackEvent('启动主动消息', {
-                                intervalMinutes: presetOrCustom(
-                                    String(config.intervalMinutes),
-                                    ['30', '60', '120', '240', '480', '720', '1440'],
-                                    '没设',
-                                ),
-                            });
-                            addToast(`已启动主动消息，每 ${config.intervalMinutes >= 60 ? formatHours(config.intervalMinutes) + ' 小时' : config.intervalMinutes + ' 分钟'}发送一次`, 'success');
-                        } else {
-                            stopProactiveChat();
-                            addToast('已关闭主动消息', 'info');
-                        }
-                    }}
-                    onStop={() => {
-                        stopProactiveChat();
-                        updateCharacter(char.id, { proactiveConfig: { ...char.proactiveConfig!, enabled: false } });
-                        addToast('已停止主动消息', 'info');
-                    }}
-                />
-            )}
-
             {/* 主动消息 2.0（云端 worker 定时任务）Settings Modal */}
             {char && (
                 <ActiveMsg2SettingsModal

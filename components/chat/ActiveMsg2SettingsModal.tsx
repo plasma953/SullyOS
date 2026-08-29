@@ -265,7 +265,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
    * activeMsg2Config 还是空的（= 关）：聊天里不注入排程工具、fire_pack 的
    * selfScheduleEnabled 上传 false、重开面板开关又显示成「关」，全程一句提示都没有。
    *
-   * 只有「开」这一侧就地落盘。「关」要走底部那颗「关闭 2.0」按钮：关掉的同时得把该
+   * 只有「开」这一侧就地落盘。「关」要走底部那颗「关闭主动消息」按钮：关掉的同时得把该
    * 角色在远端的任务全部取消，这里就地写一个 enabled:false，远端任务没人管，会变成
    * 面板看不见却照样到点触发的幽灵任务。
    */
@@ -349,7 +349,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     setIsSubmitting(true);
     try {
       if (!enabled) {
-        // 关闭 2.0 = 取消该角色全部远端任务（远端清单优先的口径见 cancelAllTasksForChar，
+        // 关闭主动消息 = 取消该角色全部远端任务（远端清单优先的口径见 cancelAllTasksForChar，
         // 与删角色共用一份）。取消失败的保留在本地清单里，下次重开面板可重试。
         const { targets, failed } = await ActiveMsgClient.cancelAllTasksForChar(
           char.id,
@@ -369,13 +369,13 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
           { enabled: false, lastSyncedAt: Date.now() },
         ));
         addToast(failed.size
-          ? `主动消息 2.0 已关闭，但有 ${failed.size} 个任务远端取消失败，请稍后重开面板重试。`
-          : '主动消息 2.0 已关闭，全部任务已取消。', failed.size ? 'error' : 'info');
+          ? `主动消息已关闭，但有 ${failed.size} 个任务远端取消失败，请稍后重开面板重试。`
+          : '主动消息已关闭，全部任务已取消。', failed.size ? 'error' : 'info');
         onClose();
         return;
       }
 
-      if (!globalReady) throw new Error('请先去系统设置里完成“主动消息 2.0”的全局配置。');
+      if (!globalReady) throw new Error('请先去系统设置里完成“主动消息”的全局配置。');
 
       // 时间框里的是用户桌上的钟，先折成绝对时刻再往下传。裸墙钟交出去的话，排程接口
       // 会按角色时区解释它（那条规则是给角色自己排程用的），角色一开自定义时区就差一个
@@ -465,7 +465,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         }
       }
     } catch (error: any) {
-      const message = error?.message || '主动消息 2.0 保存失败。';
+      const message = error?.message || '主动消息保存失败。';
       onSave((prev) => buildConfig(prev, (list) => list, { lastError: message }));
       addToast(message, 'error');
     } finally {
@@ -476,7 +476,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   return (
     <Modal
       isOpen={isOpen}
-      title="主动消息 2.0"
+      title="主动消息"
       onClose={onClose}
       footer={(
         <>
@@ -484,7 +484,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
             取消
           </button>
           <button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50">
-            {isSubmitting ? '保存中...' : !enabled ? '关闭 2.0' : (editingTaskUuid ? '保存修改' : '新建任务')}
+            {isSubmitting ? '保存中...' : !enabled ? '关闭主动消息' : (editingTaskUuid ? '保存修改' : '新建任务')}
           </button>
         </>
       )}
@@ -496,7 +496,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
 
         <div className="flex items-center justify-between bg-fuchsia-50 border border-fuchsia-100 rounded-2xl p-4">
           <div>
-            <div className="font-bold text-slate-700">启用主动消息 2.0</div>
+            <div className="font-bold text-slate-700">启用主动消息</div>
             <div className="text-xs text-fuchsia-600 mt-1">{pushSummary || '正在检查 Push 状态...'}</div>
           </div>
           <button
@@ -511,7 +511,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
             也不知道打开它能换来什么。 */}
         {!enabled ? (
           <p className="text-xs leading-relaxed text-slate-400 pl-1">
-            主动消息 2.0 按角色单独开启。打开这个开关，TA 才能在聊天里给你排定时消息，到点由云端发出；你也可以在这里手动建任务。
+            主动消息按角色单独开启。打开这个开关，TA 才能在聊天里给你排定时消息，到点由云端发出；你也可以在这里手动建任务。
           </p>
         ) : null}
 

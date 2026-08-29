@@ -24,13 +24,11 @@ import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
 import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected } from '@phosphor-icons/react';
 import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
 import { getMcpResultList, clearMcpResults } from '../utils/mcpResultMemory';
-import { PushVapidSettingsModal } from '../components/settings/PushVapidSettingsModal';
 import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
 import ActiveMsgGlobalSettingsModal from '../components/settings/ActiveMsgGlobalSettingsModal';
 import { syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts } from '../utils/amsgStateSync';
 import { ActiveMsgClient } from '../utils/activeMsgClient';
 import VersionInfo from '../components/settings/VersionInfo';
-import { isPushVapidReady } from '../utils/pushVapid';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
 import StorageUsagePanel from '../components/settings/StorageUsagePanel';
 import { DB } from '../utils/db';
@@ -78,7 +76,7 @@ const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
     { key: 'tenxunwang', label: '腾讯网' },
 ];
 
-// 旧版「Instant Push」CF Worker 模块已退役；VAPID 现在只服务主动消息 2.0（VPS 后端）与存量运行时兜底。
+// 推送凭据 (VAPID) 面板已移除：VPS 后端自管 VAPID 密钥，前端不再生成/查看密钥对；主代理中转（agentUrl/agentToken）已从 API 配置单开为一级区块。
 // Firecrawl「方舟计划」：实现、额度检测和抓取降级链全部保留，默认不向用户展示配置入口。
 // 需要重新启用时只改为 true。
 const SHOW_FIRECRAWL_ARK_UI = false;
@@ -141,9 +139,10 @@ const SettingsSection: React.FC<{
     badge?: React.ReactNode;
     actions?: React.ReactNode;
     sectionProps?: Record<string, any>;
+    defaultOpen?: boolean;
     children: React.ReactNode;
-}> = ({ icon, title, badge, actions, sectionProps, children }) => {
-    const [open, setOpen] = useState(false);
+}> = ({ icon, title, badge, actions, sectionProps, defaultOpen, children }) => {
+    const [open, setOpen] = useState(defaultOpen === true);
     return (
         <section {...sectionProps} className="bg-[#fffefe] rounded-3xl p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] border border-slate-200/80">
             <div className={`flex items-center justify-between gap-2 ${open ? 'mb-4' : ''}`}>
@@ -790,8 +789,6 @@ const Settings: React.FC = () => {
       [visionModelFilter, availableVisionModels],
   );
   const [showAmsg2Modal, setShowAmsg2Modal] = useState(false);
-  const [showVapidModal, setShowVapidModal] = useState(false);
-  const [vapidReadyTick, setVapidReadyTick] = useState(0); // 关闭 VAPID 弹窗后刷新顶层徽标
   // Push 加速器已整体下线：清理旧版残留的 localStorage 开关，避免残留状态干扰。
   useEffect(() => {
       try {
@@ -1035,19 +1032,27 @@ const Settings: React.FC = () => {
       model: normalizeApiModel(localModel),
       stream: localStream,
       temperature: localTemperature,
-      agentUrl: String(localAgentUrl || '').trim().replace(/\/+$/, ''),
-      agentToken: String(localAgentToken || '').trim(),
     };
     setLocalKey(nextConfig.apiKey);
     setLocalUrl(nextConfig.baseUrl);
     setLocalModel(nextConfig.model);
-    setLocalAgentUrl(nextConfig.agentUrl);
-    setLocalAgentToken(nextConfig.agentToken);
     commitApiConfig(nextConfig);
     setStatusMsg('配置已保存');
     setTimeout(() => setStatusMsg(''), 2000);
   };
 
+  /**
+   * 主代理中转独立保存：只动 agentUrl / agentToken，不碰 LLM 三件套与预设。
+   */
+  const handleSaveAgentRelay = () => {
+      const nextAgentUrl = String(localAgentUrl || '').trim().replace(/\/+$/, '');
+      const nextAgentToken = String(localAgentToken || '').trim();
+      commitApiConfig({ agentUrl: nextAgentUrl, agentToken: nextAgentToken });
+      setLocalAgentUrl(nextAgentUrl);
+      setLocalAgentToken(nextAgentToken);
+      setStatusMsg('中转配置已保存');
+      setTimeout(() => setStatusMsg(''), 2000);
+  };
   const handleSaveVisionApi = () => {
     const nextVisionApi = {
       enabled: localVisionEnabled,
@@ -2290,12 +2295,6 @@ const Settings: React.FC = () => {
                     <input type="text" value={localUrl} onChange={(e) => setLocalUrl(e.target.value)} placeholder="https://..." className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                 </div>
 
-                <div className="group">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">主代理中转（预设联动 · 可选，留空=直连）</label>
-                    <input type="text" value={localAgentUrl} onChange={(e) => setLocalAgentUrl(e.target.value)} placeholder="https://43451695.xyz" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-                    <input type="password" value={localAgentToken} onChange={(e) => setLocalAgentToken(e.target.value)} placeholder="X-Client-Token（VPS 的 AMSG_CLIENT_TOKEN）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all mt-2" />
-                    <p className="text-[9px] text-slate-400 mt-1 pl-1">填了 URL 后，所有聊天请求经 VPS 主代理中转（预设直传、换预设即时生效）；Token 未配置鉴权时留空。</p>
-                </div>
 
                 <div className="group">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">Key</label>
@@ -2433,6 +2432,44 @@ const Settings: React.FC = () => {
             </div>
         </SettingsSection>
 
+        {/* ───────── 主代理中转（独立区块） ───────── */}
+        <SettingsSection
+            title="主代理中转"
+            icon={
+                <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                    </svg>
+                </div>
+            }
+            badge={
+                <span className={`text-[9px] font-bold px-2 py-1 rounded-full ${localAgentUrl.trim() ? 'bg-violet-100 text-violet-600' : 'bg-slate-100 text-slate-400'}`}>
+                    {localAgentUrl.trim() ? '已配置' : '直连'}
+                </span>
+            }
+        >
+            <div className="space-y-3">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                    所有聊天请求、联网搜索、备份代理、Notion / 飞书 / MCP 等云端能力统一经 VPS 主代理中转。留空 = 直连（云端能力不生效）。
+                </p>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">中转地址</label>
+                    <input type="text" value={localAgentUrl} onChange={(e) => setLocalAgentUrl(e.target.value)} placeholder="https://43451695.xyz" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">客户端令牌</label>
+                    <input type="password" value={localAgentToken} onChange={(e) => setLocalAgentToken(e.target.value)} placeholder="X-Client-Token（VPS 的 AMSG_CLIENT_TOKEN）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <p className="text-[9px] text-slate-400 mt-1 pl-1">VPS 没开鉴权就留空；填错会连不上中转。</p>
+                </div>
+                <button
+                    type="button"
+                    onClick={handleSaveAgentRelay}
+                    className="w-full py-2.5 rounded-2xl font-bold text-sm border border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all"
+                >
+                    保存中转配置
+                </button>
+            </div>
+        </SettingsSection>
         {/* 独立识图 API：给不支持 image_url 的主模型补视觉能力；可手动从通用模型预设载入。 */}
         <SettingsSection
             title="识图 API"
@@ -3026,38 +3063,6 @@ const Settings: React.FC = () => {
             })()}
         </SettingsSection>
 
-        {/* ───────── 推送凭据 (VAPID) ───────── */}
-        {/* VAPID 公私钥, 与 Proactive / Instant Push 共用一份 — 独立成块, 避免再被当成 */}
-        {/* Instant Push 的子配置, 也避免两边 key 不一致互相抢同一个 pushManager 订阅. */}
-        {/* vapidReadyTick: VAPID 弹窗关闭后 +1, 让本节点 re-render 重读 isPushVapidReady(). */}
-        <SettingsSection
-            title="推送凭据 (VAPID)"
-            sectionProps={{ 'data-vapid-tick': vapidReadyTick }}
-            icon={
-                <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" />
-                    </svg>
-                </div>
-            }
-            actions={
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isPushVapidReady() ? 'bg-violet-100 text-violet-600' : 'bg-rose-100 text-rose-600'}`}>
-                    {isPushVapidReady() ? '已配置' : '未配置'}
-                </span>
-            }
-        >
-            <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-                主动消息 2.0 <b>共用同一份 VAPID 密钥对</b>。重新生成会让已开的推送失效，需要重新开启。
-            </p>
-            <button
-                type="button"
-                onClick={() => setShowVapidModal(true)}
-                className={`w-full py-2.5 rounded-xl text-xs font-bold ${isPushVapidReady() ? 'bg-white text-violet-700 border border-violet-200 hover:bg-violet-50' : 'bg-violet-500 text-white hover:bg-violet-600 shadow-md shadow-violet-200'}`}
-            >
-                {isPushVapidReady() ? '查看 / 重新生成' : '生成 VAPID 密钥对 →'}
-            </button>
-        </SettingsSection>
-
         {/* ───────── 推送订阅状态（诊断 + 重置） ───────── */}
         <SettingsSection
             title="推送订阅状态"
@@ -3072,31 +3077,32 @@ const Settings: React.FC = () => {
             <PushSubscriptionPanel addToast={addToast} />
         </SettingsSection>
 
-        {/* 旧版 Instant Push 模块与「Push 加速器」入口已整体退役，主动消息统一由下方「主动消息 2.0」承载。 */}
+        {/* 旧版 Instant Push 模块与「Push 加速器」入口已整体退役，主动消息统一由下方「主动消息」承载。 */}
 
-        {/* ───────── 主动消息 2.0（定时推送） ───────── */}
-        <section className="bg-white/80 rounded-3xl p-5 shadow-sm border border-white/50">
-            <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                    <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                        </svg>
-                    </div>
-                    <h2 className="text-sm font-semibold text-slate-600 tracking-wider">主动消息 2.0</h2>
+        {/* ───────── 主动消息（VPS 定时推送） ───────── */}
+        <SettingsSection
+            title="主动消息"
+            defaultOpen
+            icon={
+                <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
                 </div>
+            }
+            actions={
                 <button
                     onClick={() => { trackEvent('打开主动消息2.0配置'); setShowAmsg2Modal(true); }}
                     className="text-[10px] bg-violet-100 text-violet-600 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform"
                 >
                     配置
                 </button>
-            </div>
+            }
+        >
             <p className="text-xs text-slate-500 leading-relaxed">
                 角色到点自动给你发消息，App 关着也能收。后端由官方 VPS 统一承载，无需自行部署，在配置里确认连接即可。聊天上云（即时对话）与定时主动消息都由它承担。
             </p>
-        </section>
-
+        </SettingsSection>
         {/* 自定义网络代理 — 刻意低调的高级入口。默认折叠，不主动指引基本发现不了。
             普通用户无需配置：默认走作者部署的公共 Worker，所有功能开箱即用。 */}
         {!showProxyConfig ? (
@@ -4259,16 +4265,11 @@ const Settings: React.FC = () => {
           </div>
       </Modal>
 
-      <PushVapidSettingsModal
-        open={showVapidModal}
-        onClose={() => { setShowVapidModal(false); setVapidReadyTick((n) => n + 1); }}
-      />
       <ActiveMsgGlobalSettingsModal
         isOpen={showAmsg2Modal}
         onClose={() => setShowAmsg2Modal(false)}
         addToast={addToast}
         realtimeConfig={realtimeConfig}
-        onOpenVapid={() => { setShowAmsg2Modal(false); setShowVapidModal(true); }}
       />
 
     </div>
