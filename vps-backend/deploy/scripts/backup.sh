@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-# SullyOS VPS · 双通道自动备份
+# SullyOS VPS · 三通道自动备份
 #
-# 通道 1（GitHub）：/opt/sullyos/sullyos-repo 自动 commit + push。
-#   代码级连续性备份（.env / *.sqlite 已由 .gitignore 排除，永不入库）。
-#   - 若配置了 GITHUB_BACKUP_REPO + GITHUB_PAT → 推送到专用备份仓；
-#   - 否则推送到仓库自身 origin（凭据走 ~/.git-credentials）。
+# 通道 1（GitHub · 代码）：/opt/sullyos/sullyos-repo 自动 commit + push
+#   origin（.env / *.sqlite 已由 .gitignore 排除，永不入库）。
 #
-# 通道 2（WebDAV/dufs 本机盘）：/opt/sullyos/data/*.sqlite
+# 通道 2（WebDAV/dufs · 本机盘）：/opt/sullyos/data/*.sqlite
 #   → VACUUM INTO 一致性快照 → tar → AES-256-CBC 加密 → 滚动保留
-#   BACKUP_KEEP（默认 7）份。文件落在 DUFS_ROOT（默认 /opt/sullyos/backups/webdav），
+#   BACKUP_KEEP（默认 7）份，落在 DUFS_ROOT（默认 /opt/sullyos/backups/webdav），
 #   由 main-agent /webdav/* 认证注入中转对外提供。
+#
+# 通道 3（GitHub 备份仓 · 异机容灾）：把同一份加密包经 contents API
+#   上传到 GITHUB_BACKUP_REPO 的 vps/ 目录（时间戳命名的新增文件，
+#   绝不覆盖备份仓既有内容；滚动保留 BACKUP_KEEP 份）。
 #
 # 建议 cron（避开 04:30 的 cove 清理任务）：
 #   15 4 * * * /opt/sullyos/vps-backend/deploy/scripts/backup.sh >> /var/log/sullyos-backup.log 2>&1
@@ -28,7 +30,6 @@ get_env() {
 }
 GITHUB_PAT=$(get_env GITHUB_PAT)
 GITHUB_BACKUP_REPO=$(get_env GITHUB_BACKUP_REPO)
-GITHUB_BACKUP_BRANCH=$(get_env GITHUB_BACKUP_BRANCH)
 GITHUB_BACKUP_PAT=$(get_env GITHUB_BACKUP_PAT)
 DUFS_ROOT=$(get_env DUFS_ROOT)
 BACKUP_KEEP=$(get_env BACKUP_KEEP)
@@ -51,32 +52,20 @@ if [ -d "$REPO/.git" ]; then
   else
     echo "[backup] 通道1(GitHub): 无本地变更"
   fi
-  if [ -n "${GITHUB_BACKUP_REPO:-}" ] && [ -n "${GITHUB_BACKUP_PAT:-}${GITHUB_PAT:-}" ]; then
-    REPO_URL="${GITHUB_BACKUP_REPO#https://}"
-    BPAT="${GITHUB_BACKUP_PAT:-$GITHUB_PAT}"
-    # 备份仓与开发仓分开：推送到独立分支（默认 vps-backup），绝不触碰其既有分支
-    BRANCH=${GITHUB_BACKUP_BRANCH:-vps-backup}
-    if (cd "$REPO" && git push "https://${BPAT}@${REPO_URL}" "HEAD:${BRANCH}" >/dev/null 2>&1); then
-      echo "[backup] 通道1(GitHub): 已推送到备份仓分支 ${BRANCH}"
+  # 代码连续性：推送自身 origin（PAT 内联；.git-credentials 可能存有旧令牌）
+  BR=$(cd "$REPO" && git rev-parse --abbrev-ref HEAD)
+  if [ -n "${GITHUB_PAT:-}" ]; then
+    ORIGIN_URL=$(cd "$REPO" && git config --get remote.origin.url | sed 's|^https://||')
+    if (cd "$REPO" && git push "https://${GITHUB_PAT}@${ORIGIN_URL}" "HEAD:${BR}" >/dev/null 2>&1); then
+      echo "[backup] 通道1(GitHub): 已推送到 origin（PAT 内联）"
     else
-      echo "[backup] 通道1(GitHub): 备份仓推送失败" >&2; FAIL=1
+      echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
     fi
   else
-    # 推送到自身 origin；优先用 GITHUB_PAT 内联（.git-credentials 可能存有旧令牌）
-    BR=$(cd "$REPO" && git rev-parse --abbrev-ref HEAD)
-    if [ -n "${GITHUB_PAT:-}" ]; then
-      ORIGIN_URL=$(cd "$REPO" && git config --get remote.origin.url | sed 's|^https://||')
-      if (cd "$REPO" && git push "https://${GITHUB_PAT}@${ORIGIN_URL}" "HEAD:${BR}" >/dev/null 2>&1); then
-        echo "[backup] 通道1(GitHub): 已推送到 origin（PAT 内联）"
-      else
-        echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
-      fi
+    if (cd "$REPO" && git push origin "HEAD:${BR}" >/dev/null 2>&1); then
+      echo "[backup] 通道1(GitHub): 已推送到 origin"
     else
-      if (cd "$REPO" && git push origin "HEAD:${BR}" >/dev/null 2>&1); then
-        echo "[backup] 通道1(GitHub): 已推送到 origin"
-      else
-        echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
-      fi
+      echo "[backup] 通道1(GitHub): origin 推送失败" >&2; FAIL=1
     fi
   fi
 else
@@ -117,7 +106,57 @@ if [ "$COUNT" -gt 0 ]; then
         echo "[backup] 通道2(WebDAV): 拷贝失败" >&2; FAIL=1
       fi
     fi
-    # 滚动清理
+    # ── 通道 3：GitHub 备份仓（contents API 上传加密包到 vps/ 目录）──
+    # 新增文件、时间戳命名：绝不覆盖备份仓既有内容，无需 workflow scope
+    if [ -n "${GITHUB_BACKUP_REPO:-}" ] && [ -n "${GITHUB_BACKUP_PAT:-}" ]; then
+      REPO_SLUG=$(printf '%s' "$GITHUB_BACKUP_REPO" | sed -E 's|^https://github.com/||; s|\.git$||; s|/$||')
+      ENC_NAME="sullyos-data-$TS.tar.gz.enc"
+      ENC_PATH="$BACKUP_DIR/$ENC_NAME"
+      if [ ! -f "$ENC_PATH" ]; then
+        # 未配置加密口令时退级上传未加密包（仍建议配置 BACKUP_ENCRYPT_PASSPHRASE）
+        ENC_NAME="sullyos-data-$TS.tar.gz"
+        ENC_PATH="$BACKUP_DIR/$ENC_NAME"
+      fi
+      if [ -f "$ENC_PATH" ]; then
+        # 大文件经 node 生成 JSON 载荷写入临时文件，避免 ARG_MAX 超限；
+        # 响应体含 base64 回显，统一落盘后 grep，避免内存膨胀
+        PAYLOAD="$TMP/gh-payload.json"
+        node -e "
+const fs=require('fs');
+const b64=fs.readFileSync('$ENC_PATH').toString('base64');
+fs.writeFileSync('$PAYLOAD', JSON.stringify({message:'backup: ${TS}', content:b64}));
+" && \
+        curl -s -m 300 -X PUT \
+          -H "Authorization: Bearer ${GITHUB_BACKUP_PAT}" \
+          -H 'User-Agent: sullyos-backup' -H 'Content-Type: application/json' \
+          "https://api.github.com/repos/${REPO_SLUG}/contents/vps/${ENC_NAME}" \
+          --data-binary "@$PAYLOAD" -o "$TMP/gh-resp.json"
+        if grep -q '"sha"' "$TMP/gh-resp.json" 2>/dev/null; then
+          echo "[backup] 通道3(GitHub备份仓): 已上传 vps/${ENC_NAME}"
+          # 滚动清理：仅删除 vps/ 目录下我们自己上传的过期文件
+          LIST=$(curl -s -m 30 -H "Authorization: Bearer ${GITHUB_BACKUP_PAT}" -H 'User-Agent: sullyos-backup' \
+            "https://api.github.com/repos/${REPO_SLUG}/contents/vps")
+          printf '%s' "$LIST" | node -e "
+let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{
+  let items=[];
+  try{items=JSON.parse(d)}catch(e){}
+  items=items.filter(i=>i&&i.name&&i.name.startsWith('sullyos-data-')).sort((a,b)=>a.name<b.name?1:-1);
+  items.slice(${KEEP}).forEach(i=>console.log(i.sha+' '+i.name));
+});
+" | while read -r SHA NAME; do
+            curl -s -m 30 -X DELETE \
+              -H "Authorization: Bearer ${GITHUB_BACKUP_PAT}" -H 'User-Agent: sullyos-backup' \
+              "https://api.github.com/repos/${REPO_SLUG}/contents/vps/${NAME}" \
+              -d "{\"message\":\"backup: rotate ${NAME}\",\"sha\":\"${SHA}\"}" >/dev/null 2>&1 \
+              && echo "[backup] 通道3(GitHub备份仓): 滚动清理 ${NAME}"
+          done
+        else
+          echo "[backup] 通道3(GitHub备份仓): 上传失败（$(head -c 200 "$TMP/gh-resp.json" 2>/dev/null)）" >&2; FAIL=1
+        fi
+      fi
+    fi
+
+    # 滚动清理（本地 WebDAV）
     ls -1t "$BACKUP_DIR"/sullyos-data-*.tar.gz* 2>/dev/null | tail -n "+$((KEEP + 1))" | xargs -r rm -f
   else
     echo "[backup] 通道2(WebDAV): 打包失败" >&2; FAIL=1
