@@ -84,6 +84,12 @@ async function main() {
     const dbPath = path.resolve(process.env[svc.db.pathEnv] || svc.db.defaultPath);
     try {
       dbAdapter = createD1Adapter(dbPath);
+      // schema 初始化：worker 依赖的建表语句（等价 CF 的 wrangler d1 migrations）
+      if (svc.db.schemaPath && existsSync(svc.db.schemaPath)) {
+        const { readFileSync } = await import('node:fs');
+        await dbAdapter.exec(readFileSync(svc.db.schemaPath, 'utf8'));
+        log.info(`schema 已应用: ${svc.db.schemaPath}`);
+      }
       cfEnv[svc.db.bindKey] = dbAdapter;
       dbBound = true;
       log.info(`D1 已绑定（better-sqlite3）: ${dbPath}`);

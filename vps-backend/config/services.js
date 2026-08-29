@@ -69,6 +69,7 @@ export const services = [
       bindKey: 'DB',
       pathEnv: 'AMSG_DB_PATH',
       defaultPath: path.join(dataDir, 'instant-push.sqlite'),
+      schemaPath: path.join(repoRoot, 'worker/instant-push/schema.sql'),
       enableIf: (p) => p.AMSG_ENABLE_D1_BLOBSTORE === 'true',
     },
     crons: [
@@ -100,6 +101,7 @@ export const services = [
       bindKey: 'DB',
       pathEnv: 'PROACTIVE_DB_PATH',
       defaultPath: path.join(dataDir, 'proactive-push.sqlite'),
+      schemaPath: path.join(repoRoot, 'worker/proactive-push/schema.sql'),
       enableIf: () => true,
     },
     crons: [{ expr: '*/5 * * * *', name: 'proactive-sweep' }],

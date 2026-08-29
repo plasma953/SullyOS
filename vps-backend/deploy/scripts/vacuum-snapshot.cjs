@@ -17,9 +17,14 @@ if (!src || !dst) {
   process.exit(2);
 }
 const db = new Database(src, { readonly: true, fileMustExist: true });
-try {
-  db.backup(dst);
-  console.log(`snapshot ok: ${src} -> ${dst}`);
-} finally {
-  db.close();
-}
+(async () => {
+  try {
+    await db.backup(dst); // better-sqlite3 的 backup() 是异步 API
+    console.log(`snapshot ok: ${src} -> ${dst}`);
+  } catch (err) {
+    console.error(`snapshot failed: ${src} — ${err.message}`);
+    process.exitCode = 1;
+  } finally {
+    db.close();
+  }
+})();
