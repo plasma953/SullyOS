@@ -11,7 +11,7 @@ import {
   INSTANT_CHAT_BLOCKER_HINTS, resolveInstantChatBlocker,
   type InstantChatGateInput,
 } from '../../utils/amsgDiagnostics';
-import { ActiveMsgStore, maskActiveMsgUserId } from '../../utils/activeMsgStore';
+import { ActiveMsgStore, maskActiveMsgUserId, VPS_DEFAULT_WORKER_URL, VPS_DEFAULT_SERVER_TOKEN } from '../../utils/activeMsgStore';
 import { cancelAllRemoteAmsgTasks, isWorkerUrlCleared, wipeAmsgCloudData } from '../../utils/amsgStateSync';
 import {
   isInstantConfigReady,
@@ -23,8 +23,9 @@ import { trackEvent } from '../../utils/analytics';
 // 主动消息的后端自 VPS 迁移完成后即由 VPS 宿主统一承载：前端默认指向
 // 官方 VPS 端点，普通用户填一个用户 ID 就能用，不再有「自部署 Worker」这一步。
 // 想自建的用户仍可把地址换成自己的实例（协议与原 amsg worker 完全一致）。
-const DEFAULT_VPS_WORKER_URL = 'https://43451695.xyz/amsg';
-const DEFAULT_VPS_SERVER_TOKEN = '2857e95a07e0b728b3dce8d8ce84f5e090f05d5699a73fd617d2b9f608dd72c6';
+// 默认地址/密钥统一从 activeMsgStore 取（运行时兜底与界面展示用同一份值）。
+const DEFAULT_VPS_WORKER_URL = VPS_DEFAULT_WORKER_URL;
+const DEFAULT_VPS_SERVER_TOKEN = VPS_DEFAULT_SERVER_TOKEN;
 // 版本门槛：旧版 amsg 后端会静默缺席新特性（自述回写不落盘、任务重复推、时区错位等），
 // 不比版本的话问题全在后端侧静默发生。官方 VPS 由宿主统一升级，普通用户无感；
 // 自建实例停在旧版时，体检区会亮出升级提示。
@@ -511,7 +512,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             <div className="flex gap-2">
               <input
                 type="password"
-                value={config.serverToken || ''}
+                value={config.serverToken || DEFAULT_VPS_SERVER_TOKEN}
                 onChange={(event) => patchConfig({ serverToken: event.target.value })}
                 placeholder={DEFAULT_VPS_SERVER_TOKEN}
                 className="flex-1 bg-white/70 border border-slate-200 rounded-2xl px-4 py-3 text-sm"
