@@ -96,7 +96,7 @@ if [ -d "$DATA_DIR" ]; then
 fi
 if [ "$COUNT" -gt 0 ]; then
   TARBALL="$TMP/sullyos-data-$TS.tar.gz"
-  if tar -czf "$TARBALL" -C "$TMP" ./*.sqlite 2>/dev/null; then
+  if (cd "$TMP" && tar -czf "$TARBALL" ./*.sqlite 2>/dev/null); then
     if [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ]; then
       if openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt \
         -pass "env:BACKUP_ENCRYPT_PASSPHRASE" \
