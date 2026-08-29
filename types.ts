@@ -349,14 +349,14 @@ export interface ActiveMsg2ApiConfig {
 
 export interface ActiveMsg2GlobalConfig {
   userId: string;
-  /** 单用户 Cloudflare Worker 地址，例如 https://amsg.your-worker.dev */
+  /** 主动消息 2.0 后端地址（VPS 宿主或自建实例），例如 https://43451695.xyz/amsg */
   workerUrl: string;
-  /** 与 worker 约定的共享密钥；配了就每次请求带 X-Client-Token，缺/错 worker 返回 401 */
+  /** 与后端约定的共享密钥；配了就每次请求带 X-Client-Token，缺/错后端返回 401 */
   serverToken?: string;
   /**
-   * 一键部署时生成的 AMSG_MASTER_KEY（worker 侧用它加密任务内容）。
-   * 存在这里只为「重装时沿用同一把」——它一换，之前加密进 D1 的任务就全解不开了，
-   * 而 worker 里的值读不回来。手动部署的用户这里是空的，属正常。
+   * 后端侧加密任务内容用的主密钥（AMSG_MASTER_KEY）。
+   * 存在这里只为「重装时沿用同一把」——它一换，之前加密进数据库的任务就全解不开了，
+   * 而后端里的值读不回来。连官方 VPS 后端的用户这里是空的，属正常。
    */
   masterKey?: string;
   /** 上次「连接」（在 worker 端建表）成功的时间 */

@@ -120,7 +120,7 @@ const CHANGELOG_ENTRIES: ChangelogEntry[] = [
     {
         id: CHANGELOG_2026_08_03,
         title: '2026 年 8 月 3 日 · 主动消息 2.0',
-        subtitle: '角色到点自己发消息，App 关着也收得到 · 三种排任务的方式（面板 / 聊天里说一句 / 角色给自己排）· 到点现取时间天气节日热搜与当天作息 · 连发不重样、只做事时不推空消息 · 后台照样能用 MCP 与搜索 · 想找话说的那类会让路，闹钟和承诺照发 · 需自部署 Cloudflare Worker + D1',
+        subtitle: '角色到点自己发消息，App 关着也收得到 · 三种排任务的方式（面板 / 聊天里说一句 / 角色给自己排）· 到点现取时间天气节日热搜与当天作息 · 连发不重样、只做事时不推空消息 · 后台照样能用 MCP 与搜索 · 想找话说的那类会让路，闹钟和承诺照发 · 后端由官方 VPS 统一承载',
         date: '2026-08-03',
         src: 'changelogs/2026-8-3.html',
         accent: 'from-violet-100 to-sky-100 border-violet-200',
@@ -168,7 +168,7 @@ const CHANGELOG_ENTRIES: ChangelogEntry[] = [
     {
         id: CHANGELOG_2026_05_27,
         title: '2026 年 5 月 27 日 · 小更新',
-        subtitle: '情绪 buff 也接入 Instant Push · 发完即走，聊天和情绪都不用一直开着 App（附配置视频）',
+        subtitle: '情绪 buff 也接入云端主动消息 · 发完即走，聊天和情绪都不用一直开着 App（附配置视频）',
         date: '2026-05-27',
         src: 'changelogs/2026-5-27.html',
         accent: 'from-rose-100 to-amber-100 border-rose-200',

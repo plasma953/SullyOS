@@ -23,7 +23,7 @@ const read = (relative: string) =>
 const chatAiSrc = read('../hooks/useChatAI.ts');
 const chatSrc = read('../apps/Chat.tsx');
 const settingsSrc = read('../components/settings/ActiveMsgGlobalSettingsModal.tsx');
-const instantPushSettingsSrc = read('../components/settings/InstantPushSettingsModal.tsx');
+// 旧版 Instant Push 配置面板已整体退役（含它在 wiring 里那半条互斥门断言）。
 
 /** 即时对话分支的判定行（分支起点、也是排序基准）。 */
 const INSTANT_CHAT_BRANCH_HEAD = 'if (instantChatRoute)';
@@ -331,18 +331,9 @@ describe('设置页那一道门', () => {
 });
 
 describe('设置页双向互斥门', () => {
-  // 互斥是两个文件各持一半的跨文件约定：amsg2 面板挡「IP 开着时开即时对话」，
-  // Instant Push 面板挡反过来那半。哪边被重构丢了，另一边都感觉不到——两个开关
-  // 会一起亮着，聊天悄悄只走其中一条，用户完全看不出来。这里两条都要钉住。
+  // amsg2 面板挡「IP 开着时开即时对话」。反向那一半（Instant Push 面板挡 IP 新开）
+  // 随 IP 配置面板整体退役，只钉剩下这条。
   it('正向门：amsg2 面板读 isInstantConfigReady 判断 IP 是否开着', () => {
     expect(settingsSrc).toContain('isInstantConfigReady');
-  });
-
-  it('反向门：Instant Push 面板读 isInstantChatReady，且 handleSave 里有存档兜底', () => {
-    expect(instantPushSettingsSrc).toContain('isInstantChatReady');
-    // raceBlocked：存档前用最新读回的即时对话状态再夹一次 enabled，堵掉「modal 刚打开、
-    // isInstantChatReady() 还没读回来」那一小段时间窗口里手快把 IP 勾上就保存的抢跑。
-    const handleSave = sliceSrc(instantPushSettingsSrc, 'Instant Push 面板的 handleSave', 'const handleSave', '\n  };');
-    expect(handleSave).toContain('raceBlocked');
   });
 });

@@ -77,16 +77,9 @@ describe('LLM 凭据行的重传接线', () => {
   });
 });
 
-// 「更新 Worker」之后必须跑一次 init-tenant：新版后端带了新表（这一波是 llm_credentials），
-// 而建表只在那个端点里做。少了它，代码是新的、表还是旧的，cron 每分钟静默失败。
-describe('更新 Worker 之后的自动验证', () => {
-  it('自更新成功后接着 connect()（POST /init-tenant，新表在这一步建出来）', () => {
-    const src = read('../components/settings/ActiveMsgGlobalSettingsModal.tsx');
-    const fn = sliceBetween(src, 'const handleSelfUpdateWorker', 'const handleAttachUpdateKey');
-    expect(fn).toContain('await ActiveMsgClient.connect()');
-    expect(fn, '验证没过要单独说，别把「代码换上了」和「表补齐了」混成一句').toContain('重新连接并验证');
-  });
-});
+// 「更新 Worker」之后的自动验证已随自更新流程退役：后端改由官方 VPS 统一承载升级，
+// 「自更新成功后接着 connect() 建新表」那条路不再存在。自建实例的升级提示由
+// ActiveMsgGlobalSettingsModal 的版本门槛（probeServerVersion）负责。
 
 describe('删角色阻塞接线（云端任务清不掉先不删本地）', () => {
   it('deleteCharacter：await 云端清理、失败返回 cloud-cleanup-failed', () => {
