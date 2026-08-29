@@ -644,6 +644,107 @@ const normalizeMcpValueBySchema = (value: any, rawSchema: any, rootSchema: any, 
 export const normalizeMcpToolArguments = (args: any, inputSchema: any): any =>
     normalizeMcpValueBySchema(args, inputSchema, inputSchema, 0);
 
+// ========== 参数校验（懒加载智能混合用） ==========
+//
+// 懒加载 stub 给模型的是宽松参数（{type:'object', additionalProperties:true}），
+// 模型第一次给出的参数可能缺必填项/类型不对。执行前按完整 schema 做一次轻量校验，
+// 不通过就带完整 schema 二次请求重填——避免把明显残缺的参数直接打到真实 MCP 服务器。
+// 刻意不引 ajv：校验只做 required / 类型大项 / 枚举三件事，够了。
+
+export interface McpArgsValidationResult {
+    ok: boolean;
+    /** 逐条给模型看的错误说明 */
+    errors: string[];
+}
+
+const describeValueType = (v: any): string => {
+    if (v === null) return 'null';
+    if (Array.isArray(v)) return '数组';
+    const t = typeof v;
+    if (t === 'object') return '对象';
+    if (t === 'string') {
+        const s = v.length > 40 ? `${v.slice(0, 40)}…` : v;
+        return `字符串 "${s}"`;
+    }
+    return String(v);
+};
+
+const typeMatches = (value: any, type: string): boolean => {
+    switch (type) {
+        case 'string':
+            return typeof value === 'string';
+        case 'number':
+            return (typeof value === 'number' && Number.isFinite(value))
+                // 中转把参数编码成字符串太常见，"3.14" 这类数字字符串宽松放行
+                || (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)));
+        case 'integer':
+            return (typeof value === 'number' && Number.isInteger(value))
+                || (typeof value === 'string' && /^-?\d+$/.test(value.trim()));
+        case 'boolean':
+            return typeof value === 'boolean' || value === 'true' || value === 'false';
+        case 'array': {
+            if (Array.isArray(value)) return true;
+            if (typeof value === 'string') {
+                try { return Array.isArray(JSON.parse(value)); } catch { return false; }
+            }
+            return false;
+        }
+        case 'object': {
+            if (value !== null && typeof value === 'object' && !Array.isArray(value)) return true;
+            if (typeof value === 'string') {
+                try {
+                    const p = JSON.parse(value);
+                    return p !== null && typeof p === 'object' && !Array.isArray(p);
+                } catch { return false; }
+            }
+            return false;
+        }
+        case 'null':
+            return value === null;
+        default:
+            return true; // 未知/联合类型不拦，交给真实服务器反馈
+    }
+};
+
+/**
+ * 按完整 inputSchema 轻量校验参数。无 schema（{}）时直接放行。
+ * 只拦「明显会失败」的调用：缺必填、类型大项不符、枚举外取值；
+ * 未知额外字段、嵌套深层结构不检查（additionalProperties 语义交由服务器判断）。
+ */
+export const validateMcpToolArguments = (args: any, inputSchema: any): McpArgsValidationResult => {
+    if (!inputSchema || typeof inputSchema !== 'object') return { ok: true, errors: [] };
+    if (args == null || typeof args !== 'object' || Array.isArray(args)) {
+        return { ok: false, errors: ['参数必须是一个对象（JSON object）'] };
+    }
+    const errors: string[] = [];
+    const properties = (inputSchema.properties && typeof inputSchema.properties === 'object')
+        ? inputSchema.properties : {};
+    const required: string[] = Array.isArray(inputSchema.required) ? inputSchema.required : [];
+
+    for (const name of required) {
+        const v = args[name];
+        if (v === undefined || v === null || (typeof v === 'string' && !v.trim())) {
+            const hint = properties[name]?.description ? `（${properties[name].description}）` : '';
+            errors.push(`缺少必填参数 ${name}${hint}`);
+        }
+    }
+    for (const [name, def] of Object.entries<any>(properties)) {
+        if (!(name in args)) continue;
+        const v = args[name];
+        if (v == null) continue; // 空值交给必填检查；非必填字段显式 null 合法
+        const defType = Array.isArray(def?.type) ? def.type[0] : def?.type;
+        if (defType && defType !== 'any' && !typeMatches(v, defType)) {
+            const hint = def?.description ? `（${def.description}）` : '';
+            errors.push(`参数 ${name} 应为 ${defType}${hint}，实际是 ${describeValueType(v)}`);
+            continue;
+        }
+        if (Array.isArray(def?.enum) && def.enum.length && !def.enum.includes(v)) {
+            errors.push(`参数 ${name} 必须是 ${def.enum.map((x: any) => JSON.stringify(x)).join(' / ')} 之一`);
+        }
+    }
+    return { ok: errors.length === 0, errors };
+};
+
 /** 日志里只留主机名：够定位是哪台服务器，又不至于把完整地址打出来。 */
 const targetHost = (url: string): string => {
     try { return new URL(url).host; } catch { return ''; }

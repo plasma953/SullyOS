@@ -27,8 +27,9 @@ import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import { buildLuckinMiniAppContextBlock, buildLuckinChatSystemBlock } from './luckinToolBridge';
 import type { LuckinMiniAppSnapshot, LuckinChatState } from './luckinToolBridge';
-import { isMcpChatAvailable } from './mcpClient';
+import { isMcpChatAvailable, loadMcpSettings } from './mcpClient';
 import { buildMcpSystemBlock, MCP_TAIL_REMINDER } from './mcpToolBridge';
+import { getMcpResultMemoryBlock } from './mcpResultMemory';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot, RecentTrackChange } from '../context/MusicContext';
 import { isPromptBuildSkipped, isSystemMessageMergeEnabled } from './devDebug';
 import { mergeSystemMessages } from './systemMessageMerge';
@@ -427,6 +428,19 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         if (block) {
             systemPrompt += block;
         }
+    }
+    // ── 9e. MCP 调用结果记忆块（本地 + worker 两条链路都注入，防重复调用） ──
+    // 读 localStorage 记录（按 charId 隔离）：最近 N 轮摘要 + 手册类长期原文。
+    // worker 链路也注入：记录在前端产生（fire 回调/本地执行后落 localStorage），
+    // prompt 组装时一并带给云端，云端工具结果的上云不在本期范围。
+    if (mcpChatActive) {
+        try {
+            const mcpSettings = loadMcpSettings();
+            const memoryBlock = getMcpResultMemoryBlock(char.id, mcpSettings.resultKeepTurns);
+            if (memoryBlock) {
+                systemPrompt += memoryBlock;
+            }
+        } catch { /* 记忆读取失败不影响主链路 */ }
     }
 
     // ── 10. recency 钢印归位 + 组装 fullMessages ─────────

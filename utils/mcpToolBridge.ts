@@ -41,22 +41,58 @@ export type FakedMcpCall = FakedMcpCallCore<McpServerConfig>;
  * 暴露名（含重名前缀、非法字符替换）统一由 mcpFireCore.buildMcpNameMap 算，
  * 保证前台聊天和 amsg worker 后台 fire 看到的是同一套工具名。
  * charId：只聚合对该角色可见的服务器（通用 + 绑定了该角色的）。
+ *
+ * 懒加载（opts.lazy）：请求只注入「名字 + 摘要 + 宽松参数」的 stub——工具清单长的
+ * 时候完整 schema 会占掉大量 token；模型第一次就能给出参数，参数能否通过完整
+ * schema 校验由 useChatAI 判断，失败再带完整 schema 二次请求重填（expandTools）。
  */
-export const buildMcpOpenAITools = (charId?: string): { tools: OpenAIMcpTool[]; resolve: Map<string, ResolvedMcpTool> } => {
+export interface BuildMcpOpenAIToolsOpts {
+    /** 懒加载 stub 模式；调用方不传 = 完整 schema（原行为） */
+    lazy?: boolean;
+    /** 需要展开完整 schema 的暴露名清单（二次请求重填参数用；懒加载关闭时忽略） */
+    expandTools?: string[];
+}
+
+/** 懒加载摘要默认长度（工具 description 截取），超过提示模型可要求展开 */
+const LAZY_DESC_MAX = 80;
+/** 懒加载宽松参数 schema：模型把参数塞进 args 对象，校验层负责按真实 schema 还原 */
+const LAZY_STUB_PARAMETERS = { type: 'object', additionalProperties: true } as const;
+
+export const buildMcpOpenAITools = (
+    charId?: string,
+    opts: BuildMcpOpenAIToolsOpts = {},
+): { tools: OpenAIMcpTool[]; resolve: Map<string, ResolvedMcpTool> } => {
     const servers = getEnabledMcpServers(charId);
     const resolve: Map<string, ResolvedMcpTool> = buildMcpNameMap(servers);
     const tools: OpenAIMcpTool[] = [];
+    const multi = servers.length > 1;
+    const expand = new Set(opts.expandTools || []);
     for (const [exposed, { server, tool }] of resolve) {
+        const lazyStub = !!opts.lazy && !expand.has(exposed);
         tools.push({
             type: 'function',
             function: {
                 name: exposed,
-                description: buildToolDescription(server, tool, servers.length > 1),
-                parameters: tool.inputSchema || { type: 'object', properties: {} },
+                description: lazyStub
+                    ? buildLazyDescription(server, tool, multi)
+                    : buildToolDescription(server, tool, multi),
+                parameters: lazyStub
+                    ? LAZY_STUB_PARAMETERS
+                    : (tool.inputSchema || { type: 'object', properties: {} }),
             },
         });
     }
     return { tools, resolve };
+};
+
+/** 懒加载 stub 的描述：自定义摘要优先，缺省用工具 description 截断 + 展开提示 */
+const buildLazyDescription = (server: McpServerConfig, t: McpToolDef, multi: boolean): string => {
+    const custom = (server.toolSummaries || {})[t.name]?.trim();
+    const base = custom || (t.description || '').trim().slice(0, LAZY_DESC_MAX);
+    const suffix = base.length < ((t.description || '').trim().length) && !custom
+        ? '…' : '';
+    const source = multi ? `[${server.name}] ` : '';
+    return `${source}${base}${suffix}（参数可先用宽松对象 {args:{...}} 传；若参数不符合要求，系统会要求你按完整 schema 重填）`;
 };
 
 const buildToolDescription = (server: McpServerConfig, t: McpToolDef, multi: boolean): string => {

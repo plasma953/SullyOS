@@ -22,7 +22,8 @@ import {
 } from '../utils/elevenLabsTts';
 import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
 import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected } from '@phosphor-icons/react';
-import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, type McpServerConfig } from '../utils/mcpClient';
+import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
+import { getMcpResultList, clearMcpResults } from '../utils/mcpResultMemory';
 import { loadPushConfig, savePushConfig, registerScheduleOnWorker, startHeartbeat, stopHeartbeat, isPushConfigAvailable, ensureSubscribed, sendTestPush, getPushDiagnostics, resetSubscription, deepResetSubscription, type PushDiagnostics } from '../utils/proactivePushConfig';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { InstantPushSettingsModal } from '../components/settings/InstantPushSettingsModal';
@@ -210,6 +211,15 @@ const McpServersCard: React.FC<{
     const [testingId, setTestingId] = useState<string | null>(null);
     const [testStatus, setTestStatus] = useState<Record<string, string>>({});
     const [useNativeTools, setUseNativeToolsState] = useState<boolean>(() => getMcpUseNativeTools());
+    // MCP 调用策略：每轮工具循环次数上限 / 结果跨轮保留轮次 / 懒加载（省 token）
+    const [mcpSettings, setMcpSettingsState] = useState<McpSettings>(() => loadMcpSettings());
+    const persistMcpSettings = (patch: Partial<McpSettings>) => {
+        setMcpSettingsState(prev => {
+            const next = { ...prev, ...patch };
+            saveMcpSettings(next);
+            return next;
+        });
+    };
 
     const persist = (next: McpServerConfig[]) => {
         setServers(next);
@@ -295,6 +305,43 @@ const McpServersCard: React.FC<{
                     }} className="sr-only peer" />
                     <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
                 </label>
+            </div>
+            {/* ── MCP 调用策略（次数 / 结果保留轮次 / 懒加载） ── */}
+            <div className="bg-white/70 border border-violet-100 rounded-xl px-3 py-2.5 space-y-2.5">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-700">每轮工具调用次数上限</div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">模型连续调用工具的最大轮数（懒加载展开重填也计入）。默认 6。</p>
+                    </div>
+                    <input
+                        type="number" min={1} max={12}
+                        value={mcpSettings.maxToolLoops}
+                        onChange={e => persistMcpSettings({ maxToolLoops: Math.max(1, Math.min(12, Number(e.target.value) || 6)) })}
+                        className="w-16 shrink-0 bg-white/80 border border-violet-200 rounded-xl px-2 py-1.5 text-sm text-center font-bold text-violet-700"
+                    />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-700">调用结果保留轮次</div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">最近 N 轮的工具结果会注入下一轮，角色不再重复调用同一工具（手册类长期结果不受此限制）。0 = 不保留。</p>
+                    </div>
+                    <input
+                        type="number" min={0} max={20}
+                        value={mcpSettings.resultKeepTurns}
+                        onChange={e => persistMcpSettings({ resultKeepTurns: Math.max(0, Math.min(20, Number(e.target.value) || 0)) })}
+                        className="w-16 shrink-0 bg-white/80 border border-violet-200 rounded-xl px-2 py-1.5 text-sm text-center font-bold text-violet-700"
+                    />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-700">工具懒加载（省 Token）</div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">开启后请求只注入「工具名 + 摘要 + 宽松参数」，完整参数定义在真正调用时才展开，工具多时省大量 token。</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" checked={mcpSettings.lazyLoad} onChange={e => persistMcpSettings({ lazyLoad: e.target.checked })} className="sr-only peer" />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                    </label>
+                </div>
             </div>
             {servers.map(server => (
                 <div key={server.id} className="bg-white/70 border border-violet-100 rounded-xl p-3 space-y-2">
@@ -432,6 +479,27 @@ const McpServersCard: React.FC<{
                                     </p>
                                 )}
                             </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">结果长期保存</label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {([
+                                        { v: 'auto', label: '智能判定', hint: '按名称自动识别手册/指南/帮助/文档类工具' },
+                                        { v: 'always', label: '总是长期保存', hint: '该服务器所有工具结果都长期保存，直到手动清空' },
+                                        { v: 'never', label: '从不长期保存', hint: '该服务器所有结果只按保留轮次滚动' },
+                                    ] as const).map(opt => (
+                                        <button
+                                            key={opt.v}
+                                            type="button"
+                                            title={opt.hint}
+                                            onClick={() => update(server.id, { persistMode: opt.v })}
+                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${(server.persistMode || 'auto') === opt.v ? 'bg-violet-500 text-white' : 'bg-white/80 border border-violet-200 text-slate-500'}`}
+                                        >{opt.label}</button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                                    操作手册类结果可跨轮长期保留（在聊天页「MCP 记忆」里查看/清空）；智能判定按工具与服务器名称关键词（手册、指南、帮助、文档、guide、manual 等）。
+                                </p>
+                            </div>
                             <div className="flex gap-2">
                                 <button onClick={() => discover(server)} disabled={testingId === server.id} className="flex-1 py-2 bg-violet-100 text-violet-700 text-xs font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-60">
                                     {testingId === server.id ? '测试中…' : '测试连接'}
@@ -447,6 +515,31 @@ const McpServersCard: React.FC<{
                                 <p className="text-[10px] text-slate-400 leading-relaxed">
                                     工具：{server.tools.map(t => t.name).join('、')}
                                 </p>
+                            )}
+                            {!!server.tools?.length && (
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">工具摘要（懒加载注入用，可留空）</label>
+                                    <div className="space-y-1.5">
+                                        {server.tools.map(t => {
+                                            const summary = (server.toolSummaries || {})[t.name] || '';
+                                            return (
+                                                <div key={t.name} className="flex items-center gap-1.5">
+                                                    <span className="w-28 shrink-0 truncate text-[10px] font-mono text-slate-500" title={t.name}>{t.name}</span>
+                                                    <input
+                                                        type="text"
+                                                        value={summary}
+                                                        onChange={e => update(server.id, { toolSummaries: { ...(server.toolSummaries || {}), [t.name]: e.target.value } })}
+                                                        className="min-w-0 flex-1 bg-white/80 border border-violet-200 rounded-lg px-2 py-1.5 text-xs"
+                                                        placeholder="默认取工具描述前 80 字"
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                                        开启懒加载后，模型每次请求只能看到这里的摘要（省 token）；写清楚什么时候该用、参数怎么填，能让首次调用更准。
+                                    </p>
+                                </div>
                             )}
                         </div>
                     )}

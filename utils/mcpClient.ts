@@ -64,11 +64,56 @@ export interface McpServerConfig {
      * 老配置没有该字段，天然落在通用语义上。
      */
     charIds?: string[];
+    /**
+     * 调用结果「长期保存」策略（操作手册类判定）：
+     * 'auto' = 按工具名/服务器名关键词自动判定（默认）；'always' = 本服务器结果全部长期保存；
+     * 'never' = 本服务器结果只走「最近 N 轮」窗口。老配置缺省 = auto。
+     */
+    persistMode?: 'auto' | 'always' | 'never';
+    /** 每工具自定义摘要（懒加载 stub 的 description 用；缺省 = 工具 description 前 80 字） */
+    toolSummaries?: Record<string, string>;
     updatedAt: number;
 }
 
+/** MCP 调用策略全局设置（localStorage，所有服务器共用） */
+export interface McpSettings {
+    /** 每轮最多工具调用次数（原生 function-calling 循环），1–12，默认 6 */
+    maxToolLoops: number;
+    /** 调用结果跨轮保留轮次，0–20，默认 3；0 = 只留手册类 */
+    resultKeepTurns: number;
+    /** 懒加载：请求只注入「名字+摘要+宽松参数」，真正调用时再展开完整 schema，省 token */
+    lazyLoad: boolean;
+}
+
+const DEFAULT_MCP_SETTINGS: McpSettings = { maxToolLoops: 6, resultKeepTurns: 3, lazyLoad: true };
+
+const clampInt = (value: unknown, min: number, max: number, fallback: number): number => {
+    const n = typeof value === 'number' ? value : parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+};
+
+export const loadMcpSettings = (): McpSettings => {
+    try {
+        const raw = localStorage.getItem(MCP_SETTINGS_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return {
+            maxToolLoops: clampInt(parsed?.maxToolLoops, 1, 12, DEFAULT_MCP_SETTINGS.maxToolLoops),
+            resultKeepTurns: clampInt(parsed?.resultKeepTurns, 0, 20, DEFAULT_MCP_SETTINGS.resultKeepTurns),
+            lazyLoad: typeof parsed?.lazyLoad === 'boolean' ? parsed.lazyLoad : DEFAULT_MCP_SETTINGS.lazyLoad,
+        };
+    } catch { return { ...DEFAULT_MCP_SETTINGS }; }
+};
+
+export const saveMcpSettings = (settings: Partial<McpSettings>): McpSettings => {
+    const merged = { ...loadMcpSettings(), ...settings };
+    try { localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(merged)); } catch { /* ignore */ }
+    return merged;
+};
+
 const MCP_SERVERS_KEY = 'aetheros.mcp.servers';
 const MCP_USE_NATIVE_TOOLS_KEY = 'aetheros.mcp.useNativeTools';
+const MCP_SETTINGS_KEY = 'aetheros.mcp.settings';
 
 // ========== 服务器配置 (持久化在 localStorage) ==========
 
@@ -160,8 +205,10 @@ export function exportMcpLocal(): Record<string, string> | undefined {
         const out: Record<string, string> = {};
         const servers = localStorage.getItem(MCP_SERVERS_KEY);
         const useNativeTools = localStorage.getItem(MCP_USE_NATIVE_TOOLS_KEY);
+        const settings = localStorage.getItem(MCP_SETTINGS_KEY);
         if (servers) out[MCP_SERVERS_KEY] = servers;
         if (useNativeTools) out[MCP_USE_NATIVE_TOOLS_KEY] = useNativeTools;
+        if (settings) out[MCP_SETTINGS_KEY] = settings;
         return Object.keys(out).length ? out : undefined;
     } catch { return undefined; }
 }
@@ -170,6 +217,7 @@ export function importMcpLocal(data: Record<string, string> | null | undefined):
     try {
         if (typeof data[MCP_SERVERS_KEY] === 'string') localStorage.setItem(MCP_SERVERS_KEY, data[MCP_SERVERS_KEY]);
         if (typeof data[MCP_USE_NATIVE_TOOLS_KEY] === 'string') localStorage.setItem(MCP_USE_NATIVE_TOOLS_KEY, data[MCP_USE_NATIVE_TOOLS_KEY]);
+        if (typeof data[MCP_SETTINGS_KEY] === 'string') localStorage.setItem(MCP_SETTINGS_KEY, data[MCP_SETTINGS_KEY]);
     } catch { /* ignore */ }
 }
 

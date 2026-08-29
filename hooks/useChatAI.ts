@@ -23,7 +23,9 @@ import { MCD_PROPOSE_TOOL, autoFixProposalCodesByName } from '../utils/mcdToolBr
 // 瑞幸: 与麦当劳同构, 只读 LuckinMiniApp 快照注入 + propose_cart_items UI 钩子工具
 import { LUCKIN_PROPOSE_TOOL, autoFixProposalCodesByName as autoFixLuckinProposalCodesByName, fetchOpenAIToolsForLuckin, inferCardKind as inferLuckinCardKind } from '../utils/luckinToolBridge';
 import { callLuckinTool } from '../utils/luckinMcpClient';
-import { callMcpTool, getMcpUseNativeTools, hasWorkerUnreachableMcpServer } from '../utils/mcpClient';
+import { callMcpTool, getMcpUseNativeTools, hasWorkerUnreachableMcpServer, loadMcpSettings } from '../utils/mcpClient';
+import { normalizeMcpToolArguments, validateMcpToolArguments } from '../utils/mcpFireCore';
+import { bumpMcpTurn, recordMcpResult } from '../utils/mcpResultMemory';
 import { buildMcpOpenAITools, buildMcpRejectedToolsFallbackBody, buildMcpTextFallbackBody, extractTextFakedMcpCalls, formatMcpToolResult, sanitizeMcpLeadInText, shouldRetryMcpWithoutTools, stripTextFakedMcpCalls, type FakedMcpCall } from '../utils/mcpToolBridge';
 import { buildToolResultMessage, normalizeToolCallsForCompat } from '../utils/toolCallCompat';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
@@ -745,6 +747,9 @@ export const useChatAI = ({
 
         // Keep the Service Worker alive while we make potentially long AI calls
         await KeepAlive.start();
+        // MCP 结果记忆：本轮轮次 +1。一次完整回复（含全部工具循环）= 1 轮，
+        // 结果按这个号留档（最近 N 轮窗口 + 手册类长期保存，见 mcpResultMemory）。
+        const mcpTurnId = bumpMcpTurn(char.id);
 
         // 本轮的 amsg2 工具会话：角色一轮里可能连着排/取消多个任务，任务清单要在这一轮内
         // 累加，所以由 session 兜住最新 config，别从 char 快照上读写（char 是生成开始的
@@ -1189,19 +1194,25 @@ export const useChatAI = ({
                     baseReqBody.tool_choice = 'auto';
                 }
             }
+            // MCP 调用策略设置（生成开始时读一次本轮不变）：次数上限 / 结果保留轮次 / 懒加载。
+            const mcpSettings = loadMcpSettings();
             // 通用 MCP: 用户自配服务器的已发现工具, 追加而不覆盖(可与瑞幸/麦当劳共存)。
             // 工具清单读的是设置里持久化的发现结果, 不发网络请求。
+            // 懒加载设置在生成开始时读一次（mcpSettings），展开重填用的 resolve 原样复用。
             let mcpToolResolve: ReturnType<typeof buildMcpOpenAITools>['resolve'] | null = null;
             if (payload.flags.mcpChatActive) {
-                const { tools: mcpTools, resolve } = buildMcpOpenAITools(char.id);
+                const { tools: mcpTools, resolve } = buildMcpOpenAITools(char.id, {
+                    lazy: mcpSettings.lazyLoad,
+                });
                 if (mcpTools.length) {
                     mcpToolResolve = resolve;
                     const mcpOnly = !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive;
                     if (!getMcpUseNativeTools() && mcpOnly) {
                         // 用户已明确判断当前模型/中转不支持 tools：首轮直接走正文兼容模式。
+                        // 兼容模式不带 tools 参数，懒加载 stub 无意义，签名清单用完整 schema。
                         const compatibilityBody = buildMcpRejectedToolsFallbackBody({
                             ...baseReqBody,
-                            tools: mcpTools,
+                            tools: buildMcpOpenAITools(char.id).tools,
                             tool_choice: 'auto',
                         });
                         baseReqBody.messages = compatibilityBody.messages;
@@ -1762,7 +1773,9 @@ export const useChatAI = ({
             //     · 通用 MCP: 工具名命中 mcpToolResolve 映射就分发给对应服务器 (utils/mcpClient),
             //       结果只回填循环不落卡片。两类工具可同时在场, 按名字各走各的。
             if ((payload.flags.luckinChatActive || mcpToolResolve || amsg2ToolsInjected) && data.choices?.[0]?.message?.tool_calls?.length) {
-                const MAX_LOOPS = 6;
+                const MAX_LOOPS = mcpSettings.maxToolLoops;
+                // 懒加载展开重填（二次请求）的预算：与主循环共享 maxToolLoops 上限，防死循环
+                let mcpRefillsUsed = 0;
                 let loopMessages = [...baseReqBody.messages];
                 const loc = luckinChatRef?.current;
                 for (let it = 0; it < MAX_LOOPS; it++) {
@@ -1789,13 +1802,97 @@ export const useChatAI = ({
                         } catch (e) {
                             console.warn('☕ [Luckin-Chat] 工具参数解析失败:', e);
                         }
-                        // 通用 MCP 工具: 命中映射直接分发, 不走下面的瑞幸逻辑
+                        // 通用 MCP 工具: 命中映射直接分发, 不走下面的瑞幸逻辑。
+                        // 懒加载智能混合：模型在 stub（宽松参数）下第一次给出的参数可能不完整，
+                        // 执行前按完整 schema 轻量校验；不通过且还有重填预算时，带完整 schema
+                        // 二次请求让模型重填；重填仍失败则把校验错误回填给模型自我纠正。
                         const mcpHit = mcpToolResolve?.get(fname);
                         if (mcpHit) {
                             setSearchStatus(`正在调用 MCP 工具：${fname}...`);
+                            // 懒加载 stub 约定参数形如 {args:{...}}；兼容直接给完整参数两种写法
+                            let execArgs: any = args;
+                            if (execArgs && typeof execArgs === 'object' && !Array.isArray(execArgs)
+                                && Object.keys(execArgs).length === 1 && 'args' in execArgs
+                                && execArgs.args && typeof execArgs.args === 'object') {
+                                execArgs = execArgs.args;
+                            }
+                            execArgs = normalizeMcpToolArguments(execArgs, mcpHit.tool.inputSchema);
+                            let validation = validateMcpToolArguments(execArgs, mcpHit.tool.inputSchema);
+                            if (!validation.ok && mcpRefillsUsed < MAX_LOOPS) {
+                                // —— 展开重填：该工具带完整 schema，其余仍 stub，一轮最多占用共享预算 ——
+                                mcpRefillsUsed += 1;
+                                console.warn(`🔌 [MCP] 懒加载参数校验未通过, 展开重填 (${mcpRefillsUsed}/${MAX_LOOPS}):`, validation.errors);
+                                try {
+                                    const expanded = buildMcpOpenAITools(char.id, {
+                                        lazy: mcpSettings.lazyLoad,
+                                        expandTools: [fname],
+                                    });
+                                    const schemaText = JSON.stringify(mcpHit.tool.inputSchema || { type: 'object', properties: {} });
+                                    const refillBody = {
+                                        ...baseReqBody,
+                                        tools: expanded.tools,
+                                        messages: [
+                                            ...loopMessages,
+                                            {
+                                                role: 'user',
+                                                content: `[系统消息: 你刚才调用 ${fname} 的参数未通过校验: ${validation.errors.join('; ')}。下面是该工具的完整参数定义(JSON Schema): ${schemaText} 。请立即重新调用 ${fname}，按完整定义把参数补齐，不要输出任何文字]`,
+                                            },
+                                        ],
+                                    };
+                                    const refillData = await safeFetchJson(`${baseUrl}/chat/completions`, {
+                                        method: 'POST', headers,
+                                        body: JSON.stringify(refillBody),
+                                    });
+                                    updateTokenUsage(refillData, historyMsgCount, `mcp-refill-${it + 1}`);
+                                    const refillCalls = normalizeToolCallsForCompat(
+                                        refillData?.choices?.[0]?.message?.tool_calls, `mcp_refill_${it}`,
+                                    ) || [];
+                                    const refillCall = refillCalls.find((r: any) => r.function?.name === fname) || refillCalls[0];
+                                    if (refillCall) {
+                                        try {
+                                            const raw2 = refillCall.function?.arguments ?? refillCall.arguments;
+                                            let refillArgs: any = typeof raw2 === 'string' ? (raw2 ? JSON.parse(raw2) : {}) : (raw2 || {});
+                                            if (refillArgs && typeof refillArgs === 'object' && !Array.isArray(refillArgs)
+                                                && Object.keys(refillArgs).length === 1 && 'args' in refillArgs
+                                                && refillArgs.args && typeof refillArgs.args === 'object') {
+                                                refillArgs = refillArgs.args;
+                                            }
+                                            refillArgs = normalizeMcpToolArguments(refillArgs, mcpHit.tool.inputSchema);
+                                            const revalidation = validateMcpToolArguments(refillArgs, mcpHit.tool.inputSchema);
+                                            if (revalidation.ok) {
+                                                execArgs = refillArgs;
+                                                validation = revalidation;
+                                                // 历史消息里显示最终参数（toolCalls 已被引用进 loopMessages，原地改即可）
+                                                try { tc.function.arguments = JSON.stringify(execArgs); } catch { /* ignore */ }
+                                            } else {
+                                                validation = revalidation;
+                                            }
+                                        } catch { /* 解析失败按原校验错误处理 */ }
+                                    }
+                                } catch (e: any) {
+                                    console.warn('🔌 [MCP] 展开重填请求失败:', e?.message || e);
+                                }
+                            }
                             let mcpResult: any;
-                            try { mcpResult = await callMcpTool(mcpHit.server, mcpHit.toolName, args); }
-                            catch (e: any) { mcpResult = { success: false, error: e?.message || String(e) }; }
+                            if (!validation.ok) {
+                                // 重填预算用尽/仍失败：不执行，把错误回填让模型纠正或文字解释
+                                mcpResult = { success: false, error: `参数校验未通过: ${validation.errors.join('; ')}` };
+                            } else {
+                                try { mcpResult = await callMcpTool(mcpHit.server, mcpHit.toolName, execArgs); }
+                                catch (e: any) { mcpResult = { success: false, error: e?.message || String(e) }; }
+                            }
+                            // 跨轮结果记忆（最近 N 轮窗口 + 手册类长期保存，见 mcpResultMemory）
+                            try {
+                                recordMcpResult({
+                                    charId: char.id,
+                                    server: { id: mcpHit.server.id, name: mcpHit.server.name, persistMode: mcpHit.server.persistMode },
+                                    toolName: mcpHit.toolName,
+                                    args: execArgs,
+                                    result: mcpResult,
+                                    turnId: mcpTurnId,
+                                    keepTurns: mcpSettings.resultKeepTurns,
+                                });
+                            } catch { /* 记忆失败不影响主链路 */ }
                             const mcpMsg = mcpResult.success
                                 ? `工具 ${fname} 成功。结果: ${formatMcpToolResult(mcpResult.data)}`
                                 : `工具 ${fname} 失败: ${mcpResult.error}`;
@@ -1892,6 +1989,18 @@ export const useChatAI = ({
                         let r: any;
                         try { r = await callMcpTool(call.server, call.toolName, call.args); }
                         catch (e: any) { r = { success: false, error: e?.message || String(e) }; }
+                        // 跨轮结果记忆（与 3.6 真实工具循环同一份档案，正文假调用同样防重复）
+                        try {
+                            recordMcpResult({
+                                charId: char.id,
+                                server: { id: call.server.id, name: call.server.name, persistMode: (call.server as any).persistMode },
+                                toolName: call.toolName,
+                                args: call.args,
+                                result: r,
+                                turnId: mcpTurnId,
+                                keepTurns: mcpSettings.resultKeepTurns,
+                            });
+                        } catch { /* 记忆失败不影响主链路 */ }
                         results.push(r.success
                             ? `工具 ${call.exposedName} 执行成功, 结果: ${formatMcpToolResult(r.data)}`
                             : `工具 ${call.exposedName} 执行失败: ${r.error}`);

@@ -42,6 +42,7 @@ import ChatInputArea from '../components/chat/ChatInputArea';
 import InstantChatRouteNotice from '../components/chat/InstantChatRouteNotice';
 import MemoryRepairPortal from '../components/chat/MemoryRepairPortal';
 import FavoritesPortal from '../components/chat/VoiceFavoritesPortal';
+import McpMemoryModal from '../components/chat/McpMemoryModal';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
@@ -157,6 +158,8 @@ const Chat: React.FC = () => {
     const [showPanel, setShowPanel] = useState<'none' | 'actions' | 'emojis' | 'chars'>('none');
     const [memoryRepairOpen, setMemoryRepairOpen] = useState(false);
     const [favoritesOpen, setFavoritesOpen] = useState(false);
+    // MCP 调用结果记忆弹窗（查看 + 清空手册类长期结果/全部）
+    const [mcpMemoryOpen, setMcpMemoryOpen] = useState(false);
     
     // Emoji State
     const [emojis, setEmojis] = useState<Emoji[]>([]);
@@ -1692,6 +1695,7 @@ const Chat: React.FC = () => {
         }
         switch (type) {
             case 'memory-link': setShowPanel('none'); setMemoryRepairOpen(true); break;
+            case 'mcp-memory': setShowPanel('none'); setMcpMemoryOpen(true); break;
             case 'favorites': setShowPanel('none'); setFavoritesOpen(true); break;
             case 'transfer': setModalType('transfer'); break;
             case 'poke': handleSendText('[戳一戳]', 'interaction'); break;
@@ -4427,6 +4431,16 @@ const Chat: React.FC = () => {
                 <FavoritesPortal
                     onClose={() => setFavoritesOpen(false)}
                     onJumpToMessage={handleOpenFavoriteMessage}
+                />
+            )}
+            {mcpMemoryOpen && char && (
+                <McpMemoryModal
+                    charId={char.id}
+                    charName={char.name}
+                    onClose={() => {
+                        setMcpMemoryOpen(false);
+                        setShowPanel('none');
+                    }}
                 />
             )}
 
