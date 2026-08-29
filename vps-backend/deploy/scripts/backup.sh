@@ -28,6 +28,8 @@ get_env() {
 }
 GITHUB_PAT=$(get_env GITHUB_PAT)
 GITHUB_BACKUP_REPO=$(get_env GITHUB_BACKUP_REPO)
+GITHUB_BACKUP_BRANCH=$(get_env GITHUB_BACKUP_BRANCH)
+GITHUB_BACKUP_PAT=$(get_env GITHUB_BACKUP_PAT)
 DUFS_ROOT=$(get_env DUFS_ROOT)
 BACKUP_KEEP=$(get_env BACKUP_KEEP)
 BACKUP_ENCRYPT_PASSPHRASE=$(get_env BACKUP_ENCRYPT_PASSPHRASE)
@@ -49,10 +51,13 @@ if [ -d "$REPO/.git" ]; then
   else
     echo "[backup] 通道1(GitHub): 无本地变更"
   fi
-  if [ -n "${GITHUB_BACKUP_REPO:-}" ] && [ -n "${GITHUB_PAT:-}" ]; then
+  if [ -n "${GITHUB_BACKUP_REPO:-}" ] && [ -n "${GITHUB_BACKUP_PAT:-}${GITHUB_PAT:-}" ]; then
     REPO_URL="${GITHUB_BACKUP_REPO#https://}"
-    if (cd "$REPO" && git push "https://${GITHUB_PAT}@${REPO_URL}" HEAD:master >/dev/null 2>&1); then
-      echo "[backup] 通道1(GitHub): 已推送到备份仓"
+    BPAT="${GITHUB_BACKUP_PAT:-$GITHUB_PAT}"
+    # 备份仓与开发仓分开：推送到独立分支（默认 vps-backup），绝不触碰其既有分支
+    BRANCH=${GITHUB_BACKUP_BRANCH:-vps-backup}
+    if (cd "$REPO" && git push "https://${BPAT}@${REPO_URL}" "HEAD:${BRANCH}" >/dev/null 2>&1); then
+      echo "[backup] 通道1(GitHub): 已推送到备份仓分支 ${BRANCH}"
     else
       echo "[backup] 通道1(GitHub): 备份仓推送失败" >&2; FAIL=1
     fi

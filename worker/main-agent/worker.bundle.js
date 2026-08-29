@@ -60,19 +60,41 @@ function getJsonEnv(env, key, fallback) {
 }
 
 // ─────────────────────── LLM 供应商 ───────────────────────
-function providersOf(env) {
+/**
+ * 供应商解析（三级来源，优先级从高到低）：
+ *   1. 请求级 llmOverride —— 前端「API 预设」随请求直传（baseUrl/apiKey/model/fallbacks），
+ *      后端零落盘、换预设即时生效；
+ *   2. env：LLM_BASE_URL + LLM_MODEL + LLM_FALLBACKS（兜底）。
+ */
+function providersOf(env, llmOverride) {
   const out = [];
-  const primary = {
-    baseUrl: (env.LLM_BASE_URL || '').trim(),
-    apiKey: (env.LLM_API_KEY || '').trim(),
-    model: (env.LLM_MODEL || '').trim(),
-  };
-  if (primary.baseUrl && primary.model) out.push(primary);
-  const fbs = getJsonEnv(env, 'LLM_FALLBACKS', []);
-  if (Array.isArray(fbs)) {
-    for (const f of fbs) {
-      if (f && f.baseUrl && f.model) {
-        out.push({ baseUrl: String(f.baseUrl), apiKey: String(f.apiKey || ''), model: String(f.model) });
+  if (llmOverride && llmOverride.baseUrl && llmOverride.model) {
+    out.push({
+      baseUrl: String(llmOverride.baseUrl).trim(),
+      apiKey: String(llmOverride.apiKey || '').trim(),
+      model: String(llmOverride.model).trim(),
+    });
+    if (Array.isArray(llmOverride.fallbacks)) {
+      for (const f of llmOverride.fallbacks) {
+        if (f && f.baseUrl && f.model) {
+          out.push({ baseUrl: String(f.baseUrl), apiKey: String(f.apiKey || ''), model: String(f.model) });
+        }
+      }
+    }
+  }
+  if (out.length === 0) {
+    const primary = {
+      baseUrl: (env.LLM_BASE_URL || '').trim(),
+      apiKey: (env.LLM_API_KEY || '').trim(),
+      model: (env.LLM_MODEL || '').trim(),
+    };
+    if (primary.baseUrl && primary.model) out.push(primary);
+    const fbs = getJsonEnv(env, 'LLM_FALLBACKS', []);
+    if (Array.isArray(fbs)) {
+      for (const f of fbs) {
+        if (f && f.baseUrl && f.model) {
+          out.push({ baseUrl: String(f.baseUrl), apiKey: String(f.apiKey || ''), model: String(f.model) });
+        }
       }
     }
   }
@@ -289,11 +311,11 @@ function makeSse() {
 }
 
 // ─────────────────────── Agent 循环（核心）───────────────────────
-async function runAgentLoop(env, messages, emit) {
+async function runAgentLoop(env, messages, emit, llmOverride) {
   const maxLoops = Math.max(1, parseInt(env.MCP_MAX_LOOPS || '12', 10) || 12);
-  const providers = providersOf(env);
+  const providers = providersOf(env, llmOverride);
   if (providers.length === 0) {
-    throw new Error('未配置 LLM 供应商（LLM_BASE_URL + LLM_MODEL 或 LLM_FALLBACKS 均为空）');
+    throw new Error('未配置 LLM 供应商（请求体 llm 字段、LLM_BASE_URL + LLM_MODEL 或 LLM_FALLBACKS 均为空）');
   }
   const servers = mcpServersOf(env);
   const pinnedRaw = (env.MCP_PINNED_TOOLS || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -329,7 +351,7 @@ async function runAgentLoop(env, messages, emit) {
   const byName = new Map(collected.map((c) => [c.name, c]));
   // 钉住工具（参考类）：第 2 轮起仍携带；其余工具仅首轮
   const pinnedNames = new Set(pinnedRaw);
-  const stats = { loops: 0, toolCalls: 0, maxLoops, toolErrors, servers: servers.map((s) => s.name) };
+  const stats = { loops: 0, toolCalls: 0, maxLoops, toolErrors, servers: servers.map((s) => s.name), llmSource: llmOverride ? 'request' : 'env' };
   const timeoutMs = parseInt(env.LLM_TIMEOUT_MS || '120000', 10) || 120000;
   let providerIdx = 0;
 
@@ -417,6 +439,36 @@ async function webdavProxy(req, env, pathSuffix) {
   return new Response(res.body, { status: res.status, headers: out });
 }
 
+// ─────────────────────── LLM 预设直通代理 ───────────────────────
+/**
+ * /v1/llm-credentials → 透明转发 amsg 的同名端点（含加密协议、query、body 全透传）。
+ * 前端已有 amsg 加密协议的代码只需把 URL 换成 agent 即可；
+ * agent 侧不解析、不落盘任何凭据内容。
+ */
+async function llmCredentialsProxy(req, env, url) {
+  const base = (env.AMSG_URL || 'http://127.0.0.1:8832').replace(/\/+$/, '');
+  const target = `${base}/llm-credentials${url.search}`;
+  const headers = new Headers();
+  for (const [k, v] of req.headers) {
+    if (['host', 'content-length', 'transfer-encoding', 'connection'].includes(k.toLowerCase())) continue;
+    headers.set(k, v);
+  }
+  let res;
+  try {
+    res = await fetch(target, {
+      method: req.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(req.method) ? undefined : await req.arrayBuffer(),
+    });
+  } catch (err) {
+    return json({ error: `amsg 不可达: ${err.message}` }, 502);
+  }
+  const out = new Headers(res.headers);
+  out.set('access-control-allow-origin', '*');
+  out.set('access-control-expose-headers', '*');
+  return new Response(res.body, { status: res.status, headers: out });
+}
+
 // ─────────────────────── 处理器 ───────────────────────
 async function handleChat(req, env) {
   let body;
@@ -424,12 +476,14 @@ async function handleChat(req, env) {
   const messages = Array.isArray(body && body.messages) ? body.messages : null;
   if (!messages || messages.length === 0) return json({ error: 'messages required' }, 400);
   const stream = body.stream !== false;
+  // 前端「API 预设」随请求直传：{ baseUrl, apiKey, model, fallbacks? }
+  const llmOverride = body.llm && typeof body.llm === 'object' ? body.llm : null;
 
   if (!stream) {
     const out = { text: '' };
     const res = await runAgentLoop(env, [...messages], (ev) => {
       if (ev.type === 'delta') out.text += ev.content;
-    });
+    }, llmOverride);
     return json({
       id: `chatcmpl-${Date.now().toString(36)}`,
       object: 'chat.completion',
@@ -461,7 +515,7 @@ async function handleChat(req, env) {
       sse.send('message', DONE_MARKER);
       sse.close();
     }
-  }).catch((err) => {
+  }, llmOverride).catch((err) => {
     try { sse.send('error', JSON.stringify({ error: String(err.message || err) })); } catch { /* 忽略 */ }
     try { sse.close(); } catch { /* 忽略 */ }
   });
@@ -525,6 +579,7 @@ export default {
 
     if (plain === '/v1/chat/completions') return handleChat(request, env);
     if (plain === '/v1/tools') return handleToolsList(env);
+    if (plain === '/v1/llm-credentials') return llmCredentialsProxy(request, env, url);
 
     if (plain.startsWith('/webdav')) {
       const suffix = plain.replace(/^\/webdav\/?/, '');
