@@ -36,7 +36,7 @@ case "$TARGET" in
   *.tar.gz.enc)
     [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ] || { echo "需要 BACKUP_ENCRYPT_PASSPHRASE 解密" >&2; exit 1; }
     openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -salt \
-      -pass "env:BACKUP_ENCRYPT_PASSPHRASE" -in "$TARGET" -out "$PLAIN" || { echo "解密失败" >&2; exit 1; }
+      -pass "pass:${BACKUP_ENCRYPT_PASSPHRASE}" -in "$TARGET" -out "$PLAIN" || { echo "解密失败" >&2; exit 1; }
     ;;
   *.tar.gz)
     cp "$TARGET" "$PLAIN" || exit 1

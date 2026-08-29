@@ -99,7 +99,7 @@ if [ "$COUNT" -gt 0 ]; then
   if (cd "$TMP" && tar -czf "$TARBALL" ./*.sqlite 2>/dev/null); then
     if [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ]; then
       if openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt \
-        -pass "env:BACKUP_ENCRYPT_PASSPHRASE" \
+        -pass "pass:${BACKUP_ENCRYPT_PASSPHRASE}" \
         -in "$TARBALL" -out "$BACKUP_DIR/sullyos-data-$TS.tar.gz.enc" 2>/dev/null; then
         echo "[backup] 通道2(WebDAV): $TS → $COUNT 个库，已 AES-256 加密"
       else
