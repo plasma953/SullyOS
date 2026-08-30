@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
@@ -12,6 +11,9 @@ import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } fr
 import TokenImg from '../components/os/TokenImg';
 import { trackEvent } from '../utils/analytics';
 import { extractPdfText, isPdfFile } from '../utils/pdfText';
+import { isEpubFile, parseEpubFile } from '../utils/epub';
+import { deleteBlobRef } from '../utils/blobRef';
+import { EpubReaderContent, SummaryPanel, SummaryState } from './components/study/EpubReader';
 
 type KatexLike = {
     renderToString: (latex: string, options: any) => string;
@@ -306,7 +308,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
 
 const StudyApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, characterGroups } = useOS();
-    const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
+    const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'reader' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
     const [courses, setCourses] = useState<StudyCourse[]>([]);
     const [activeCourse, setActiveCourse] = useState<StudyCourse | null>(null);
     const [selectedChar, setSelectedChar] = useState<CharacterProfile | null>(null);
@@ -332,6 +334,13 @@ const StudyApp: React.FC = () => {
     const [showImportModal, setShowImportModal] = useState(false);
     const [importPreference, setImportPreference] = useState('');
     const [tempPdfData, setTempPdfData] = useState<{name: string, text: string} | null>(null);
+
+    // Reader / Summary State（EPUB 阅读器与 AI 总结侧滑）
+    const [showSummaryPanel, setShowSummaryPanel] = useState(false);
+    const [summaryState, setSummaryState] = useState<SummaryState>('idle');
+    const [summaryContent, setSummaryContent] = useState('');
+    const [summaryError, setSummaryError] = useState('');
+    const summaryInflightRef = useRef<string | null>(null); // 防重复请求：courseId:chapterIdx
     const [katexRenderer, setKatexRenderer] = useState<KatexLike | null>(null);
 
     // Study-specific API config (overrides main apiConfig when set)
@@ -495,10 +504,52 @@ const StudyApp: React.FC = () => {
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+
+        // EPUB 专用通道：不经 AI 大纲弹窗，按书目录直接落库（章节即目录，秒导、零 token）
+        if (isEpubFile(file)) {
+            trackEvent('导入 EPUB 教材');
+            setIsProcessing(true);
+            setProcessStatus('正在解析 EPUB...');
+            try {
+                const parsed = await parseEpubFile(file, p => setProcessStatus(p.message));
+                const newCourse: StudyCourse = {
+                    id: `course-${Date.now()}`,
+                    title: parsed.title,
+                    rawText: parsed.rawText,
+                    chapters: parsed.chapters.map((c, i) => ({
+                        id: `ch-${i}`,
+                        title: c.title,
+                        summary: c.plainText.substring(0, 120) || '（本章无文本内容）',
+                        difficulty: 'normal' as const,
+                        isCompleted: false,
+                        rawHtml: c.rawHtml,
+                        plainText: c.plainText,
+                        textOnly: c.textOnly,
+                    })),
+                    currentChapterIndex: 0,
+                    createdAt: Date.now(),
+                    coverStyle: GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
+                    totalProgress: 0,
+                    sourceType: 'epub',
+                    coverImageRef: parsed.coverImageRef,
+                };
+                await DB.saveCourse(newCourse);
+                await loadCourses();
+                addToast('EPUB 导入成功', 'success');
+            } catch (e: any) {
+                console.error(e);
+                addToast(`EPUB 解析失败: ${e.message}`, 'error');
+            } finally {
+                setIsProcessing(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+            return;
+        }
+
         // Android 的部分 DocumentsProvider 会给 PDF 空 MIME 或
         // application/octet-stream；扩展名正确时仍应允许进入解析器。
         if (!isPdfFile(file)) {
-            addToast('请上传 PDF 文件', 'error');
+            addToast('请上传 PDF 或 EPUB 文件', 'error');
             return;
         }
 
@@ -618,6 +669,25 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
     // --- Classroom Logic ---
 
     const startSession = (course: StudyCourse) => {
+        // EPUB 课程：默认进入原文阅读器（AI 讲课/总结均按需进入）
+        if (course.sourceType === 'epub') {
+            trackEvent('进入 EPUB 阅读器');
+            setActiveCourse(course);
+            setMode('reader');
+            setChatHistory([]);
+
+            // 章节定位沿用「首个未完成」逻辑
+            const nextIdx = course.chapters.findIndex(c => !c.isCompleted);
+            const targetIdx = nextIdx === -1 ? 0 : nextIdx;
+            if (targetIdx !== course.currentChapterIndex) {
+                const updated = { ...course, currentChapterIndex: targetIdx };
+                setActiveCourse(updated);
+                DB.saveCourse(updated);
+                setCourses(prev => prev.map(c => c.id === updated.id ? updated : c)); // Sync
+            }
+            return;
+        }
+
         trackEvent('进入课程课堂');
         setActiveCourse(course);
         setMode('classroom');
@@ -774,6 +844,90 @@ You are now acting as a private tutor for ${userProfile.name}.
         }
     };
 
+    // --- EPUB AI Summary (按需生成 + 缓存) ---
+
+    const persistSummary = async (courseId: string, chapterIdx: number, summary: string) => {
+        // ��������� courses 为准回写（避免覆盖课堂上其它字段的并发更新）
+        const target = courses.find(c => c.id === courseId);
+        if (!target) return;
+        const updatedChapters = [...target.chapters];
+        if (!updatedChapters[chapterIdx]) return;
+        updatedChapters[chapterIdx] = { ...updatedChapters[chapterIdx], aiSummary: summary, aiSummaryState: 'done' };
+        const updatedCourse = { ...target, chapters: updatedChapters };
+        await DB.saveCourse(updatedCourse);
+        setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
+        if (activeCourse?.id === courseId) {
+            setActiveCourse(prev => prev && prev.id === courseId ? updatedCourse : prev);
+        }
+    };
+
+    const openChapterSummary = async () => {
+        if (!activeCourse) return;
+        const idx = activeCourse.currentChapterIndex;
+        const chapter = activeCourse.chapters[idx];
+        if (!chapter) return;
+
+        trackEvent('打开 AI 章节总结', { source: activeCourse.sourceType || 'pdf' });
+        setShowSummaryPanel(true);
+
+        // 缓存命中：离线秒开
+        if (chapter.aiSummary) {
+            setSummaryState('done');
+            setSummaryContent(chapter.aiSummary);
+            setSummaryError('');
+            return;
+        }
+
+        const inflightKey = `${activeCourse.id}:${idx}`;
+        if (summaryInflightRef.current === inflightKey) return; // 防重复请求
+        summaryInflightRef.current = inflightKey;
+
+        setSummaryState('loading');
+        setSummaryContent('');
+        setSummaryError('');
+
+        try {
+            if (!effectiveApi.apiKey) throw new Error('未配置 API Key');
+            const prompt = `### Task: Chapter Summary
+You are a study assistant. Summarize the following book chapter for a student.
+
+**Book**: "${activeCourse.title}"
+**Chapter**: "${chapter.title}"
+
+**Source Material**:
+${(chapter.plainText || chapter.summary || '').substring(0, 12000)}
+
+### Requirements
+- Use the SAME LANGUAGE as the source material.
+- Output concise markdown: 3-6 key points (use **bold** for key terms), then a 1-2 sentence takeaway.
+- Do NOT invent content beyond the source material.
+`;
+            const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+                body: JSON.stringify({
+                    model: effectiveApi.model,
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.3,
+                    max_tokens: 2000,
+                }),
+            });
+            if (!response.ok) throw new Error(`API Error: ${response.status}`);
+            const data = await safeResponseJson(response);
+            const text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '';
+            if (!text) throw new Error('模型返回内容为空');
+
+            setSummaryContent(text);
+            setSummaryState('done');
+            await persistSummary(activeCourse.id, idx, text);
+        } catch (e: any) {
+            setSummaryState('error');
+            setSummaryError(e.message || '总结生成失败');
+        } finally {
+            summaryInflightRef.current = null;
+        }
+    };
+
     // Regenerate Logic
     const handleRegenerateChapter = () => {
         if (!activeCourse) return;
@@ -910,6 +1064,27 @@ Note: Use "我" (I) to refer to yourself.
 
     const confirmDeleteCourse = async () => {
         if (!deleteTarget) return;
+
+        // EPUB 课程：章节插图/封面的 blobref 令牌专属该课程，删除前逐个清理
+        if (deleteTarget.sourceType === 'epub') {
+            const refs = new Set<string>();
+            if (deleteTarget.coverImageRef) refs.add(deleteTarget.coverImageRef);
+            deleteTarget.chapters.forEach(ch => {
+                if (!ch.rawHtml) return;
+                const tmp = document.createElement('div');
+                tmp.innerHTML = ch.rawHtml;
+                tmp.querySelectorAll('img[src^="blobref:"], image[href^="blobref:"], image[xlink\\:href^="blobref:"]')
+                    .forEach(el => {
+                        const v = el.getAttribute('src') || el.getAttribute('href') || el.getAttribute('xlink:href');
+                        if (v) refs.add(v);
+                    });
+                tmp.remove();
+            });
+            for (const ref of refs) {
+                try { await deleteBlobRef(ref); } catch { /* 单个清理失败不阻断删除 */ }
+            }
+        }
+
         await DB.deleteCourse(deleteTarget.id);
         setCourses(prev => prev.filter(c => c.id !== deleteTarget.id));
         setDeleteTarget(null);
@@ -1424,7 +1599,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                 value={followUpInput}
                                                 onChange={e => setFollowUpInput(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && handleFollowUp(q.id)}
-                                                placeholder="哪里不明白？"
+                                                placeholder="哪里不���白？"
                                                 className="flex-1 bg-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-white/30 outline-none border border-white/10 focus:border-amber-500/50"
                                                 autoFocus
                                                 disabled={followUpLoading}
@@ -1636,11 +1811,11 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             ) : (
                                 <>
                                     <span className="text-3xl">+</span>
-                                    <span className="text-xs font-bold">导入 PDF</span>
+                                    <span className="text-xs font-bold">导入教材</span>
                                 </>
                             )}
                         </button>
-                        <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleFileSelect} disabled={isProcessing} />
+                        <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.epub" onChange={handleFileSelect} disabled={isProcessing} />
 
                         {courses.map(course => (
                             <div key={course.id} onClick={() => startSession(course)} className="aspect-[3/4] rounded-r-xl rounded-l-sm shadow-md relative group cursor-pointer overflow-hidden transition-transform active:scale-95" style={{ background: course.coverStyle }}>
@@ -1687,7 +1862,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             <textarea
                                 value={importPreference}
                                 onChange={e => setImportPreference(e.target.value)}
-                                placeholder="例如：请用中文讲解，多用简单的比喻，针对数学公式详细推导..."
+                                placeholder="例如：请��中文讲解，多用简单的比喻，针对数学公式详细推导..."
                                 className="w-full h-32 bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500 resize-none"
                             />
                         </div>
@@ -1739,7 +1914,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             )}
                             <div className="space-y-2 bg-slate-100 rounded-xl p-3">
                                 <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名称（如：数学辅导）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500" />
-                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提示词内容（如：请用中文讲解，多用简单的比喻...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500 resize-none h-24" />
+                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提��词内容（如：请用中文讲解，多用简单的比喻...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500 resize-none h-24" />
                                 <button onClick={handleSavePreset} disabled={!presetName.trim() || !presetPrompt.trim()} className="w-full py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs disabled:opacity-40">
                                     {editingPreset ? '更新预设' : '添加预设'}
                                 </button>
@@ -1754,7 +1929,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 {/* Delete Confirmation Modal */}
                 <Modal 
                     isOpen={!!deleteTarget} 
-                    title="删除课程" 
+                    title="删除���程" 
                     onClose={() => setDeleteTarget(null)} 
                     footer={
                         <div className="flex gap-2 w-full">
@@ -1772,6 +1947,120 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
         );
     }
 
+    // READER VIEW (EPUB 原文阅读器)
+    if (mode === 'reader' && activeCourse) {
+        const readerIdx = activeCourse.currentChapterIndex;
+        const readerChapter = activeCourse.chapters[readerIdx];
+        const gotoChapter = (idx: number) => {
+            const updated = { ...activeCourse, currentChapterIndex: idx };
+            setActiveCourse(updated);
+            DB.saveCourse(updated);
+            setCourses(prev => prev.map(c => c.id === updated.id ? updated : c)); // Sync
+        };
+        return (
+            <div className="h-full w-full bg-[#1e2321] flex flex-col relative overflow-hidden font-sans">
+                {/* Background Texture */}
+                <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+
+                {/* Header Overlay */}
+                <div className="absolute top-0 w-full px-4 pb-4 flex justify-between z-30 pointer-events-none" style={{ paddingTop: 'max(1rem, var(--safe-top))' }}>
+                    <button onClick={() => setMode('bookshelf')} className="bg-black/30 text-white/80 p-2 rounded-full backdrop-blur-md hover:bg-black/50 transition-colors pointer-events-auto border border-white/10">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                    </button>
+                    <div onClick={() => { trackEvent('打开章节目录'); setShowChapterMenu(true); }} className="bg-black/30 text-white/90 px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold border border-white/10 shadow-sm pointer-events-auto cursor-pointer flex items-center gap-2 hover:bg-black/50">
+                        <span className="truncate max-w-[150px]">{readerChapter?.title}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </div>
+                </div>
+
+                {/* Chapter Menu Sidebar（与课堂同款） */}
+                {showChapterMenu && (
+                    <div className="absolute inset-0 z-50 flex">
+                        <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowChapterMenu(false)}></div>
+                        <div className="w-64 bg-slate-900 border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right">
+                            <h3 className="text-white font-bold text-sm mb-4 uppercase tracking-widest">课程目录</h3>
+                            <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+                                {activeCourse.chapters.map((ch, idx) => (
+                                    <button
+                                        key={ch.id}
+                                        onClick={() => { gotoChapter(idx); setShowChapterMenu(false); }}
+                                        className={`w-full text-left p-3 rounded-xl text-xs transition-all ${idx === readerIdx ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:bg-white/5'}`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            {ch.isCompleted ? <Check size={14} weight="bold" className="text-emerald-400" /> : <span className="w-2 h-2 rounded-full bg-slate-600"></span>}
+                                            {ch.title}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 正文 */}
+                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pt-20 pb-8 relative z-10">
+                    <div className="max-w-2xl mx-auto">
+                        <h2 className="text-base font-bold text-emerald-300/90 mb-4">{readerChapter?.title}</h2>
+                        <EpubReaderContent
+                            html={readerChapter?.rawHtml || ''}
+                            textOnly={readerChapter?.textOnly}
+                            fallbackText={readerChapter?.plainText || readerChapter?.summary || ''}
+                        />
+                    </div>
+                </div>
+
+                {/* Controls Bar */}
+                <div className="absolute bottom-0 w-full bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe">
+                    <div className="flex gap-2">
+                        <button
+                            disabled={readerIdx <= 0}
+                            onClick={() => gotoChapter(readerIdx - 1)}
+                            className="w-11 h-12 bg-white/5 hover:bg-white/10 text-white rounded-2xl border border-white/10 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center shrink-0"
+                            title="上一章"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
+                        </button>
+                        <div className="flex-1 h-12 bg-white/5 rounded-2xl border border-white/10 flex flex-col items-center justify-center px-4 min-w-0">
+                            <span className="text-[10px] text-white/50 font-bold">{readerIdx + 1} / {activeCourse.chapters.length}</span>
+                            <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mt-1">
+                                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${((readerIdx + 1) / Math.max(activeCourse.chapters.length, 1)) * 100}%` }}></div>
+                            </div>
+                        </div>
+                        <button
+                            disabled={readerIdx >= activeCourse.chapters.length - 1}
+                            onClick={() => gotoChapter(readerIdx + 1)}
+                            className="w-11 h-12 bg-white/5 hover:bg-white/10 text-white rounded-2xl border border-white/10 active:scale-95 transition-all disabled:opacity-30 flex items-center justify-center shrink-0"
+                            title="下一章"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+                        </button>
+                        <button
+                            onClick={() => { trackEvent('阅读器进入 AI 讲课'); setMode('classroom'); handleTeach(activeCourse, readerIdx); }}
+                            className="px-3 h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-xs shadow-lg shadow-emerald-900/30 active:scale-95 transition-all flex items-center shrink-0"
+                        >
+                            AI 讲课
+                        </button>
+                        <button
+                            onClick={openChapterSummary}
+                            className="px-3 h-12 bg-indigo-600/80 hover:bg-indigo-500 text-white rounded-2xl font-bold text-xs border border-indigo-400/30 active:scale-95 transition-all flex items-center shrink-0"
+                        >
+                            AI 总结
+                        </button>
+                    </div>
+                </div>
+
+                <SummaryPanel
+                    open={showSummaryPanel}
+                    state={summaryState}
+                    content={summaryContent}
+                    error={summaryError}
+                    onClose={() => setShowSummaryPanel(false)}
+                    onRetry={openChapterSummary}
+                />
+            </div>
+        );
+    }
+
     // CLASSROOM VIEW
     return (
         <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans">
@@ -1781,7 +2070,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
             {/* Header Overlay */}
             <div className="absolute top-0 w-full px-4 pb-4 flex justify-between z-30 pointer-events-none" style={{ paddingTop: 'max(1rem, var(--safe-top))' }}>
-                <button onClick={() => setMode('bookshelf')} className="bg-black/30 text-white/80 p-2 rounded-full backdrop-blur-md hover:bg-black/50 transition-colors pointer-events-auto border border-white/10">
+                <button onClick={() => (activeCourse?.sourceType === 'epub' ? setMode('reader') : setMode('bookshelf'))} className="bg-black/30 text-white/80 p-2 rounded-full backdrop-blur-md hover:bg-black/50 transition-colors pointer-events-auto border border-white/10">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                 </button>
                 <div className="flex gap-2">
@@ -1907,7 +2196,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">题目数量: {quizCount}</label>
                         <input type="range" min={3} max={15} value={quizCount} onChange={e => setQuizCount(Number(e.target.value))} className="w-full accent-amber-500" />
                         <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                            <span>3题</span><span>15题</span>
+                            <span>3题</span><span>15���</span>
                         </div>
                     </div>
                 </div>
