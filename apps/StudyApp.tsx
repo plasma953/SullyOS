@@ -13,7 +13,7 @@ import { trackEvent } from '../utils/analytics';
 import { extractPdfText, isPdfFile } from '../utils/pdfText';
 import { isEpubFile, parseEpubFile } from '../utils/epub';
 import { deleteBlobRef } from '../utils/blobRef';
-import { EpubReaderContent, SummaryPanel, EpubThemeMenu, useReaderTheme, ReadingThemeId } from './components/study/EpubReader';
+import { EpubReaderContent, SummaryPanel, EpubThemeMenu, useReaderTheme, ReadingThemeId, SummaryState } from './components/study/EpubReader';
 
 type KatexLike = {
     renderToString: (latex: string, options: any) => string;
@@ -2067,7 +2067,6 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 />
 
                 <EpubThemeMenu
-                    open={showThemeMenu}
                     theme={readerTheme}
                     onPick={(t) => setReaderTheme(t)}
                     onClose={() => setShowThemeMenu(false)}

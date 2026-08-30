@@ -25,7 +25,7 @@ import { callLuckinTool } from '../utils/luckinMcpClient';
 import { callMcpTool, getMcpUseNativeTools, hasWorkerUnreachableMcpServer, loadMcpSettings } from '../utils/mcpClient';
 import { normalizeMcpToolArguments, validateMcpToolArguments } from '../utils/mcpFireCore';
 import { bumpMcpTurn, recordMcpResult } from '../utils/mcpResultMemory';
-import { buildMcpOpenAITools, buildMcpRejectedToolsFallbackBody, buildMcpTextFallbackBody, buildMcpTextFallbackBody, extractTextFakedMcpCalls, formatMcpToolResult, MCP_CHAT_MAX_STALLED_ROUNDS, MCP_CHAT_MAX_TOOL_LOOPS, sanitizeMcpLeadInText, shouldRetryMcpWithoutTools, stripTextFakedMcpCalls, type FakedMcpCall } from '../utils/mcpToolBridge';import { buildToolResultMessage, normalizeToolCallsForCompat } from '../utils/toolCallCompat';
+import { buildMcpOpenAITools, buildMcpRejectedToolsFallbackBody, buildMcpTextFallbackBody, extractTextFakedMcpCalls, formatMcpToolResult, MCP_CHAT_MAX_STALLED_ROUNDS, MCP_CHAT_MAX_TOOL_LOOPS, sanitizeMcpLeadInText, shouldRetryMcpWithoutTools, stripTextFakedMcpCalls, type FakedMcpCall } from '../utils/mcpToolBridge';import { buildToolResultMessage, normalizeToolCallsForCompat } from '../utils/toolCallCompat';
 import { toolCallFingerprint } from '../utils/agenticToolFeedback';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
 import {

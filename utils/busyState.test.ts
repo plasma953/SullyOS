@@ -14,7 +14,7 @@ const mkSchedule = (slots: Array<Record<string, unknown>>): DailySchedule => ({
     id: 'c1_2026-01-01',
     charId: 'c1',
     date: '2026-01-01',
-    slots: slots as DailySchedule['slots'],
+    slots: slots as unknown as DailySchedule['slots'],
     generatedAt: Date.now(),
 });
 

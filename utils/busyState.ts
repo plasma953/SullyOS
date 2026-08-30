@@ -133,7 +133,7 @@ export const maybeScheduleBusyPeekTask = async (
         const sendAt = new Date(fireAtMs)
             .toLocaleString('sv', { timeZone: tz })
             .replace(' ', 'T');
-        const { default: ActiveMsgClient } = await import('./activeMsgClient');
+        const { ActiveMsgClient } = await import('./activeMsgClient');
         const result = await ActiveMsgClient.scheduleCharacterTask({
             char, config,
             task: {
@@ -207,7 +207,7 @@ export const scheduleBusyMakeupTask = async (
         const sendAt = new Date(fireAtMs + 60_000) // +1 分钟：与工具侧「至少晚 1 分钟」同一道闸
             .toLocaleString('sv', { timeZone: tz })
             .replace(' ', 'T');
-        const { default: ActiveMsgClient } = await import('./activeMsgClient');
+        const { ActiveMsgClient } = await import('./activeMsgClient');
         const result = await ActiveMsgClient.scheduleCharacterTask({
             char, config,
             task: {

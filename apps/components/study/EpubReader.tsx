@@ -241,7 +241,10 @@ export const EpubThemeMenu: React.FC<{
     theme: ReadingThemeId;
     onPick: (t: ReadingThemeId) => void;
     onClose: () => void;
-}> = ({ theme, onPick, onClose }) => (
+    /** 是否展开；缺省 true 兼容旧调用。false 时不渲染浮层。 */
+    open?: boolean;
+}> = ({ theme, onPick, onClose, open = true }) =>
+    open ? (
     <div className="epub-r absolute inset-0 z-50 flex" data-theme={theme}>
         <div className="flex-1 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
         <div className="epub-r-panel er-line border absolute bottom-24 left-1/2 -translate-x-1/2 rounded-2xl p-4 shadow-2xl animate-slide-in-right" onClick={e => e.stopPropagation()}>
@@ -264,6 +267,6 @@ export const EpubThemeMenu: React.FC<{
             </div>
         </div>
     </div>
-);
+    ) : null;
 
 export default EpubReaderContent;

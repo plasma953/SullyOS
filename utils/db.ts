@@ -3117,7 +3117,7 @@ export const DB = {
           });
       };
 
-      const [characters, characterGroups, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, storyTheaters, storyTheaterPresets, storyTheaterMasks, novels, bankTx, bankData, xhsActivities, xhsOwnedPosts, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, worlds, worldEpisodes, lifeRecords, medPlans, lifeRecordSettings] = await Promise.all([
+      const [characters, characterGroups, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, storyTheaters, storyTheaterPresets, storyTheaterMasks, novels, bankTx, bankData, xhsActivities, xhsOwnedPosts, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, worlds, worldEpisodes, lifeRecords, medPlans, lifeRecordSettings, promptPresets] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_CHAR_GROUPS),
           getAllFromStore(STORE_MESSAGES),
@@ -3171,6 +3171,7 @@ export const DB = {
           getAllFromStore(STORE_LIFE_RECORDS),
           getAllFromStore(STORE_MED_PLANS),
           getAllFromStore(STORE_LIFE_SETTINGS),
+          getAllFromStore(STORE_PROMPT_PRESETS),
       ]);
 
       const userProfile = userProfiles.length > 0 ? {
@@ -3201,6 +3202,7 @@ export const DB = {
           lifeRecords,
           medPlans,
           lifeRecordSettings,
+          promptPresets,
           hotNewsSnapshots,
           vrNovels,
           vrAnnotations,
@@ -3264,7 +3266,8 @@ export const DB = {
           STORE_WORLDS, STORE_WORLD_EPISODES,
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
           'room_plates', 'digest_reports',
-          'memory_batches', 'pixel_home_assets', 'pixel_home_layouts'
+          'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
+          STORE_PROMPT_PRESETS, // v72 提示词段落预设（Preset App）—— importFullData 侧白名单
       ].filter(name => db.objectStoreNames.contains(name));
 
       const hasStore = (storeName: string) => availableStores.includes(storeName);
@@ -3347,6 +3350,7 @@ export const DB = {
           data.lifeRecords !== undefined,
           data.medPlans !== undefined,
           data.lifeRecordSettings !== undefined,
+          data.promptPresets !== undefined,
           data.hotNewsSnapshots !== undefined,
           data.vrNovels !== undefined,
           data.vrAnnotations !== undefined,
@@ -3843,6 +3847,13 @@ export const DB = {
           data.hotNewsSnapshots = undefined as any;
       }, data.hotNewsSnapshots?.length || 0);
 
+      // 提示词段落预设（Preset App）。无图片素材，restoreAssets=false；clear-and-add
+      // 与导出端 store 全量快照语义一致。
+      await runSection('提示词预设', data.promptPresets !== undefined, async () => {
+          await clearAndAdd(STORE_PROMPT_PRESETS, data.promptPresets, '提示词预设', false);
+          data.promptPresets = undefined as any;
+      }, data.promptPresets?.length || 0);
+
       // Pixel Home（小屋像素界面）
       await runSection('像素小屋素材', data.pixelHomeAssets !== undefined, async () => {
           await clearAndAdd('pixel_home_assets', data.pixelHomeAssets, '像素小屋素材', true);
@@ -3880,44 +3891,46 @@ export const DB = {
           data.bankState = undefined as any;
           data.bankDollhouse = undefined as any;
       }, (data.bankState ? 1 : 0) + (data.bankDollhouse ? 1 : 0));
-  }
-};
+  },
 
-// ─── 提示词段落预设（Preset App / v72）───
+  // ─── 提示词段落预设（Preset App / v72）───
+  // 必须挂在 DB 对象上：PresetApp / statusPanel / chatPrompts 都按 DB.getPromptPresets
+  // 形态调用；做成独立导出没人 import，vite build 不查类型会漏成运行时报错。
 
-export const getPromptPresets = async (): Promise<PromptPreset[]> => {
-    try {
-        const db = await openDB();
-        if (!db.objectStoreNames.contains(STORE_PROMPT_PRESETS)) return [];
-        const rows = await new Promise<PromptPreset[]>((resolve, reject) => {
-            const tx = db.transaction(STORE_PROMPT_PRESETS, 'readonly');
-            const req = tx.objectStore(STORE_PROMPT_PRESETS).getAll();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => reject(req.error);
-        });
-        return rows.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    } catch (e) {
-        console.warn('[DB] getPromptPresets failed:', e);
-        return [];
-    }
-};
+  getPromptPresets: async (): Promise<PromptPreset[]> => {
+      try {
+          const db = await openDB();
+          if (!db.objectStoreNames.contains(STORE_PROMPT_PRESETS)) return [];
+          const rows = await new Promise<PromptPreset[]>((resolve, reject) => {
+              const tx = db.transaction(STORE_PROMPT_PRESETS, 'readonly');
+              const req = tx.objectStore(STORE_PROMPT_PRESETS).getAll();
+              req.onsuccess = () => resolve(req.result || []);
+              req.onerror = () => reject(req.error);
+          });
+          return rows.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      } catch (e) {
+          console.warn('[DB] getPromptPresets failed:', e);
+          return [];
+      }
+  },
 
-export const savePromptPreset = async (preset: PromptPreset): Promise<void> => {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_PROMPT_PRESETS, 'readwrite');
-        tx.objectStore(STORE_PROMPT_PRESETS).put(preset);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-};
+  savePromptPreset: async (preset: PromptPreset): Promise<void> => {
+      const db = await openDB();
+      await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE_PROMPT_PRESETS, 'readwrite');
+          tx.objectStore(STORE_PROMPT_PRESETS).put(preset);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
 
-export const deletePromptPreset = async (id: string): Promise<void> => {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_PROMPT_PRESETS, 'readwrite');
-        tx.objectStore(STORE_PROMPT_PRESETS).delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
+  deletePromptPreset: async (id: string): Promise<void> => {
+      const db = await openDB();
+      await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE_PROMPT_PRESETS, 'readwrite');
+          tx.objectStore(STORE_PROMPT_PRESETS).delete(id);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
 };
