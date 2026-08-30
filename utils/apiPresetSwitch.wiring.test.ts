@@ -31,9 +31,11 @@ describe('草稿同步不跨区块打架', () => {
     expect(settings).not.toMatch(/\}, \[apiConfig\]\);/);
   });
 
-  it('主 API 那份只盯自己的五个字段', () => {
+  it('主 API 那份只盯自己的字段（五字段 + ethernet 代理字段 agentUrl/agentToken）', () => {
+    // master 原版只认五字段；ethernet 的 VPS 直传把 agentUrl/agentToken 也纳入了同一
+    // effect 的依赖，守卫意图不变：仍然只盯主 API 自己的字段，禁止拿整个 apiConfig。
     expect(settings).toMatch(
-      /\}, \[apiConfig\.baseUrl, apiConfig\.apiKey, apiConfig\.model, apiConfig\.stream, apiConfig\.temperature\]\);/,
+      /\}, \[apiConfig\.baseUrl, apiConfig\.apiKey, apiConfig\.model, apiConfig\.stream, apiConfig\.temperature(?:, apiConfig\.agentUrl, apiConfig\.agentToken)?\]\);/,
     );
   });
 });
