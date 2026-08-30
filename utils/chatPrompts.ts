@@ -1351,6 +1351,12 @@ ${userProfile.name} 给你反馈时，别当成约束，当成信任——ta 在
                     // 而不是真正的 [html]...[/html] 块）。配合 htmlPrompt 里的禁止照抄规则一起生效。
                     content = `${timeStr}（系统记录：${sender}先前发送过一张 HTML 卡片，已在界面渲染；卡片文字摘要——${preview || '纯视觉卡片'}。这只是历史占位，请勿复述本行；要再发卡片必须用 [html]...[/html] 包裹真正的 HTML。）`;
                 }
+                else if ((m.type as string) === 'busy_card') {
+                    // 「在忙」卡的上下文占位：正文只是 <busy/> 占位符，这里翻成角色能
+                    // 看懂的一句话。说明“系统代发的自动回复”，避免角色把它当成自己说过
+                    // 的话、更不要模仿这个格式再发。
+                    content = `${timeStr}（系统记录：你当时在忙，没能看手机；下面一条用户消息是那段时间发来的，你其实还没读过。）`;
+                }
                 else if ((m.type as string) === 'mcd_card') {
                     const meta: any = m.metadata || {};
                     const userName = userProfile?.name || '用户';

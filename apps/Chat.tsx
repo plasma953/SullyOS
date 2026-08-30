@@ -10,6 +10,7 @@ import ChatFineTunePanel from '../components/chat/ChatFineTunePanel';
 import TokenImg from '../components/os/TokenImg';
 import { FadersHorizontal } from '@phosphor-icons/react';
 import { generateDailyScheduleForChar, isScheduleFeatureOn } from '../utils/scheduleGenerator';
+import { getBusyStatusForChar, scheduleBusyMakeupTask, maybeScheduleBusyPeekTask, BUSY_PLACEHOLDER, BUSY_CARD_DEDUPE_MS } from '../utils/busyState';
 import { getDailyScheduleForChar } from '../utils/dailySchedule';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../utils/timezone';
@@ -1394,6 +1395,36 @@ const Chat: React.FC = () => {
         }
 
         if (!customContent) { setInput(''); localStorage.removeItem(draftKey); }
+
+        // ---- 忙碌期短路 ----
+        // 角色日程当前时段标了 busy：用户消息照常落库（等忙完角色自然看得到），
+        // 但不调 API —— 回一张轻量「在忙」卡（纯前端渲染，归档只有 <busy/> 占位符）。
+        // 不说在忙什么；时间窗去重防连发刷屏。判定失败按空闲继续，绝不挡正常聊天。
+        if (char && !customContent && type === 'text') {
+            try {
+                const busyStatus = await getBusyStatusForChar(char);
+                if (busyStatus.busy) {
+                    const recent = await DB.getMessagesByCharId(char.id, true);
+                    const hasBusyCard = [...recent].reverse().some((m: Message) =>
+                        m.role === 'assistant' && m.type === 'busy_card'
+                        && m.timestamp > Date.now() - BUSY_CARD_DEDUPE_MS);
+                    if (!hasBusyCard) {
+                        await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'busy_card', content: BUSY_PLACEHOLDER });
+                        await reloadMessages(visibleCountRef.current);
+                        scheduleBusyMakeupTask(char, busyStatus, {
+                            userProfile, groups, realtimeConfig, apiConfig, updateCharacter,
+                        });
+                        // 小概率「插空看手机」：忙碌窗口内随机时刻的短暂空隙回复（expire，随时让路）。
+                        maybeScheduleBusyPeekTask(char, busyStatus, {
+                            userProfile, groups, realtimeConfig, apiConfig, updateCharacter,
+                        });
+                    }
+                    return;
+                }
+            } catch (e) {
+                console.warn('[BusyState] 忙碌判定失败，按空闲继续:', e);
+            }
+        }
         
         // 图片 / 表情消息存的是短令牌，图片二进制单独躺在 blob_assets 里，省掉 base64 那 ~33%
         // 的膨胀。同一张图之前存过就直接复用它的令牌；转不动时原样还回这条 data URL，图不会丢。

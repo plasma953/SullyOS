@@ -3018,6 +3018,20 @@ const MessageItem = React.memo(({
         return commonLayout(card);
     }
 
+    if (m.type === 'busy_card') {
+        // 「在忙」卡：忙碌期的短路面孔。纯前端渲染，正文只有 <busy/> 占位符；
+        // 不说在忙什么——让「忙」本身说话就够了。
+        return commonLayout(
+            <div className="px-4 py-3 rounded-2xl bg-stone-100/80 backdrop-blur border border-stone-200/60 flex items-center gap-2 w-fit">
+                <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-stone-400 opacity-60"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-stone-400"></span>
+                </span>
+                <span className="text-xs text-stone-500 italic">在忙……</span>
+            </div>
+        );
+    }
+
     if (m.type === 'html_card') {
         const meta: any = m.metadata || {};
         const html: string = (typeof meta.htmlSource === 'string' && meta.htmlSource) ? meta.htmlSource : '';

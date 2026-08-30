@@ -89,6 +89,8 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 - activity: 活动名（2-6字）
 - description: 一句话描述（可以带动作质感、物件、感官细节）
 - emoji: 一个匹配的emoji
+- busy: true（可选）—— 该时段角色会**专注陷进事情里**、顾不上看手机（上班、上课、训练、演出、赶稿这类）；
+  默认不写 = 空闲。最多标 2 个时段，别滥用。
 
 #### 关键要求
 
@@ -139,6 +141,7 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 {
   "slots": [
     { "startTime": "08:00", "activity": "活动名称", "description": "简短描述", "emoji": "🏃" },
+    { "startTime": "09:00", "activity": "专注的事", "description": "简短描述", "emoji": "💼", "busy": true },
     ...
   ],
   "flowNarrative": {
@@ -323,6 +326,7 @@ export async function generateDailyScheduleForChar(
             emoji: s.emoji,
             location: s.location,
             innerThought: s.innerThought,
+            busy: s.busy === true,
         })).filter((s: ScheduleSlot) => s.activity);
 
         if (slots.length === 0) return null;

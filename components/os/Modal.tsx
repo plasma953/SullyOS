@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { X } from '@phosphor-icons/react';
 
 interface ModalProps {
     isOpen: boolean;
@@ -16,6 +17,14 @@ const Modal: React.FC<ModalProps> = ({ isOpen, title, onClose, children, footer 
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 animate-fade-in">
             <div className="absolute inset-0 bg-black/40" onClick={onClose} />
             <div className="relative w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden animate-slide-up">
+                {/* 物理关闭按钮：始终存在，任何情况下都可关闭弹窗 */}
+                <button
+                    onClick={onClose}
+                    aria-label="关闭"
+                    className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100/80 backdrop-blur text-slate-500 hover:bg-slate-200 hover:text-slate-700 active:scale-90 transition-all"
+                >
+                    <X size={16} weight="bold" />
+                </button>
                 <div className="px-6 pt-6 pb-2">
                     <h3 className="text-lg font-bold text-slate-800 text-center">{title}</h3>
                 </div>
