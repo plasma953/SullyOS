@@ -3957,6 +3957,10 @@ export interface FullBackupData {
     studyApiConfig?: Partial<APIConfig>;
     studyTutorPresets?: StudyTutorPreset[];
 
+    // 提示词段落预设（Preset App / prompt_presets store）。以记录数组形态随包往返，
+    // 导入端 clear-and-add 回 prompt_presets store（无图片素材，restoreAssets 无关）。
+    promptPresets?: PromptPreset[];
+
     // Quiz / Practice Book
     quizSessions?: QuizSession[];
 

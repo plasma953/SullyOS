@@ -16,6 +16,7 @@ import { stripCompanionChatStyleResidue } from '../utils/companionThemeIsolation
 import { SULLY_DEFAULT_AVATAR_URL, shouldMigrateSullyAvatar } from '../utils/sullyAvatar';
 import { exportStoryTheaterAppearanceSetting, restoreStoryTheaterAppearanceSetting } from '../utils/storyTheaterBackup';
 import { createV2ArrayFieldWriter, writeV2Backup, assembleV2Backup, type BackupManifest, type ZipFileWriter, type ZipFileReader } from '../utils/backupFormat';
+import { ensureBackupStoresCovered, knownBackupStoreFieldMap, exportSwitchDefaultCase } from '../utils/backupCoverage';
 import { externalizeVoiceMessageBlobs, restoreVoiceMessageBlobs, shouldIncludeVoiceRelatedAssetInBackup } from '../utils/voiceMessageBackup';
 import { ensureCompanionVoiceAssetsForBackup, isCompanionVoiceAssetId } from '../utils/companionVoiceAssets';
 import { collectCharacterCompanionVoiceAssetIds } from '../utils/companionPresets';
@@ -3950,7 +3951,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               'worlds', 'world_episodes',
               // 生活记录（档案 App：生理期/药盒/锻炼 + 药盒计划 + 设置；记账走 bank_transactions）
               // 导入端 importFullData 已支持恢复，这里必须同步登记，否则备份不含生活记录。
-              'life_records', 'med_plans', 'life_record_settings'
+              'life_records', 'med_plans', 'life_record_settings',
+              // v72 提示词段落预设（Preset App）。
+              'prompt_presets',
+              // 角色小红书主页（导入端 runSection 早已支持，此前一直漏在本清单外——
+              // 现在即使再漏，下面 ensureBackupStoresCovered 也会按 objectStoreNames 兜底）。
+              'xhs_owned_posts'
           ];
 
           if (mode === 'full') {
@@ -3962,6 +3968,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               storesToProcess = ['gallery', 'emojis', 'emoji_categories', 'journal_stickers', 'user_profile', 'characters', 'messages', 'themes', 'assets', 'bank_data',
                   'pixel_home_assets', 'pixel_home_layouts', 'daily_schedule', 'cc_custom_parts'];
           }
+
+          // 覆盖兜底（Step 5 收口）：按 db.objectStoreNames 动态枚举，把「导入端已支持恢复、
+          // 但登记清单漏了」的 store 自动补进导出集合，保证任何 store 都不会漏出备份。
+          await ensureBackupStoresCovered(storesToProcess);
 
           // Fetch Social App & Room Assets (Optional, depends on mode)
           const sparkUserBg = await DB.getAsset('spark_user_bg');
@@ -4582,6 +4592,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   // 家园 —— 键名须与 importFullData 读取的字段（data.worlds / data.worldEpisodes）对齐
                   case 'worlds': backupData.worlds = processedData; break;
                   case 'world_episodes': backupData.worldEpisodes = processedData; break;
+                  case 'xhs_owned_posts': backupData.xhsOwnedPosts = processedData; break;
+                  case 'prompt_presets': backupData.promptPresets = processedData; break;
+                  // 漂移防护：未来新登记的 store 忘写 case 时，按 backupCoverage 的 KNOWN
+                  // 映射自动落包（单例 store 取首条），并提醒把显式 case 补回这里。
+                  default: {
+                      if (exportSwitchDefaultCase(backupData as Record<string, any>, storeName, processedData)) {
+                          console.warn(`[BackupCoverage] store ${storeName} 走了 default 落包（字段 ${knownBackupStoreFieldMap()[storeName]}），建议补显式 case`);
+                      }
+                      break;
+                  }
               }
 
               await new Promise(resolve => setTimeout(resolve, 10));
