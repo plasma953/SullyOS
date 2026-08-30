@@ -107,7 +107,12 @@ async function main() {
   if (typeof worker.scheduled === 'function' && (svc.crons ?? []).length > 0) {
     cronReg = new CronRegistry();
     for (const c of svc.crons) {
-      cronReg.add(c.expr, () => worker.scheduled({ cron: c.expr, scheduledTime: new Date() }, cfEnv), { name: c.name });
+      // 修复：CF scheduled 签名是 (event, env, ctx)，ctx.waitUntil 是后台任务钩子。
+      // 此前漏传第三参数，worker 内 ctx.waitUntil(...) 直接 TypeError。
+      cronReg.add(c.expr, () => {
+        const { ctx } = createCfContext({ onError: (e) => log.error('waitUntil 任务失败:', e) });
+        return worker.scheduled({ cron: c.expr, scheduledTime: new Date() }, cfEnv, ctx);
+      }, { name: c.name });
     }
     cronReg.start();
     log.info(`已注册 ${svc.crons.length} 个 cron: ${svc.crons.map((c) => c.expr).join(', ')}`);
