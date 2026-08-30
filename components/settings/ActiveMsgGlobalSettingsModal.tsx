@@ -8,7 +8,7 @@ import {
 import {
   AmsgDiagnosticLevel, AmsgDiagnosticsProbe,
   buildAmsgDiagnosticRows, summarizeAmsgDiagnostics,
-  INSTANT_CHAT_BLOCKER_HINTS, resolveInstantChatBlocker,
+  INSTANT_CHAT_BLOCKER_HINTS, INSTANT_CHAT_VPS_NOTICE, resolveInstantChatBlocker,
   type InstantChatGateInput,
 } from '../../utils/amsgDiagnostics';
 import { ActiveMsgStore, maskActiveMsgUserId, VPS_DEFAULT_WORKER_URL, VPS_DEFAULT_SERVER_TOKEN } from '../../utils/activeMsgStore';
@@ -140,6 +140,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     instantChatGateReported.current = true;
     trackEvent('即时对话能不能开', {
       result: resolveInstantChatBlocker(gate) ?? '可以开',
+      vpsMode: gate.vpsMode === true,
       // 已经开着的人也报：他们卡住意味着「开的时候好好的，后来 Worker 退回旧版了」，那是一种发一条挂一条、但设置页还写着「已开启」的坏法。
       state: enabled ? '已开着' : '还没开',
     });
@@ -183,6 +184,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           pushSubscribed: Boolean(nextPushStatus?.hasSubscription),
           workerSupportsInstantChat: supported,
           instantPushOn: isInstantConfigReady(),
+          vpsMode: nextConfig.instantChatVps === true,
         }, Boolean(nextConfig.instantChatEnabled));
       });
       void runDiagnostics();
@@ -375,11 +377,13 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     })
     : [];
   const diagnosticLevel = diagnosticRows.length ? summarizeAmsgDiagnostics(diagnosticRows) : 'unknown';
+  const vpsMode = config.instantChatVps === true;
   const instantChatBlocker = resolveInstantChatBlocker({
     connected: isConnected,
     pushSubscribed: Boolean(pushStatus?.hasSubscription),
     workerSupportsInstantChat: instantChatSupported,
     instantPushOn: instantOn,
+    vpsMode,
   });
   const instantChatBlockedReason = instantChatBlocker ? INSTANT_CHAT_BLOCKER_HINTS[instantChatBlocker] : '';
   return (
@@ -589,7 +593,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
                 : instantChatBlockedReason ? 'text-amber-600' : 'text-emerald-600'
             }`}>
               {!config.instantChatEnabled ? '未开启'
-                : instantChatBlockedReason ? '已开启 · 暂不生效' : '已开启'}
+                : instantChatBlockedReason ? '已开启 · 暂不生效'
+                : vpsMode ? '已开启 · VPS 模式' : '已开启'}
             </span>
           </div>
           <p className="text-xs leading-relaxed text-slate-500">
@@ -598,6 +603,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           </p>
           {instantChatBlockedReason ? (
             <p className="text-xs leading-relaxed text-amber-600">{instantChatBlockedReason}</p>
+          ) : vpsMode ? (
+            <p className="text-xs leading-relaxed text-emerald-600">{INSTANT_CHAT_VPS_NOTICE}</p>
           ) : (
             <p className="text-[11px] leading-relaxed text-slate-400">
               没有逐字吐出，生成期间显示「正在输入…」；云端明确报错才会提示重发，

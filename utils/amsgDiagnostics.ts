@@ -526,6 +526,11 @@ export interface InstantChatGateInput {
   workerSupportsInstantChat: boolean;
   /** Instant Push 那条路也配齐开着。 */
   instantPushOn: boolean;
+  /**
+   * 这台 Worker 跑在 SullyOS VPS 上（/config-check 的 runtime='vps'，探测经 VPS 模式放行）。
+   * 不参与拦截——四道门照旧；设置页拿它在放行时显示 VPS 专属提示、上报事件带一份。
+   */
+  vpsMode: boolean;
 }
 
 /**
@@ -549,3 +554,8 @@ export const INSTANT_CHAT_BLOCKER_HINTS: Record<InstantChatBlocker, string> = {
   'Worker太旧': 'Worker 上跑的代码还起不了这条路（缺起跳器，或者还是旧版）。点上面的「更新 Worker」，更新完这里会自己恢复。开着也不会走云端——那台 Worker 上是发一条挂一条，这段时间聊天先在本地生成。',
   '与InstantPush冲突': 'Instant Push 也开着，两条发送路只能留一条。上面那张黄色卡片里可以把它关掉。',
 };
+/**
+ * VPS 模式的入口提示（vpsMode 放行时设置页显示）：没有 DO 起跳器是 VPS 宿主的常态，
+ * 任务由 node-cron 兜底轮询，不是「Worker 太旧」。
+ */
+export const INSTANT_CHAT_VPS_NOTICE = 'VPS 模式（node-cron 驱动）：这台 Worker 没有 DO 起跳器，任务由服务端定时轮询驱动。';

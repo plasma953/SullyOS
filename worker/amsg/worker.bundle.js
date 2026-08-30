@@ -13884,6 +13884,11 @@ var src_default = {
           ...inspectWorkerEnv(env),
           instantChat: true,
           instantTick: !!env.INSTANT_TICK,
+          // 宿主运行时（VPS 兼容层经 SULLYOS_RUNTIME 自报，见 Env）。'vps' 说明这台
+          // worker 跑在 SullyOS VPS 上：天生没有 DO，但定时任务由 node-cron 兜底，
+          // 前端据此按「VPS 模式」放行即时对话。老 CF bundle 没有这个字段，前端
+          // 回退旧的 instantTick 判定，不会误放行绑定没接上的半新 worker。
+          runtime: env.SULLYOS_RUNTIME === "vps" ? "vps" : "cloudflare",
           // 这份代码认不认识「后台任务」（metadata.amsgKind → handler，见 fireKinds.ts）。
           // 老 bundle 没有这个字段，前端据此不去建那种任务——老 worker 会把它当聊天任务
           // 跑，然后卡在「本次任务指令缺失」终态失败：任务行不在用户的清单里，面板一片

@@ -348,6 +348,11 @@ describe('连接失败的归类（AmsgFailKind）', () => {
 // 新 bundle 不带 INSTANT_TICK 绑定。于是会出现「instantChat:true、workerVersion 也对上了、
 // 但 /instant-chat 只能回 503」的中间态。认前两样中的任何一样，前端都会一边说「已经是
 // 最新版」一边发一条挂一条。
+//
+// 唯一例外：SullyOS VPS 宿主在 /config-check 自报 runtime:'vps'——那里天生没有 DO，
+// 定时任务由 node-cron 兜底，任务处理能力是真的。此时 instantChat 路由在就放行，
+// 并把 instantChatVps 一并写进存量（设置页显示「VPS 模式」）。老 CF bundle 没有这个
+// 字段，不会误放行。
 describe('即时对话能力探测（instantTick）', () => {
   const configCheck = (data: Record<string, unknown>) => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -384,12 +389,44 @@ describe('即时对话能力探测（instantTick）', () => {
     (ActiveMsgStore.saveGlobalConfig as any).mockClear();
     configCheck({ instantChat: true, instantTick: false });
     await ActiveMsgClient.probeInstantChatSupport();
-    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: false });
+    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: false, instantChatVps: false });
 
     (ActiveMsgStore.saveGlobalConfig as any).mockClear();
     configCheck({ instantChat: true, instantTick: true });
     await ActiveMsgClient.probeInstantChatSupport();
-    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: true });
+    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: true, instantChatVps: false });
+  });
+
+  // VPS 宿主：runtime:'vps' + instantChat 路由在 → 即使没有 INSTANT_TICK 也放行，
+  // 且 instantChatVps 记成 true（设置页据此显示「VPS 模式」）。
+  it('VPS 宿主（runtime:vps + instantChat）没有起跳器也放行，存量记 instantChatVps:true', async () => {
+    const { ActiveMsgStore } = await import('./activeMsgStore');
+    (ActiveMsgStore.saveGlobalConfig as any).mockClear();
+    configCheck({ instantChat: true, instantTick: false, runtime: 'vps', workerVersion: '2026-08-09' });
+    const result = await ActiveMsgClient.probeInstantChatSupportDetailed();
+    expect(result.outcome).toBe('supported');
+    expect(result.vps).toBe(true);
+    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: true, instantChatVps: true });
+  });
+  it('VPS 宿主但 instantChat 路由不在（老 bundle 跑在 VPS 上）→ 不放行', async () => {
+    configCheck({ instantTick: false, runtime: 'vps' });
+    expect(await ActiveMsgClient.probeInstantChatSupport()).toBe(false);
+  });
+  it('instantTick:true 优先：CF 放行时 instantChatVps 记 false（不留 VPS 影子）', async () => {
+    const { ActiveMsgStore } = await import('./activeMsgStore');
+    storeConfigExtra.value = { instantChatVps: true };
+    (ActiveMsgStore.saveGlobalConfig as any).mockClear();
+    configCheck({ instantChat: true, instantTick: true });
+    const result = await ActiveMsgClient.probeInstantChatSupportDetailed();
+    expect(result.outcome).toBe('supported');
+    expect(result.vps).toBe(false);
+    expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: true, instantChatVps: false });
+  });
+  it('半新 CF bundle（缺 runtime 字段、无起跳器）→ 维持不放行', async () => {
+    configCheck({ instantChat: true, instantTick: false, workerVersion: '2026-08-09' });
+    const result = await ActiveMsgClient.probeInstantChatSupportDetailed();
+    expect(result.outcome).toBe('unsupported');
+    expect(result.vps).toBe(false);
   });
 
   // ★ 核心回归守卫：「探不到」≠「探到了、答案是不行」。
@@ -409,17 +446,19 @@ describe('即时对话能力探测（instantTick）', () => {
       const result = await ActiveMsgClient.probeInstantChatSupportDetailed();
       expect(result.outcome).toBe('unknown');
       expect(result.supported).toBe(true);
+      // vps 存量同样原样保留（探不到 ≠ 换了宿主）。
+      expect(result.vps).toBe(true);
       expect(ActiveMsgStore.saveGlobalConfig).not.toHaveBeenCalled();
     };
 
     it('网络异常（fetch 直接抛）→ 保留上次探到的 true', async () => {
-      storeConfigExtra.value = { instantChatSupported: true };
+      storeConfigExtra.value = { instantChatSupported: true, instantChatVps: true };
       vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Load failed'); }));
       await expectKeepsPreviousTrue();
     });
 
     it('401 → 说明共享密钥没填对，跟 Worker 跑不跑得动没关系', async () => {
-      storeConfigExtra.value = { instantChatSupported: true };
+      storeConfigExtra.value = { instantChatSupported: true, instantChatVps: true };
       vi.stubGlobal('fetch', vi.fn(async () => ({
         status: 401,
         text: async () => JSON.stringify({ success: false, error: { code: 'INVALID_CLIENT_TOKEN' } }),
@@ -429,7 +468,7 @@ describe('即时对话能力探测（instantTick）', () => {
     });
 
     it('5xx / 中间设备塞回来的网关页 → 说明线路有问题，同样不是答案', async () => {
-      storeConfigExtra.value = { instantChatSupported: true };
+      storeConfigExtra.value = { instantChatSupported: true, instantChatVps: true };
       vi.stubGlobal('fetch', vi.fn(async () => ({
         status: 503,
         text: async () => '<html>502 Bad Gateway</html>',
@@ -446,7 +485,8 @@ describe('即时对话能力探测（instantTick）', () => {
       configCheck({ instantChat: true });
       const result = await ActiveMsgClient.probeInstantChatSupportDetailed();
       expect(result.outcome).toBe('unsupported');
-      expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: false });
+      expect(result.vps).toBe(false);
+      expect(ActiveMsgStore.saveGlobalConfig).toHaveBeenCalledWith({ instantChatSupported: false, instantChatVps: false });
     });
   });
 });

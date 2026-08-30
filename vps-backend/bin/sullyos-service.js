@@ -77,6 +77,9 @@ async function main() {
   // 3) 构造 CF 兼容 env：全量 vars 直通（Worker 按需取用），DB 单独绑定
   const cfEnv = { ...process.env };
   delete cfEnv.DB;
+  // 宿主自报：VPS 兼容层托管的 worker 都没有 DO（定时任务由 node-cron 兜底）。
+  // amsg 的 /config-check 把它转发成 runtime 字段，前端据此按 VPS 模式放行即时对话。
+  cfEnv.SULLYOS_RUNTIME = 'vps';
 
   let dbAdapter = null;
   let dbBound = false;

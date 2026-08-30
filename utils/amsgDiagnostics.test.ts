@@ -14,6 +14,7 @@ import {
   buildAmsgDiagnosticRows,
   describeAmsgFetchFailure,
   INSTANT_CHAT_BLOCKER_HINTS,
+  INSTANT_CHAT_VPS_NOTICE,
   InstantChatBlocker,
   InstantChatGateInput,
   parseAmsgDebugReport,
@@ -606,6 +607,7 @@ describe('resolveInstantChatBlocker — 即时对话卡在哪一道', () => {
     pushSubscribed: true,
     workerSupportsInstantChat: true,
     instantPushOn: false,
+    vpsMode: false,
   };
 
   it('四道全过才返回 null', () => {
@@ -619,6 +621,7 @@ describe('resolveInstantChatBlocker — 即时对话卡在哪一道', () => {
       pushSubscribed: false,
       workerSupportsInstantChat: false,
       instantPushOn: true,
+      vpsMode: false,
     })).toBe('没连上Worker');
   });
 
@@ -637,6 +640,15 @@ describe('resolveInstantChatBlocker — 即时对话卡在哪一道', () => {
     expect(resolveInstantChatBlocker({ ...ALL_PASS, instantPushOn: true })).toBe('与InstantPush冲突');
   });
 
+  it('VPS 模式不设新门：vpsMode=true 时四道门照旧，过了就放行', () => {
+    // VPS 宿主天生没有 DO 起跳器（runtime='vps'），探测已在 activeMsgClient 那侧放行。
+    // 这份判定只管「还卡不卡」，vpsMode 是展示/上报用输入，不许它反过来拦人。
+    expect(resolveInstantChatBlocker({ ...ALL_PASS, vpsMode: true })).toBeNull();
+  });
+  it('VPS 模式的入口提示文案存在', () => {
+    expect(INSTANT_CHAT_VPS_NOTICE).toContain('VPS');
+    expect(INSTANT_CHAT_VPS_NOTICE).toContain('node-cron');
+  });
   it('每个代号都配着一句话——设置页的黄字和使用统计的属性共用这份判定', () => {
     // 少一条的话界面上会出现空白提示：开关灰着、下面什么都不说。
     const codes: InstantChatBlocker[] = ['没连上Worker', '没开推送', 'Worker太旧', '与InstantPush冲突'];

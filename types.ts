@@ -384,6 +384,13 @@ export interface ActiveMsg2GlobalConfig {
    */
   instantChatSupported?: boolean;
   /**
+   * 上一次探测里「supported」是不是经 VPS 模式放行的（/config-check 的 runtime='vps'：
+   * SullyOS VPS 兼容层天生没有 DO，定时任务由 node-cron 兜底）。设置页拿它把入口提示
+   * 写成「VPS 模式」，上报事件也带一份。跟 instantChatSupported 一样是探测结论，
+   * importAmsg2GlobalConfig 不还原。
+   */
+  instantChatVps?: boolean;
+  /**
    * 上一次探到的「这台 Worker 能不能把 LLM 凭据存成表里的一行」
    * （GET /capabilities 的 features 含 'llm-credentials'，见 ActiveMsgClient.probeLlmCredentialsSupport）。
    *

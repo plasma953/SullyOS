@@ -1463,6 +1463,8 @@ export interface InstantChatProbeResult {
   outcome: InstantChatProbeOutcome;
   /** 探完之后真正生效的存量。unknown 时 = 探测前那份（原样不动，可能是 undefined）。 */
   supported: boolean | undefined;
+  /** 本次放行（或上次存量）是不是经「VPS 模式」进来的：runtime='vps' + instantChat 路由在。 */
+  vps?: boolean;
 }
 
 /**
@@ -2823,7 +2825,9 @@ export const ActiveMsgClient = {
    * 这台 worker 现在**真的跑得动**即时对话吗（即时对话的唯一版本门槛）。
    *
    * 认的是 `GET /config-check` 里的 `instantTick`——运行时到底有没有 INSTANT_TICK 绑定。
-   * 不认 `instantChat`（那只说明代码里有这条路由）也不认版本号，因为这三样会分家：
+   * 唯一例外：VPS 宿主在 /config-check 里自报 runtime='vps'（天生没有 DO，定时任务由
+   * node-cron 兜底），此时「instantChat 路由在」就够放行，并记下 vps 标志。CF 上依旧
+   * 不认 `instantChat`（那只说明代码里有这条路由）也不认版本号，因为这几样会分家：
    * 自更新由用户那台 Worker 上的**旧代码**执行，旧代码不认识 Durable Object，所以更新完
    * 第一下常常是「代码新了、版本号也对上了、绑定却没接上」，这条路只能回 503。看版本号
    * 的话前端会一边说「已经是最新版」一边发一条挂一条。
@@ -2849,12 +2853,17 @@ export const ActiveMsgClient = {
    */
   async probeInstantChatSupportDetailed(options?: { timeoutMs?: number }): Promise<InstantChatProbeResult> {
     let previous: boolean | undefined;
+    let previousVps: boolean | undefined;
     try {
-      previous = (await ActiveMsgStore.getGlobalConfig()).instantChatSupported;
+      const saved = await ActiveMsgStore.getGlobalConfig();
+      previous = saved.instantChatSupported;
+      previousVps = saved.instantChatVps;
     } catch {
       previous = undefined;
+      previousVps = undefined;
     }
     let outcome: InstantChatProbeOutcome = 'unknown';
+    let vps = false;
     try {
       const config = await ensureWorkerReady();
       const init: RequestInit = { method: 'GET' };
@@ -2871,7 +2880,18 @@ export const ActiveMsgClient = {
         // 中间设备塞回来的网关页……说明的都是「这条线路/这份配置有问题」，而不是
         // 「那台 Worker 跑不动即时对话」，一律留在 unknown。
         if (status === 200 && body?.success === true) {
-          outcome = body?.data?.instantTick === true ? 'supported' : 'unsupported';
+          if (body?.data?.instantTick === true) {
+            outcome = 'supported';
+          } else if (body?.data?.runtime === 'vps' && body?.data?.instantChat === true) {
+            // VPS 宿主（SullyOS 兼容层，/config-check 的 runtime 字段）：天生没有
+            // INSTANT_TICK 绑定，但定时任务由 node-cron 兜底，任务处理能力是真的——
+            // 缺起跳器不该拦它。老 CF bundle 没有这个字段，这里自然回退 unsupported，
+            // 「代码新了绑定没接上」的半新 Worker 不会被误放行。
+            outcome = 'supported';
+            vps = true;
+          } else {
+            outcome = 'unsupported';
+          }
         }
       } finally {
         if (timer) clearTimeout(timer);
@@ -2881,15 +2901,17 @@ export const ActiveMsgClient = {
       outcome = 'unknown';
     }
     // 探不到就什么都不写：存量保持原样。这一句就是「一次抖动 ≠ 长期降级」的全部。
-    if (outcome === 'unknown') return { outcome, supported: previous };
+    if (outcome === 'unknown') return { outcome, supported: previous, vps: previousVps === true };
     const supported = outcome === 'supported';
     try {
-      await ActiveMsgStore.saveGlobalConfig({ instantChatSupported: supported });
+      // instantChatVps 只在「确实经 VPS 放行」时为 true：supported=false 或 CF 放行都清掉，
+      // 不让上次 VPS 的影子留在 CF Worker 的配置里。
+      await ActiveMsgStore.saveGlobalConfig({ instantChatSupported: supported, instantChatVps: supported && vps });
     } catch (error) {
       // 存不下只是这一轮的判断留不到下次，探测结论本身照常返回。
       console.warn('[AmsgInstantChat] 能力探测结果没存下来（下次发消息按上一次的存量判断）', error);
     }
-    return { outcome, supported };
+    return { outcome, supported, vps };
   },
 
   /**

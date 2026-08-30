@@ -306,6 +306,10 @@ describe('设置页那一道门', () => {
     expect(gate).toContain('pushStatus?.hasSubscription');
     expect(gate).toContain('instantChatSupported');
     expect(gate).toContain('instantOn');
+    // VPS 模式（展示/上报用，不设新门）也要接进判定；它来自存量 instantChatVps
+    //（在 const vpsMode = config.instantChatVps === true 处读出）。
+    expect(gate).toContain('vpsMode');
+    expect(settingsSrc).toContain('instantChatVps');
     // 黄字直接取自代号表：文案跟上报属性共用一份判定，不许哪天各写各的。
     expect(settingsSrc).toContain('INSTANT_CHAT_BLOCKER_HINTS[instantChatBlocker]');
   });

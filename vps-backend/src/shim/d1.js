@@ -98,9 +98,9 @@ export function createD1Adapter(dbPath) {
           const row = stmt.get(...bound);
           return row === undefined ? null : row;
         },
-        /** 所有行（对象数组） */
+        /** 所有行（D1Result：{ results: 对象数组 }，与 Cloudflare D1 契约一致） */
         async all() {
-          return stmt.all(...bound);
+          return { results: stmt.all(...bound) };
         },
         /** 原始行（数组的数组） */
         async raw() {

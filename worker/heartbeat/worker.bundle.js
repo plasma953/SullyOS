@@ -59,7 +59,7 @@ async function handlePing(req, env) {
 async function handleStats(env) {
   const win = windowMs(env);
   const now = Date.now();
-  const rows = await env.DB.prepare('SELECT last_heartbeat FROM heartbeats').all();
+  const rows = (await env.DB.prepare('SELECT last_heartbeat FROM heartbeats').all()).results;
   const total = rows.length;
   const alive = rows.filter((r) => now - r.last_heartbeat <= win).length;
   return json({ ok: true, alive, total, windowMs: win, now });
@@ -68,7 +68,7 @@ async function handleStats(env) {
 async function handleAlive(env) {
   const win = windowMs(env);
   const now = Date.now();
-  const rows = await env.DB.prepare('SELECT endpoint, char_id, last_heartbeat FROM heartbeats').all();
+  const rows = (await env.DB.prepare('SELECT endpoint, char_id, last_heartbeat FROM heartbeats').all()).results;
   const alive = rows
     .filter((r) => now - r.last_heartbeat <= win)
     .map((r) => ({ endpoint: r.endpoint, charId: r.char_id || null, lastHeartbeat: r.last_heartbeat }));

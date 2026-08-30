@@ -166,6 +166,13 @@ interface Env extends NativeFcmEnv {
   VAPID_PRIVATE_KEY: string;
   /** 可选共享密钥；配了才校验 X-Client-Token，不配则端点全开。 */
   AMSG_SERVER_TOKEN?: string;
+  /**
+   * VPS 宿主自报的运行时标志（sullyos-service.js 注入）：'vps' 表示这份 worker 正跑在
+   * SullyOS VPS 兼容层上（没有 DO，定时任务由 node-cron 兜底）。/config-check 把它
+   * 转发成 runtime 字段——前端用它区分「VPS 上天生没有 DO」和「CF 上代码新了绑定
+   * 没接上」。CF 部署没有这个变量，落为 'cloudflare'；老 bundle 则整个字段缺席。
+   */
+  SULLYOS_RUNTIME?: string;
   /** D1 binding（factory 默认 createD1Adapter(env.DB)，这里只是标注存在）。 */
   DB: unknown;
   /** 以下三项给 /self-update 用，都可选；没配 CF_API_TOKEN 就是不开自更新。见 ./selfUpdate。 */
@@ -2988,6 +2995,11 @@ export default {
           ...inspectWorkerEnv(env),
           instantChat: true,
           instantTick: !!env.INSTANT_TICK,
+          // 宿主运行时（VPS 兼容层经 SULLYOS_RUNTIME 自报，见 Env）。'vps' 说明这台
+          // worker 跑在 SullyOS VPS 上：天生没有 DO，但定时任务由 node-cron 兜底，
+          // 前端据此按「VPS 模式」放行即时对话。老 CF bundle 没有这个字段，前端
+          // 回退旧的 instantTick 判定，不会误放行绑定没接上的半新 worker。
+          runtime: env.SULLYOS_RUNTIME === 'vps' ? 'vps' : 'cloudflare',
           // 这份代码认不认识「后台任务」（metadata.amsgKind → handler，见 fireKinds.ts）。
           // 老 bundle 没有这个字段，前端据此不去建那种任务——老 worker 会把它当聊天任务
           // 跑，然后卡在「本次任务指令缺失」终态失败：任务行不在用户的清单里，面板一片

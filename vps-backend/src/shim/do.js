@@ -56,8 +56,9 @@ export class DurableObjectShim {
         return true;
       },
       async list() {
-        const rows = await d1.prepare('SELECT key FROM do_kv WHERE ns = ? AND id = ?').bind(ns, id).all();
-        return new Map(rows.map((r) => [r.key, r.key]));
+        // all() 现按 CF D1 契约返回 { results }（见 shim/d1.js），这里同步取 .results。
+        const { results: rows } = await d1.prepare('SELECT key FROM do_kv WHERE ns = ? AND id = ?').bind(ns, id).all();
+        return new Map((rows ?? []).map((r) => [r.key, r.key]));
       },
       async getAlarm() {
         const row = await d1.prepare('SELECT due FROM do_alarms WHERE ns = ? AND id = ?').bind(ns, id).first();
