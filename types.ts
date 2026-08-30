@@ -172,7 +172,7 @@ export interface OSTheme {
   chatSnapToEdge?: boolean;
   /** HTML 卡片 / 心象卡片 / 音乐卡片的出现位置：缺省/'center' = 水平居中（默认），'anchor' = 贴气泡列
    *  （头像位，不随贴边/缩进挪动，即旧版观感）。经 MessageItem 布局属性生效（不走注入 CSS），
-   *  同属聊天细节微调字段�������可按角色覆盖 */
+   *  同属聊天细节微调字段、可按角色覆盖 */
   chatModuleAlign?: 'anchor' | 'center';
   chatBubbleStyle?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios';
   chatMessageSpacing?: 'compact' | 'default' | 'spacious';
@@ -270,7 +270,7 @@ export interface APIConfig {
   // 'overseas' → https://api.minimax.io  (海外站)
   // Missing / unknown falls back to domestic.
   minimaxRegion?: MinimaxRegion;
-  // 语音服务商三选一。缺省 → 'minimax'����
+  // 语音服务商三选一。缺省 → 'minimax'。
   ttsProvider?: TtsProvider;
   // 鱼声 Fish Audio API Key（https://fish.audio/）。仅 ttsProvider === 'fishaudio' 时使用。
   fishAudioApiKey?: string;
@@ -441,7 +441,7 @@ export interface ActiveMsg2TaskRecord {
   /** fixed 模式的固定内容。 */
   userMessage?: string;
   promptHint?: string;
-  /** 防穿帮��略；fixed 任务恒为 'force'（见 amsg2Tasks.resolveExpirePolicy）。 */
+  /** 防穿帮策略；fixed 任务恒为 'force'（见 amsg2Tasks.resolveExpirePolicy）。 */
   expirePolicy: ActiveMsg2ExpirePolicy;
   source: ActiveMsg2TaskSource;
   status: ActiveMsg2TaskStatus;
@@ -784,7 +784,7 @@ export interface TheaterLine {
 
 /**
  * 小剧场（窥视演出）。挂在某个 ScheduleSlot 上：用户点该时段的播放按钮，
- * 第三��称「���帝视角」生成角色在这个时间点的一小段行为演出，逐行播放。
+ * 第三人称「上帝视角」生成角色在这个时间点的一小段行为演出，逐行播放。
  * 生成一次即缓存进 slot，可反复重看，不重复烧 token。
  */
 export interface SlotTheater {
@@ -1028,7 +1028,7 @@ export interface AiSession {
 export interface TavernCard {
     id: string;
     name: string;
-    /** 卡类型：character=单个角色卡；world=大��世界卡（跑团/修仙/西幻等） */
+    /** 卡类型：character=单个角色卡；world=大型世界卡（跑团/修仙/西幻等） */
     kind?: 'character' | 'world';
     /** 角色人设 / 世界设定 */
     persona: string;
@@ -1114,7 +1114,7 @@ export type DreamFragmentKind =
     | 'line'       // 一句飘过的字幕
     | 'word'       // 单字 / 单词，巨大、孤立
     | 'silence'    // 留白 · 沉默（空行，长停顿）
-    | 'repeat'     // 同一个��反复
+    | 'repeat'     // 同一个词反复
     | 'dialogue'   // 极短的对话碎片
     | 'stage'      // 舞台提示（[门在微笑]）
     | 'list'       // 清单
@@ -1242,7 +1242,7 @@ export interface NovelBook {
 // =====================================================================
 // --- VR WORLD ("彼方") TYPES ---
 // 角色自主登入的虚拟世界。定时器驱动每个角色独立调用一次 LLM，在某个房间
-// 完成一次活动（v1：图书馆看小说），产出一张活动��注入该角色的 1v1 聊天，
+// 完成一次活动（v1：图书馆看小说），产出一张活动卡注入该角色的 1v1 聊天，
 // 天然被上下文与记忆总结捕捉。
 // =====================================================================
 
@@ -1442,7 +1442,7 @@ export interface SignalBooklet {
 }
 
 // ============================================================
-// 家园（WorldHome）���— 同世界观多角色共同生活��大世界
+// 家园（WorldHome）—— 同世界观多角色共同生活的大世界
 // ============================================================
 
 /**
@@ -1613,7 +1613,7 @@ export interface WorldProfile {
     clockSegs?: number;
     /** 生成内容是否注入各成员的 1v1 聊天（默认 true） */
     injectToChat?: boolean;
-    /** 该世界专属 API ��盖��不设则回��全局 apiConfig */
+    /** 该世界专属 API 覆盖；不设则回落全局 apiConfig */
     api?: { baseUrl: string; apiKey: string; model: string };
     createdAt: number;
     updatedAt: number;
@@ -1700,7 +1700,7 @@ export interface WorldChapter {
     toLabel: string;
     /** 全知小说体梗概（给用户看，含人物关系动态走向与评价） */
     synopsis: string;
-    /** 关系网这一���的走向评价 */
+    /** 关系网这一卷的走向评价 */
     relationshipEval?: string;
     /** 这一卷沉淀的氛围基调（影响下一卷，喂给所有角色） */
     atmosphere?: string;
@@ -1817,7 +1817,7 @@ export interface VRMusicRoomState {
 
 // ============ 剧院 / 话剧部门 ============
 
-/** 剧本里的一个登场角色（名字 + 大致��格，供选角匹配/���绎用）。 */
+/** 剧本里的一个登场角色（名字 + 大致性格，供选角匹配/演绎用）。 */
 export interface VRPlayRole {
     name: string;
     persona: string;
@@ -2233,7 +2233,7 @@ export interface StoryTheaterPresetPrompt {
     enabled: boolean;
     role: 'system' | 'user' | 'assistant';
     content: string;
-    /** marker ��发送器��换为角色/世界书/用户/场景/历史，不把占位条目当普通正文。 */
+    /** marker 由发送器替换为角色/世界书/用户/场景/历史，不把占位条目当普通正文。 */
     marker?: 'characters' | 'world_before' | 'user' | 'world_after' | 'scenario' | 'examples' | 'history';
 }
 
@@ -2496,7 +2496,7 @@ export interface CharCurrentListening {
     songName: string;
     artists: string;
     albumPic: string;
-    /** 心境 / ���曲理由（���自 slot.innerThought 或 description） */
+    /** 心境 / 选曲理由（来自 slot.innerThought 或 description） */
     vibe?: string;
     startedAt: number;
 }
@@ -2723,7 +2723,7 @@ export interface CharacterProfile {
       byteLength: number;
       fileCount: number;
       importedAt: number;
-      /** 源包格式：旧模型使用 STORE，新导入 ZIP 保留原包并按文件���式读取。 */
+      /** 源包格式：旧模型使用 STORE，新导入 ZIP 保留原包并按文件流式读取。 */
       runtimePackageEncoding?: 'store-v1' | 'zip-v1';
       /** 自动动作权限策略版本；2 = 安全动作默认加入 AI 动作库。 */
       actionPolicyVersion?: 2;
@@ -2807,7 +2807,7 @@ export interface CharacterProfile {
   companionBackground?: string;
   /**
    * 触感陪伴桌面的本地反馈包。用户只在设置中主动生成一次；之后每次触碰
-   * 都从这里轮播台词与演出，不再逐次请求主聊天 API���
+   * 都从这里轮播台词与演出，不再逐次请求主聊天 API。
    */
   companionTouchSettings?: CompanionTouchSettings;
   /**
@@ -3063,12 +3063,12 @@ export interface CharacterProfile {
    * 日程 / 情绪 Buff 总开关。
    * - true：启用日程生成、意识流、情绪 buff 评估与注入（消耗副 API）。
    * - false：完全关闭，不调副 API，不注入情绪，不生成日程。
-   * - undefined：向后兼容——若 scheduleStyle 已设（老用户已隐式选风格）视为开启；否则默认关闭��
+   * - undefined：向后兼容——若 scheduleStyle 已设（老用户已隐式选风格）视为开启；否则默认关闭。
    */
   scheduleFeatureEnabled?: boolean;
 
   /**
-   * HTML 模块模式���per-character）。
+   * HTML 模块模式（per-character）。
    * - htmlModeEnabled：开启后，给 LLM 注入"用 [html]...[/html] 包裹的富 HTML 卡片"提示词，
    *   AI 输出里的 [html] 块会被解析成单独的 html_card 消息（沙盒 iframe 渲染）。
    * - htmlModeCustomPrompt：用户自定义内容，**追加**在内置提示词之后（不会覆盖内置内容）。
@@ -3136,7 +3136,7 @@ export interface CharacterProfile {
 }
 
 /**
- * 角色分组（神经链接里的"文件夹"）：纯���织用途，解决角色太���时选择列表过长的问题。
+ * 角色分组（神经链接里的"文件夹"）：纯组织用途，解决角色太多时选择列表过长的问题。
  * 注意与下面的 GroupProfile（群聊）无关——角色通过 CharacterProfile.groupId 指向分组，
  * 删除分组只会让组内角色回到「未分组」，不会删角色。
  */
@@ -3224,7 +3224,7 @@ export interface UserProfile {
      *  群聊/其他场合仍用整体头像。删角色留下的孤儿键无害，读取端永远按当前 charId 取。 */
     perCharAvatars?: Record<string, string>;
     /**
-     * 用��本人接入「彼方」的状态��捏的 chibi、此刻所在���间、在干嘛。可随时改。
+     * 用户本人接入「彼方」的状态：捏的 chibi、此刻所在房间、在干嘛。可随时改。
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
      */
     vrState?: UserVRState;
@@ -3429,7 +3429,7 @@ export interface SlotDef {
     charBudget: [number, number];
     /** 谁能填: ['user'] / ['char'] / ['user', 'char'] */
     eligibleAuthors: SlotAuthorKind[];
-    /** 给 LLM 的一句话目的 (���为 prompt hint) */
+    /** 给 LLM 的一句话目的 (作为 prompt hint) */
     hint: string;
     /** 位置 — 整页百分比 */
     xPct: number;
@@ -3527,7 +3527,7 @@ export interface Tracker {
     schema: TrackerField[];
     createdAt: number;
     updatedAt: number;
-    /** 系统预设 vs 用���自建（系统预设 user 可禁用但不可彻底删除）*/
+    /** 系统预设 vs 用户自建（系统预设 user 可禁用但不可彻底删除）*/
     isBuiltin?: boolean;
     /** 在月历单元格上如何"一眼看到"今日 entry —— 默认显示主字段值 */
     cellRenderField?: string;        // schema field key
@@ -3614,7 +3614,7 @@ export interface LifeRecordSettings {
      * 隐藏 = 前端不再显示 + 对所有角色断掉该模块注入与代记（优先级高于角色小开关）。
      */
     hiddenModules?: LifeRecordModule[];
-    /** 锻炼周���划：每周目标次数（���色会据此监督执行） */
+    /** 锻炼周计划：每周目标次数（角色会据此监督执行） */
     exerciseWeeklyGoal?: number;
     /** 锻炼周计划：文字规划（如"周一跑步 / 周四力量"），会注入给角色 */
     exercisePlanNote?: string;
@@ -3975,7 +3975,7 @@ export interface FullBackupData {
     // LifeSim
     lifeSimState?: LifeSimState | null;
 
-    // Memory Palace (记��宫殿)
+    // Memory Palace (记忆宫殿)
     memoryNodes?: any[];
     memoryVectors?: any[];
     memoryLinks?: any[];
@@ -4200,7 +4200,7 @@ export interface XhsMcpConfig {
     serverUrl: string;  // MCP: "http://localhost:18060/mcp" | Skills: "http://localhost:18061/api" | Lite Worker: "https://xhs-lite.<acct>.workers.dev/api"
     cookie?: string;    // Lite 模式：登录后的小红书完整 cookie（含 a1 / web_session）。仅 lite Worker 用。
     platform?: 'xhs' | 'rednote'; // Lite 自动识别出的国内小红书 / 全球 RedNote 后端
-    rnoteApiKey?: string; // Lite 模��可选：用户自己的 Rnote Key，仅用于读取真实评论。
+    rnoteApiKey?: string; // Lite 模式可选：用户自己的 Rnote Key，仅用于读取真实评论。
     loggedInUserId?: string;   // 登录用户的 user_id，连接测试成功后自动获取
     loggedInNickname?: string; // 登录用户的昵称
     userXsecToken?: string;    // 连接测试时从首页推荐自动提取的 xsec_token
@@ -4313,7 +4313,7 @@ export interface SimPendingEffect {
     effectCode: SimEffectCode;
     effectValue?: number;
     chainFrom?: string;        // 产生此效果的事件ID
-    severity?: number;         // 1-5 严重��度
+    severity?: number;         // 1-5 严重程度
     involvedNpcIds?: string[]; // 涉及的NPC
 }
 
@@ -4421,7 +4421,7 @@ export interface LifeSimState {
     // 离线模拟
     lastActiveTimestamp?: number; // 上次活跃时间
     offlineRecap?: OfflineRecapEvent[]; // 离线回顾数据
-    // 旧字���（存档兼容，运行时忽略）
+    // 旧字段（存档兼容，运行时忽略）
     buildings?: SimBuilding[];
     worldInventory?: Record<string, number>;
     worldGold?: number;

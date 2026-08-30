@@ -849,7 +849,7 @@ You are now acting as a private tutor for ${userProfile.name}.
     // --- EPUB AI Summary (按需生成 + 缓存) ---
 
     const persistSummary = async (courseId: string, chapterIdx: number, summary: string) => {
-        // ��������� courses 为准回写（避免覆盖课堂上其它字段的并发更新）
+        // 以最新 courses 为准回写（避免覆盖课堂上其它字段的并发更新）
         const target = courses.find(c => c.id === courseId);
         if (!target) return;
         const updatedChapters = [...target.chapters];
@@ -1601,7 +1601,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                 value={followUpInput}
                                                 onChange={e => setFollowUpInput(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && handleFollowUp(q.id)}
-                                                placeholder="哪里不���白？"
+                                                placeholder="哪里不明白？"
                                                 className="flex-1 bg-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-white/30 outline-none border border-white/10 focus:border-amber-500/50"
                                                 autoFocus
                                                 disabled={followUpLoading}
@@ -1864,7 +1864,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             <textarea
                                 value={importPreference}
                                 onChange={e => setImportPreference(e.target.value)}
-                                placeholder="例如：请��中文讲解，多用简单的比喻，针对数学公式详细推导..."
+                                placeholder="例如：请用中文讲解，多用简单的比喻，针对数学公式详细推导..."
                                 className="w-full h-32 bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500 resize-none"
                             />
                         </div>
@@ -1916,7 +1916,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             )}
                             <div className="space-y-2 bg-slate-100 rounded-xl p-3">
                                 <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名称（如：数学辅导）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500" />
-                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提��词内容（如：请用中文讲解，多用简单的比喻...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500 resize-none h-24" />
+                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提示词内容（如：请用中文讲解，多用简单的比喻...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500 resize-none h-24" />
                                 <button onClick={handleSavePreset} disabled={!presetName.trim() || !presetPrompt.trim()} className="w-full py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs disabled:opacity-40">
                                     {editingPreset ? '更新预设' : '添加预设'}
                                 </button>
@@ -1931,7 +1931,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 {/* Delete Confirmation Modal */}
                 <Modal 
                     isOpen={!!deleteTarget} 
-                    title="删除���程" 
+                    title="删除课程" 
                     onClose={() => setDeleteTarget(null)} 
                     footer={
                         <div className="flex gap-2 w-full">
@@ -2211,7 +2211,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">题目数量: {quizCount}</label>
                         <input type="range" min={3} max={15} value={quizCount} onChange={e => setQuizCount(Number(e.target.value))} className="w-full accent-amber-500" />
                         <div className="flex justify-between text-[10px] text-slate-400 mt-1">
-                            <span>3题</span><span>15���</span>
+                            <span>3题</span><span>15题</span>
                         </div>
                     </div>
                 </div>
