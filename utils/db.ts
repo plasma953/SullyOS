@@ -9,7 +9,7 @@ import {
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     LifeRecord, MedPlan, LifeRecordSettings, CharacterGroup,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
-    WorldProfile, WorldEpisode, StoryTheaterEntry, StoryTheaterPreset, StoryTheaterMask
+    WorldProfile, WorldEpisode, StoryTheaterEntry, StoryTheaterPreset, StoryTheaterMask, PromptPreset
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 import { exportSignalLocal, importSignalLocal } from './vrWorld/signal';
@@ -27,7 +27,8 @@ const DB_NAME = 'AetherOS_Data';
 // v69：见面·剧情条目与糯米机原生预设。正文继续复用 messages 表，避免再造会话存储。
 // v70：剧场面具箱（原创人物面具）；角色面具仍只存 characterId，不复制神经链接资料。
 // v71：角色小红书伪主页；发帖归属与可删除的自由活动日志分离。
-const DB_VERSION = 71;
+// v72：提示词段落预设（Preset App）。独立 store，随备份动态枚举自动带走。
+const DB_VERSION = 72;
 
 const STORE_CHARACTERS = 'characters';
 const STORE_CHAR_GROUPS = 'character_groups'; // 角色分组定义（角色通过 groupId 指向；与群聊 groups 无关）
@@ -69,6 +70,7 @@ const STORE_HOTNEWS = 'hotnews_snapshots';        // 分时段热点快照（全
 const STORE_VR_NOVELS = 'vr_novels';              // 虚拟世界「彼方」全局小说库（所有角色共享原文）
 const STORE_VR_ANNOTATIONS = 'vr_annotations';    // 虚拟世界小说批注（per-segment per-char，可互相吐槽）
 const STORE_CC_PARTS = 'cc_custom_parts';         // 捏脸系统自定义部件（开发模式追加，注入捏人器）
+const STORE_PROMPT_PRESETS = 'prompt_presets';    // 提示词段落预设（Preset App，order 排序 / enabled 启停）
 const STORE_VR_MUSIC = 'vr_music';                // 听歌房共享状态（单例 nowPlaying + 循环队列）
 const STORE_VR_GUESTBOOK = 'vr_guestbook';        // 留言簿共享版聊墙（单例 messages）
 const STORE_VR_SCRIPTS = 'vr_scripts';            // 剧院·投稿剧本库（每份剧本一条）
@@ -355,6 +357,9 @@ export const openDB = (): Promise<IDBDatabase> => {
       createStore(STORE_STORY_THEATER_MASKS, { keyPath: 'id' });
 
       createStore(STORE_HOTNEWS, { keyPath: 'id' });
+
+      // v72: 提示词段落预设
+      createStore(STORE_PROMPT_PRESETS, { keyPath: 'id' });
 
       // ─── Memory Palace (记忆宫殿) stores ───
       if (!db.objectStoreNames.contains('memory_nodes')) {
@@ -3876,4 +3881,43 @@ export const DB = {
           data.bankDollhouse = undefined as any;
       }, (data.bankState ? 1 : 0) + (data.bankDollhouse ? 1 : 0));
   }
+};
+
+// ─── 提示词段落预设（Preset App / v72）───
+
+export const getPromptPresets = async (): Promise<PromptPreset[]> => {
+    try {
+        const db = await openDB();
+        if (!db.objectStoreNames.contains(STORE_PROMPT_PRESETS)) return [];
+        const rows = await new Promise<PromptPreset[]>((resolve, reject) => {
+            const tx = db.transaction(STORE_PROMPT_PRESETS, 'readonly');
+            const req = tx.objectStore(STORE_PROMPT_PRESETS).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+        return rows.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    } catch (e) {
+        console.warn('[DB] getPromptPresets failed:', e);
+        return [];
+    }
+};
+
+export const savePromptPreset = async (preset: PromptPreset): Promise<void> => {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_PROMPT_PRESETS, 'readwrite');
+        tx.objectStore(STORE_PROMPT_PRESETS).put(preset);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+};
+
+export const deletePromptPreset = async (id: string): Promise<void> => {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_PROMPT_PRESETS, 'readwrite');
+        tx.objectStore(STORE_PROMPT_PRESETS).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
 };

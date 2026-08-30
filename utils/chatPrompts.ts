@@ -327,6 +327,22 @@ export const ChatPrompts = {
         );
         timings.buildCoreContext = Math.round(performance.now() - coreT0);
 
+        // ── 提示词段落预设（Preset App）──
+        // 启用的段落按 order 排序，拼在角色卡之后、易变状态之前 —— 用户写的「自己人」
+        // 指令应该靠前、不与运行时状态争位置。读取失败 / 无预设时不留痕，零开销路径。
+        try {
+            const presetRows = forFirePack ? [] : await DB.getPromptPresets();
+            const presetBlocks = (presetRows || [])
+                .filter((p) => p.enabled && (p.content || '').trim())
+                .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
+                .map((p) => `【${p.name}】\n${p.content.trim()}`);
+            if (presetBlocks.length > 0) {
+                baseSystemPrompt += '\n\n' + presetBlocks.join('\n\n');
+            }
+        } catch (e) {
+            console.warn('[PresetPrompt] 预设段落注入失败（忽略）:', e);
+        }
+
         // ── 易变状态段（volatileState）──
         // 开头一行框定，让模型明白这条出现在历史之后的 system 消息是"此刻的状态"，
         // 人设与规则仍以最上方的系统设定为准。

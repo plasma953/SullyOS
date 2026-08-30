@@ -36,6 +36,7 @@ import {
   Planet,
   Wrench,
   HouseLine,
+  ListChecks,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -70,6 +71,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Guidebook: ({ className }) => <Crosshair className={className} weight="regular" />,
   LifeSim: ({ className }) => <Smiley className={className} weight="regular" />,
   MemoryPalace: ({ className }) => <Brain className={className} weight="regular" />,
+  Preset: ({ className }) => <ListChecks className={className} weight="regular" />,
   Handbook: ({ className }) => <Notebook className={className} weight="regular" />,
   QQBridge: ({ className }) => <Plugs className={className} weight="regular" />,
   HotNews: ({ className }) => <Newspaper className={className} weight="regular" />,
@@ -81,6 +83,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
 export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Character, name: '神经链接', icon: 'Character', color: 'indigo' },
   { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
+  { id: AppID.Preset, name: '预设', icon: 'Preset', color: 'violet' },
   { id: AppID.Chat, name: 'Message', icon: 'Chat', color: 'green' },
   { id: AppID.Call, name: '电话', icon: 'Call', color: 'emerald' },
   { id: AppID.GroupChat, name: '群聊', icon: 'GroupChat', color: 'violet' },

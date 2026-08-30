@@ -37,6 +37,7 @@ export enum AppID {
   VRWorld = 'vrworld', // 彼方 — 角色自主登入的虚拟世界（定时驱动，房间里看小说/听歌/留言，产出活动卡注入聊天+记忆）
   CharCreatorDev = 'char_creator_dev', // 捏脸系统开发模式 — 仅开发模式可见，向捏人器指定类目追加自定义部件
   WorldHome = 'world_home', // 家园 — 同世界观多角色共同生活的大世界（观测驱动演绎，每角色独立 LLM 调用 + NPC 世界引擎）
+  Preset = 'preset', // 预设 — 提示词段落预设管理（内容/顺序/启停，注入聊天 system prompt）
 }
 
 export interface SystemLog {
@@ -790,6 +791,16 @@ export interface ScheduleSlot {
      * 不单设「忙碌原因」字段 —— activity 本身就是原因，且只在系统侧流转，不展示给用户。
      */
     busy?: boolean;
+}
+
+export interface PromptPreset {
+    id: string;           // crypto.randomUUID()
+    name: string;         // 段落名（仅给自己看，如「写作风格」「已读前置」）
+    content: string;      // 注入 system prompt 的正文
+    order: number;        // 排序号（上下移交换此值）
+    enabled: boolean;     // 启停开关：关掉 = 不注入
+    createdAt: number;
+    updatedAt: number;
 }
 
 export interface DailySchedule {
