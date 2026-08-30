@@ -315,6 +315,21 @@ export interface APIConfig {
   agentUrl?: string;
   /** 主代理的 X-Client-Token（VPS .env 的 AMSG_CLIENT_TOKEN）；未配置鉴权时留空。 */
   agentToken?: string;
+  /**
+   * 外部连接桥（可选）。把任意外部 MCP/HTTP 服务挂进 SullyOS 的通用配置位。
+   * 连通性用 `GET {url}{healthPath}`（默认 /，3 秒超时）探测，结果进系统状态面板。
+   */
+  bridge?: BridgeConfig;
+}
+
+export interface BridgeConfig {
+  /** 桥服务根地址，如 https://galatea-garden-wake-bridge.xxx.vercel.app */
+  url: string;
+  /** 可选鉴权令牌（Bearer）；仅当对方服务要求时填写。 */
+  token?: string;
+  /** 健康检查路径（拼在 url 后）。默认 /；对方有 /health 之类的端点就填它。 */
+  healthPath?: string;
+  enabled: boolean;
 }
 
 export interface InstantPushConfig {

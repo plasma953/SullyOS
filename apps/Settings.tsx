@@ -42,6 +42,7 @@ import {
 } from '../utils/avatarModelBackup';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../utils/apiConfigNormalize';
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
+import StatusPanel from '../components/StatusPanel';
 import type { APIConfig, TtsProvider } from '../types';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
 import {
@@ -573,6 +574,11 @@ const Settings: React.FC = () => {
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
   const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
   const [localAgentUrl, setLocalAgentUrl] = useState(apiConfig.agentUrl || '');
+  // 外部连接桥（BridgeConfig）：表单草稿。保存时整体写进 apiConfig.bridge。
+  const [localBridgeUrl, setLocalBridgeUrl] = useState(apiConfig.bridge?.url || '');
+  const [localBridgeToken, setLocalBridgeToken] = useState(apiConfig.bridge?.token || '');
+  const [localBridgeHealthPath, setLocalBridgeHealthPath] = useState(apiConfig.bridge?.healthPath || '');
+  const [localBridgeEnabled, setLocalBridgeEnabled] = useState(apiConfig.bridge?.enabled === true);
   const [localAgentToken, setLocalAgentToken] = useState(apiConfig.agentToken || '');
   const [localModel, setLocalModel] = useState(String(apiConfig.model || ''));
   const [localStream, setLocalStream] = useState<boolean>(apiConfig.stream === true);
@@ -1055,6 +1061,20 @@ const Settings: React.FC = () => {
   /**
    * 主代理中转独立保存：只动 agentUrl / agentToken，不碰 LLM 三件套与预设。
    */
+  // 外部连接桥保存：URL 去尾斜杠、healthPath 缺省 '/'；状态面板会自动探到新配置。
+  const handleSaveBridge = () => {
+      const url = String(localBridgeUrl || '').trim().replace(/\/+$/, '');
+      const next = {
+          url,
+          token: String(localBridgeToken || '').trim(),
+          healthPath: String(localBridgeHealthPath || '').trim() || '/',
+          enabled: localBridgeEnabled && !!url,
+      };
+      commitApiConfig({ bridge: next });
+      setLocalBridgeUrl(url);
+      setStatusMsg(url && localBridgeEnabled ? '连接桥已保存并启用' : '连接桥配置已保存');
+      setTimeout(() => setStatusMsg(''), 2000);
+  };
   const handleSaveAgentRelay = () => {
       const nextAgentUrl = String(localAgentUrl || '').trim().replace(/\/+$/, '');
       const nextAgentToken = String(localAgentToken || '').trim();
@@ -2440,6 +2460,69 @@ const Settings: React.FC = () => {
                         {testApiResult}
                     </div>
                 )}
+            </div>
+        </SettingsSection>
+
+        {/* ───────── 系统状态（常驻面板，非弹窗） ───────── */}
+        <SettingsSection
+            title="系统状态"
+            defaultOpen
+            icon={
+                <div className="p-2 bg-emerald-100/70 rounded-xl text-emerald-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                </div>
+            }
+        >
+            <StatusPanel apiConfig={apiConfig} />
+        </SettingsSection>
+
+        {/* ───────── 外部连接桥 ───────── */}
+        <SettingsSection
+            title="外部连接桥"
+            icon={
+                <div className="p-2 bg-cyan-100/70 rounded-xl text-cyan-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                    </svg>
+                </div>
+            }
+            badge={
+                <span className={`text-[9px] font-bold px-2 py-1 rounded-full ${localBridgeEnabled && localBridgeUrl.trim() ? 'bg-cyan-100 text-cyan-700' : 'bg-slate-100 text-slate-400'}`}>
+                    {localBridgeEnabled && localBridgeUrl.trim() ? '已启用' : '未启用'}
+                </span>
+            }
+        >
+            <div className="space-y-3">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                    把外部 MCP / HTTP 服务（如 galatea-garden-wake-bridge 这类 wake bridge）挂进统一配置位。启用后连通性会显示在上方「系统状态」面板里，无弹窗。
+                </p>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">桥地址</label>
+                    <input type="text" value={localBridgeUrl} onChange={(e) => setLocalBridgeUrl(e.target.value)} placeholder="https://galatea-garden-wake-bridge.vercel.app" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">令牌（可选）</label>
+                    <input type="password" value={localBridgeToken} onChange={(e) => setLocalBridgeToken(e.target.value)} placeholder="对方服务要求鉴权时填（Bearer）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">健康检查路径（可选）</label>
+                    <input type="text" value={localBridgeHealthPath} onChange={(e) => setLocalBridgeHealthPath(e.target.value)} placeholder="/（默认探根路径；对方有 /health 就填它）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <p className="text-[9px] text-slate-400 mt-1 pl-1">探测方式：GET 桥地址 + 此路径，3 秒超时，结果进系统状态面板。</p>
+                </div>
+                <label className="flex items-center justify-between cursor-pointer select-none">
+                    <span className="text-xs font-semibold text-slate-600">启用连接桥</span>
+                    <span className="relative inline-block w-11 h-6 cursor-pointer">
+                        <input type="checkbox" className="opacity-0 w-0 h-0 peer" checked={localBridgeEnabled} onChange={(e) => setLocalBridgeEnabled(e.target.checked)} />
+                        <div className="absolute inset-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+                    </span>
+                </label>
+                <button
+                    type="button"
+                    onClick={handleSaveBridge}
+                    className="w-full py-2.5 rounded-2xl font-bold text-sm border border-cyan-500/30 text-cyan-600 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all"
+                >
+                    保存连接桥配置
+                </button>
             </div>
         </SettingsSection>
 
