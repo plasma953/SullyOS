@@ -6,14 +6,14 @@ import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson, extractJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { Notepad, Check, X, CheckCircle, XCircle, Hand } from '@phosphor-icons/react';
+import { Notepad, Check, X, CheckCircle, XCircle, Hand, Palette } from '@phosphor-icons/react';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import TokenImg from '../components/os/TokenImg';
 import { trackEvent } from '../utils/analytics';
 import { extractPdfText, isPdfFile } from '../utils/pdfText';
 import { isEpubFile, parseEpubFile } from '../utils/epub';
 import { deleteBlobRef } from '../utils/blobRef';
-import { EpubReaderContent, SummaryPanel, SummaryState } from './components/study/EpubReader';
+import { EpubReaderContent, SummaryPanel, EpubThemeMenu, useReaderTheme, ReadingThemeId } from './components/study/EpubReader';
 
 type KatexLike = {
     renderToString: (latex: string, options: any) => string;
@@ -337,6 +337,8 @@ const StudyApp: React.FC = () => {
 
     // Reader / Summary State（EPUB 阅读器与 AI 总结侧滑）
     const [showSummaryPanel, setShowSummaryPanel] = useState(false);
+    const [showThemeMenu, setShowThemeMenu] = useState(false); // 阅读配色菜单
+    const { theme: readerTheme, setTheme: setReaderTheme } = useReaderTheme();
     const [summaryState, setSummaryState] = useState<SummaryState>('idle');
     const [summaryContent, setSummaryContent] = useState('');
     const [summaryError, setSummaryError] = useState('');
@@ -1958,18 +1960,23 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
             setCourses(prev => prev.map(c => c.id === updated.id ? updated : c)); // Sync
         };
         return (
-            <div className="h-full w-full bg-[#1e2321] flex flex-col relative overflow-hidden font-sans">
+            <div className="epub-r h-full w-full flex flex-col relative overflow-hidden font-sans" data-theme={readerTheme} style={{ background: 'var(--er-bg)' }}>
                 {/* Background Texture */}
-                <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+                <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'linear-gradient(var(--er-border) 1px, transparent 1px), linear-gradient(90deg, var(--er-border) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
                 {/* Header Overlay */}
                 <div className="absolute top-0 w-full px-4 pb-4 flex justify-between z-30 pointer-events-none" style={{ paddingTop: 'max(1rem, var(--safe-top))' }}>
-                    <button onClick={() => setMode('bookshelf')} className="bg-black/30 text-white/80 p-2 rounded-full backdrop-blur-md hover:bg-black/50 transition-colors pointer-events-auto border border-white/10">
+                    <button onClick={() => setMode('bookshelf')} className="epub-r-glass p-2 rounded-full backdrop-blur-md transition-colors pointer-events-auto">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <div onClick={() => { trackEvent('打开章节目录'); setShowChapterMenu(true); }} className="bg-black/30 text-white/90 px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold border border-white/10 shadow-sm pointer-events-auto cursor-pointer flex items-center gap-2 hover:bg-black/50">
-                        <span className="truncate max-w-[150px]">{readerChapter?.title}</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    <div className="flex items-center gap-1.5 pointer-events-auto">
+                        <button onClick={() => { trackEvent('阅读器打开配色菜单'); setShowThemeMenu(true); }} className="epub-r-glass p-2 rounded-full backdrop-blur-md transition-colors" title="阅读配色">
+                            <Palette size={14} />
+                        </button>
+                        <div onClick={() => { trackEvent('打开章节目录'); setShowChapterMenu(true); }} className="epub-r-glass px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold shadow-sm cursor-pointer flex items-center gap-2">
+                            <span className="truncate max-w-[150px]">{readerChapter?.title}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                        </div>
                     </div>
                 </div>
 
@@ -2010,7 +2017,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 </div>
 
                 {/* Controls Bar */}
-                <div className="absolute bottom-0 w-full bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe">
+                <div className="epub-r-controls absolute bottom-0 w-full backdrop-blur-xl border-t p-4 z-30 pb-safe">
                     <div className="flex gap-2">
                         <button
                             disabled={readerIdx <= 0}
@@ -2054,8 +2061,16 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     state={summaryState}
                     content={summaryContent}
                     error={summaryError}
+                    theme={readerTheme}
                     onClose={() => setShowSummaryPanel(false)}
                     onRetry={openChapterSummary}
+                />
+
+                <EpubThemeMenu
+                    open={showThemeMenu}
+                    theme={readerTheme}
+                    onPick={(t) => setReaderTheme(t)}
+                    onClose={() => setShowThemeMenu(false)}
                 />
             </div>
         );

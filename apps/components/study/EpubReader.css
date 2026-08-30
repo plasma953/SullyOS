@@ -1,0 +1,185 @@
+/* ============================================================
+ * EPUB 阅读器配色主题（自习室专用）
+ * - .epub-r 根容器 + data-theme 驱动 --er-* 变量；
+ * - 组件/视图内禁止硬编码主题色，一律使用变量。
+ * ============================================================ */
+
+.epub-r {
+    /* 夜间（默认，保持既有视觉不变） */
+    --er-bg: #1e2321;
+    --er-panel-bg: #0f172a;
+    --er-border: rgba(255, 255, 255, 0.1);
+    --er-glass: rgba(0, 0, 0, 0.3);
+    --er-glass-hover: rgba(0, 0, 0, 0.5);
+    --er-hover: rgba(255, 255, 255, 0.05);
+    --er-hover-strong: rgba(255, 255, 255, 0.1);
+    --er-text: #e2e8f0;
+    --er-text-2: #94a3b8;
+    --er-text-3: #64748b;
+    --er-accent: #6ee7b7;
+    --er-accent-soft: rgba(16, 185, 129, 0.5);
+    --er-code-bg: rgba(0, 0, 0, 0.4);
+    --er-code-text: #a7f3d0;
+    --er-note-text: #fcd34d;
+    --er-note-bg: rgba(245, 158, 11, 0.1);
+    --er-note-border: rgba(251, 191, 36, 0.2);
+    color: var(--er-text);
+}
+
+/* 护眼（暖米色纸感） */
+.epub-r[data-theme='sepia'] {
+    --er-bg: #f4ecd8;
+    --er-panel-bg: #efe5cc;
+    --er-border: rgba(120, 90, 40, 0.18);
+    --er-glass: rgba(120, 90, 40, 0.08);
+    --er-glass-hover: rgba(120, 90, 40, 0.16);
+    --er-hover: rgba(120, 90, 40, 0.07);
+    --er-hover-strong: rgba(120, 90, 40, 0.14);
+    --er-text: #3f3428;
+    --er-text-2: #6b5d49;
+    --er-text-3: #99876b;
+    --er-accent: #0f766e;
+    --er-accent-soft: rgba(15, 118, 110, 0.45);
+    --er-code-bg: rgba(120, 90, 40, 0.08);
+    --er-code-text: #7c5a1d;
+    --er-note-text: #92400e;
+    --er-note-bg: rgba(217, 119, 6, 0.1);
+    --er-note-border: rgba(217, 119, 6, 0.22);
+}
+
+/* 白天 */
+.epub-r[data-theme='day'] {
+    --er-bg: #ffffff;
+    --er-panel-bg: #f8fafc;
+    --er-border: rgba(15, 23, 42, 0.1);
+    --er-glass: rgba(15, 23, 42, 0.05);
+    --er-glass-hover: rgba(15, 23, 42, 0.1);
+    --er-hover: rgba(15, 23, 42, 0.04);
+    --er-hover-strong: rgba(15, 23, 42, 0.08);
+    --er-text: #1f2937;
+    --er-text-2: #4b5563;
+    --er-text-3: #9ca3af;
+    --er-accent: #0f766e;
+    --er-accent-soft: rgba(15, 118, 110, 0.4);
+    --er-code-bg: rgba(15, 23, 42, 0.04);
+    --er-code-text: #b45309;
+    --er-note-text: #b45309;
+    --er-note-bg: rgba(245, 158, 11, 0.08);
+    --er-note-border: rgba(217, 119, 6, 0.2);
+}
+
+/* ---------- 文本 ---------- */
+.er-body { color: var(--er-text); }
+.er-tx { color: var(--er-text); }
+.er-tx-strong { color: var(--er-text); }
+.er-tx-dim { color: var(--er-text-3); }
+.er-accent { color: var(--er-accent); }
+.er-link { color: var(--er-accent); }
+
+/* ---------- 线与面板 ---------- */
+.er-line { border-color: var(--er-border); }
+.epub-r-panel { background: var(--er-panel-bg); }
+.epub-r-glass {
+    background: var(--er-glass);
+    color: var(--er-text);
+    border: 1px solid var(--er-border);
+}
+.epub-r-glass:hover { background: var(--er-glass-hover); }
+.epub-r-controls {
+    background: var(--er-panel-bg);
+    border-color: var(--er-border);
+}
+.epub-r-btn {
+    background: var(--er-hover);
+    color: var(--er-text);
+    border: 1px solid var(--er-border);
+}
+.epub-r-btn:hover:not(:disabled) { background: var(--er-hover-strong); }
+.epub-r-track { background: var(--er-hover-strong); }
+.epub-r-nav-btn:hover { background: var(--er-hover); }
+.epub-r-nav-btn.active {
+    background: #059669;
+    color: #fff;
+    font-weight: 700;
+}
+.epub-r-dot { background: var(--er-text-3); }
+
+/* ---------- 引用与正文元素 ---------- */
+.er-bq {
+    color: var(--er-text-2);
+    border-color: var(--er-accent-soft);
+}
+.er-pre {
+    background: var(--er-code-bg);
+    color: var(--er-code-text);
+    border-color: var(--er-border);
+}
+.er-note {
+    color: var(--er-note-text);
+    background: var(--er-note-bg);
+    border-color: var(--er-note-border);
+}
+
+/* ---------- 图片 ---------- */
+.epub-r-img-l {
+    display: block;
+    max-width: 100%;
+    margin: 1rem auto;
+    border-radius: 0.75rem;
+    border: 1px solid var(--er-border);
+}
+/* 引用标注图：行内小尺寸，不霸屏 */
+.epub-r-img-s {
+    display: inline-block;
+    max-width: 7em;
+    max-height: 2.6em;
+    margin: 0 0.25em;
+    vertical-align: -0.6em;
+    border-radius: 0.4rem;
+    border: 1px solid var(--er-border);
+    background: var(--er-hover);
+}
+.epub-r-img-ph { background: var(--er-hover); }
+
+/* ---------- 配色菜单 ---------- */
+.epub-r-theme-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--er-border);
+    color: var(--er-text-3);
+    transition: all 0.15s ease;
+}
+.epub-r-theme-btn:hover { background: var(--er-hover); }
+.epub-r-theme-btn.active {
+    border-color: var(--er-accent);
+    color: var(--er-text);
+    background: var(--er-hover);
+}
+.epub-r-theme-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ---------- StudyApp 阅读器视图兜底（仅作用于 .epub-r 子树） ----------
+ * reader 视图 JSX 内残留的 Tailwind 白色系工具类，在白天/护眼下不可读，
+ * 这里按变量统一接管；课堂视图不受影响（无 .epub-r 祖先）。 */
+.epub-r .bg-slate-900 { background-color: var(--er-panel-bg); }
+.epub-r .border-white\/10 { border-color: var(--er-border); }
+.epub-r .bg-white\/5 { background-color: var(--er-hover); }
+.epub-r .bg-white\/10 { background-color: var(--er-hover-strong); }
+.epub-r .hover\:bg-white\/5:hover { background-color: var(--er-hover); }
+.epub-r .hover\:bg-white\/10:hover { background-color: var(--er-hover-strong); }
+.epub-r h3.text-white { color: var(--er-text); }
+.epub-r .text-white\/50 { color: var(--er-text-2); }
+.epub-r .text-slate-400 { color: var(--er-text-2); }
+.epub-r .bg-slate-600 { background-color: var(--er-text-3); }
+.epub-r .text-emerald-300\/90 { color: var(--er-accent); }
+.epub-r-controls button.w-11 { color: var(--er-text); }
