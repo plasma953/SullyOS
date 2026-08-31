@@ -2070,6 +2070,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     theme={readerTheme}
                     onPick={(t) => setReaderTheme(t)}
                     onClose={() => setShowThemeMenu(false)}
+                    open={showThemeMenu}
                 />
             </div>
         );
