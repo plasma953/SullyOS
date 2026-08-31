@@ -320,9 +320,15 @@ export interface APIConfig {
    * 连通性用 `GET {url}{healthPath}`（默认 /，3 秒超时）探测，结果进系统状态面板。
    */
   bridge?: BridgeConfig;
+  /** 多桥清单：优先于 bridge 单桥字段。保存多桥配置时 bridge 被显式清空（避免双份）。 */
+  bridges?: BridgeConfig[];
 }
 
 export interface BridgeConfig {
+  /** 多桥场景的稳定标识（新建时生成；旧单桥无 id，按数组序号兜底）。 */
+  id?: string;
+  /** 展示名（如 galatea）。缺省 UI 显示「未命名桥」。 */
+  name?: string;
   /** 桥服务根地址，如 https://galatea-garden-wake-bridge.xxx.vercel.app */
   url: string;
   /** 可选鉴权令牌（Bearer）；仅当对方服务要求时填写。 */

@@ -44,7 +44,8 @@ import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
 import StatusBadge from '../components/StatusBadge';
 import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers } from '../utils/statusPanel';
-import type { APIConfig, TtsProvider } from '../types';
+import type { APIConfig, BridgeConfig, TtsProvider } from '../types';
+import { getEffectiveBridges, normalizeBridges, makeBridgeId } from '../utils/bridgeRegistry';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
 import {
     FIRECRAWL_API_KEYS_URL,
@@ -575,11 +576,7 @@ const Settings: React.FC = () => {
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
   const [localUrl, setLocalUrl] = useState(apiConfig.baseUrl);
   const [localAgentUrl, setLocalAgentUrl] = useState(apiConfig.agentUrl || '');
-  // 外部连接桥（BridgeConfig）：表单草稿。保存时整体写进 apiConfig.bridge。
-  const [localBridgeUrl, setLocalBridgeUrl] = useState(apiConfig.bridge?.url || '');
-  const [localBridgeToken, setLocalBridgeToken] = useState(apiConfig.bridge?.token || '');
-  const [localBridgeHealthPath, setLocalBridgeHealthPath] = useState(apiConfig.bridge?.healthPath || '');
-  const [localBridgeEnabled, setLocalBridgeEnabled] = useState(apiConfig.bridge?.enabled === true);
+
   const [localAgentToken, setLocalAgentToken] = useState(apiConfig.agentToken || '');
   const [localModel, setLocalModel] = useState(String(apiConfig.model || ''));
   const [localStream, setLocalStream] = useState<boolean>(apiConfig.stream === true);
@@ -1063,19 +1060,29 @@ const Settings: React.FC = () => {
    * 主代理中转独立保存：只动 agentUrl / agentToken，不碰 LLM 三件套与预设。
    */
   // 外部连接桥保存：URL 去尾斜杠、healthPath 缺省 '/'；状态面板会自动探到新配置。
-  const handleSaveBridge = () => {
-      const url = String(localBridgeUrl || '').trim().replace(/\/+$/, '');
-      const next = {
-          url,
-          token: String(localBridgeToken || '').trim(),
-          healthPath: String(localBridgeHealthPath || '').trim() || '/',
-          enabled: localBridgeEnabled && !!url,
-      };
-      commitApiConfig({ bridge: next });
-      setLocalBridgeUrl(url);
-      setStatusMsg(url && localBridgeEnabled ? '连接桥已保存并启用' : '连接桥配置已保存');
+  // 多桥清单的本地草稿与操作集。保存 = normalizeBridges 整理后写 apiConfig.bridges
+  // 并显式清掉旧 bridge 单桥字段（undefined 不落 JSON，存储里不会留双份）。
+  const [localBridges, setLocalBridges] = useState<BridgeConfig[]>(() => getEffectiveBridges(apiConfig));
+  useEffect(() => {
+      setLocalBridges(getEffectiveBridges(apiConfig));
+  }, [apiConfig.bridges, apiConfig.bridge]);
+  const upsertBridge = (next: BridgeConfig) => {
+      setLocalBridges((prev) => {
+          const i = prev.findIndex((b) => (b.id && b.id === next.id) || b.url === next.url);
+          if (i === -1) return [...prev, next];
+          const copy = [...prev];
+          copy[i] = next;
+          return copy;
+      });
+  };
+  const commitBridges = (list: BridgeConfig[]) => {
+      const cleaned = normalizeBridges(list) ?? [];
+      commitApiConfig({ bridges: cleaned, bridge: undefined } as Partial<APIConfig>);
+      setLocalBridges(cleaned);
+      setStatusMsg('连接桥配置已保存');
       setTimeout(() => setStatusMsg(''), 2000);
   };
+  const [bridgeTestResult, setBridgeTestResult] = useState<string | null>(null);
   const handleSaveAgentRelay = () => {
       const nextAgentUrl = String(localAgentUrl || '').trim().replace(/\/+$/, '');
       const nextAgentToken = String(localAgentToken || '').trim();
@@ -2471,7 +2478,7 @@ const Settings: React.FC = () => {
         </SettingsSection>
 
 
-        {/* ───────── 外部连接桥 ───────── */}
+        {/* ───────── 外部连接桥（多桥） ───────── */}
         <SettingsSection
             title="外部连接桥"
             icon={
@@ -2482,40 +2489,107 @@ const Settings: React.FC = () => {
                 </div>
             }
             badge={
-                <StatusBadge badgeKey="bridge" probe={() => probeBridge(apiConfig.bridge)} />
+                <StatusBadge badgeKey="bridge" probe={() => probeBridge(apiConfig)} />
             }
         >
             <div className="space-y-3">
                 <p className="text-xs text-slate-500 leading-relaxed">
-                    把外部 MCP / HTTP 服务（如 galatea-garden-wake-bridge 这类 wake bridge）挂进统一配置位。启用后连通性直接显示在标题栏状态徽章里，无弹窗。
+                    把外部 MCP / HTTP 服务（如 galatea-garden-wake-bridge 这类 wake bridge）挂进统一配置位。支持多座桥并存，启用的第一座被探活与业务使用；连通性直接显示在标题栏状态徽章里。
                 </p>
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">桥地址</label>
-                    <input type="text" value={localBridgeUrl} onChange={(e) => setLocalBridgeUrl(e.target.value)} placeholder="https://galatea-garden-wake-bridge.vercel.app" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                {localBridges.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">还没有配置任何桥。点下方「添加桥」，填上服务地址就能接入。</p>
+                ) : (
+                    <div className="space-y-2.5">
+                        {localBridges.map((b, i) => (
+                            <div key={b.id || `idx-${i}`} className="rounded-2xl border border-slate-200/80 bg-white/60 p-3 space-y-2.5">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="text"
+                                        value={b.name || ''}
+                                        onChange={(e) => setLocalBridges((prev) => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                                        placeholder="桥名称（如 galatea）"
+                                        className="flex-1 min-w-0 bg-white/70 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setLocalBridges((prev) => prev.map((x, j) => j === i ? { ...x, enabled: !x.enabled } : x))}
+                                        className={`shrink-0 text-[10px] font-bold px-2.5 py-1.5 rounded-full transition-colors ${b.enabled ? 'bg-cyan-500 text-white' : 'bg-slate-100 text-slate-400'}`}
+                                    >
+                                        {b.enabled ? '启用中' : '已停用'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setLocalBridges((prev) => prev.filter((_, j) => j !== i))}
+                                        className="shrink-0 text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-red-50 text-red-500 active:scale-95 transition-transform"
+                                    >
+                                        删除
+                                    </button>
+                                </div>
+                                <input
+                                    type="text"
+                                    value={b.url}
+                                    onChange={(e) => setLocalBridges((prev) => prev.map((x, j) => j === i ? { ...x, url: e.target.value } : x))}
+                                    placeholder="https://galatea-garden-wake-bridge.vercel.app"
+                                    className="w-full bg-white/70 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono"
+                                />
+                                <div className="flex gap-2">
+                                    <input
+                                        type="password"
+                                        value={b.token || ''}
+                                        onChange={(e) => setLocalBridges((prev) => prev.map((x, j) => j === i ? { ...x, token: e.target.value } : x))}
+                                        placeholder="令牌（可选，Bearer）"
+                                        className="flex-1 min-w-0 bg-white/70 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={b.healthPath || ''}
+                                        onChange={(e) => setLocalBridges((prev) => prev.map((x, j) => j === i ? { ...x, healthPath: e.target.value } : x))}
+                                        placeholder="健康路径（默认 /）"
+                                        className="w-36 shrink-0 bg-white/70 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setBridgeTestResult(null);
+                                        try {
+                                            const t0 = performance.now();
+                                            const headers: Record<string, string> = {};
+                                            if (b.token) headers['Authorization'] = `Bearer ${b.token}`;
+                                            const hp = (b.healthPath || '/').startsWith('/') ? (b.healthPath || '/') : '/' + (b.healthPath || '/');
+                                            const res = await fetch(`${b.url.replace(/\/+$/, '')}${hp}`, { headers });
+                                            setBridgeTestResult(`桥 ${i + 1}：HTTP ${res.status}（${Math.round(performance.now() - t0)}ms）`);
+                                        } catch (e: any) {
+                                            setBridgeTestResult(`桥 ${i + 1}：不可达（${e?.name === 'AbortError' ? '超时' : '网络错误'}）`);
+                                        }
+                                    }}
+                                    className="text-[10px] font-bold text-cyan-600 bg-cyan-500/10 px-3 py-1.5 rounded-full active:scale-95 transition-transform"
+                                >
+                                    测试连接
+                                </button>
+                            </div>
+                        ))}
+                        {bridgeTestResult ? (
+                            <p className="text-[10px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 font-mono">{bridgeTestResult}</p>
+                        ) : null}
+                    </div>
+                )}
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setLocalBridges((prev) => [...prev, { id: makeBridgeId(), name: '', url: '', token: '', healthPath: '/', enabled: true }])}
+                        className="flex-1 py-2.5 rounded-2xl font-bold text-sm border border-slate-200 text-slate-500 bg-white/50 active:scale-95 transition-all"
+                    >
+                        + 添加桥
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => commitBridges(localBridges)}
+                        className="flex-1 py-2.5 rounded-2xl font-bold text-sm border border-cyan-500/30 text-cyan-600 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all"
+                    >
+                        保存全部桥配置
+                    </button>
                 </div>
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">令牌（可选）</label>
-                    <input type="password" value={localBridgeToken} onChange={(e) => setLocalBridgeToken(e.target.value)} placeholder="对方服务要求鉴权时填（Bearer）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-                </div>
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">健康检查路径（可选）</label>
-                    <input type="text" value={localBridgeHealthPath} onChange={(e) => setLocalBridgeHealthPath(e.target.value)} placeholder="/（默认探根路径；对方有 /health 就填它）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-                    <p className="text-[9px] text-slate-400 mt-1 pl-1">探测方式：GET 桥地址 + 此路径，3 秒超时，结果显示在标题栏状态徽章。</p>
-                </div>
-                <label className="flex items-center justify-between cursor-pointer select-none">
-                    <span className="text-xs font-semibold text-slate-600">启用连接桥</span>
-                    <span className="relative inline-block w-11 h-6 cursor-pointer">
-                        <input type="checkbox" className="opacity-0 w-0 h-0 peer" checked={localBridgeEnabled} onChange={(e) => setLocalBridgeEnabled(e.target.checked)} />
-                        <div className="absolute inset-0 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
-                    </span>
-                </label>
-                <button
-                    type="button"
-                    onClick={handleSaveBridge}
-                    className="w-full py-2.5 rounded-2xl font-bold text-sm border border-cyan-500/30 text-cyan-600 bg-cyan-500/5 hover:bg-cyan-500/10 active:scale-95 transition-all"
-                >
-                    保存连接桥配置
-                </button>
             </div>
         </SettingsSection>
 

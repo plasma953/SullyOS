@@ -13,7 +13,8 @@
  *   off     灰 —— 未配置（合法状态，不是错误）
  *   checking 脉冲 —— 探测中
  */
-import type { APIConfig, BridgeConfig, RealtimeConfig } from '../types';
+import type { APIConfig, RealtimeConfig } from '../types';
+import { getEffectiveBridges } from './bridgeRegistry';
 import { ActiveMsgStore } from './activeMsgStore';
 import { loadMcpServers } from './mcpClient';
 
@@ -96,12 +97,17 @@ export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => 
 };
 
 /**
- * 外部连接桥：`GET {url}{healthPath}`，3 秒超时。
+ * 外部连接桥：探第一座启用桥的 `GET {url}{healthPath}`，3 秒超时。
+ * 多桥清单见 bridgeRegistry（bridges 数组优先，兼容旧 bridge 单桥）。
  * 默认 path 是 `/`：只要域名活着就算连通；对方有专用健康端点时用户自填。
  */
-export const probeBridge = async (bridge?: BridgeConfig): Promise<StatusEntry> => {
+export const probeBridge = async (apiConfig: APIConfig): Promise<StatusEntry> => {
     const entry: StatusEntry = { key: 'bridge', label: '外部连接桥', status: 'off', detail: '未启用' };
-    if (!bridge?.enabled || !bridge.url) return entry;
+    const bridges = getEffectiveBridges(apiConfig);
+    const bridge = bridges.find((b) => b.enabled && b.url);
+    if (!bridge) return entry;
+    const total = bridges.filter((b) => b.enabled).length;
+    const label = total > 1 ? `外部连接桥(${total})` : '外部连接桥';
     const base = bridge.url.replace(/\/+$/, '');
     const path = bridge.healthPath || '/';
     const t0 = performance.now();
@@ -110,11 +116,11 @@ export const probeBridge = async (bridge?: BridgeConfig): Promise<StatusEntry> =
         if (bridge.token) headers['Authorization'] = `Bearer ${bridge.token}`;
         const res = await fetchWithTimeout(`${base}${path.startsWith('/') ? path : '/' + path}`, 3000, { headers });
         const ms = fmtMs(performance.now() - t0);
-        if (res.ok) return { ...entry, status: 'ok', detail: ms };
-        if (res.status < 500) return { ...entry, status: 'warn', detail: `HTTP ${res.status}` };
-        return { ...entry, status: 'err', detail: `HTTP ${res.status}` };
+        if (res.ok) return { ...entry, label, status: 'ok', detail: ms };
+        if (res.status < 500) return { ...entry, label, status: 'warn', detail: `HTTP ${res.status}` };
+        return { ...entry, label, status: 'err', detail: `HTTP ${res.status}` };
     } catch (e: any) {
-        return { ...entry, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
+        return { ...entry, label, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
     }
 };
 
