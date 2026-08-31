@@ -9,6 +9,7 @@ import { computeCurrentListening, getCurrentSlot } from './charMusicSchedule';
 import { getCharLyricSnippet } from './charLyricCache';
 import { MusicCfg, loadMusicCfgStandalone } from '../context/MusicContext';
 import { RealtimeContextManager, NotionManager, FeishuManager, defaultRealtimeConfig } from './realtimeContext';
+import type { WeatherData } from './realtimeWorldCore';
 import { isScheduleFeatureOn } from './scheduleFeature';
 import { VOICE_ACTING_GUIDE } from './minimaxTts';
 import { FISH_VOICE_ACTING_GUIDE } from './fishAudioTts';
@@ -421,6 +422,9 @@ export const ChatPrompts = {
         const config = realtimeConfig || defaultRealtimeConfig;
         // 自定义时区：日历日、当前日程与实时上下文全部按角色所在地折算。
         const charTz = resolveCharTimeZone(char);
+        // 角色活在自己的城市（与自定义时区同构）：天气按角色级 location.city 取，
+        // 全局默认城市只兜没填地点的角色。与 realtimeContext.resolveCharCity 同口径。
+        const charCity = (char.location?.city || config.weatherCity || '').trim();
         const charNow = nowInTimeZone(charTz);
         const today = getLocalDateKey(charNow);
 
@@ -485,7 +489,7 @@ ${lines.join('\n')}
                     // 「当前真实时间」，那是这个开关本来要挡住的东西。
                     const realtimeContext = await RealtimeContextManager.buildFullContext(config, charTz, {
                         includeTime: char.timeAwarenessEnabled !== false,
-                    });
+                    }, charCity);
                     return `\n${realtimeContext}\n`;
                 }
                 // 基础当前时间 + 时差提示已由 ContextBuilder.buildCoreContext 统一注入（受 timeAwarenessEnabled
@@ -509,6 +513,11 @@ ${lines.join('\n')}
                 console.error('Failed to load daily schedule:', e);
                 return null;
             })
+            : Promise.resolve(null);
+        // 日程「当前时段」的天气注：与实时世界块同一份角色级城市缓存（谁先拉到谁进缓存），
+        // 在这里提前起跑，日程注入时只等缓存，不白串行一次网络。
+        const scheduleWeatherPromise: Promise<WeatherData | null> = (scheduleFeatureOn && config.weatherEnabled)
+            ? RealtimeContextManager.fetchWeather(config, charCity).catch(() => null)
             : Promise.resolve(null);
 
         // 3. 群聊上下文：并发拉取所有成员群���消息
@@ -621,7 +630,7 @@ ${groupLogStr}\n`;
                 return '';
             });
 
-        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, lifeRecordText, anniversaryText] =
+        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, lifeRecordText, anniversaryText, scheduleWeather] =
             await Promise.all([
                 timed('realtime', realtimePromise),
                 timed('schedule', schedulePromise),
@@ -631,6 +640,7 @@ ${groupLogStr}\n`;
                 timed('notionNotes', notionNotesPromise),
                 timed('lifeRecord', lifeRecordPromise),
                 timed('anniversary', anniversaryPromise),
+                timed('scheduleWeather', scheduleWeatherPromise),
             ]);
 
         // ── 拼接：易变的进 volatileState，稳定的进 baseSystemPrompt ──
@@ -647,6 +657,9 @@ ${groupLogStr}\n`;
         //     日程本身照给——它有自己的总开关。
         if (schedule && !forFirePack) {
             try {
+                // 天气注（提示词层联动，纯展示不改 busy）：上面与日程并行现取的角色级城市读数；
+                // 取数失败只是少这一句，日程照常注入。
+                const wx = scheduleWeather;
                 const scheduleContext = ContextBuilder.buildScheduleInjection(
                     schedule,
                     evolvedNarrative,
@@ -655,6 +668,7 @@ ${groupLogStr}\n`;
                         includeFullDay: true,
                         includeChangeInstruction: true,
                         includeClock: char.timeAwarenessEnabled !== false,
+                        weather: wx ? { city: wx.city, description: wx.description, tempC: wx.temp } : null,
                     },
                 );
                 if (scheduleContext) volatileState += `\n${scheduleContext}\n`;
@@ -813,6 +827,7 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
    - **【重要】\`[[记录:...]]\` 是系统日志**: 历史里以 \`[[记录:\` 开头的标签是已经发生的事实（谁转给谁、什么状态），只供你了解，**严禁**在回复里照抄输出。你要做动作时只能用 \`[[ACTION:...]]\`。
    - 调取记忆: \`[[RECALL: YYYY-MM]]\`，请注意，当用户提及具体某个月份时，或者当你想仔细想某个月份的事情时，欢迎你随时使该动作
    - **添加纪念日**: 如果你觉得今天是个值得纪念的日子（或者你们约定了某天），你可以**主动**将它添加到用户的日历中。单独起一行输出: \`[[ACTION:ADD_EVENT | 标题(Title) | YYYY-MM-DD]]\`。
+   - **搬家/换城市**: 如果你搬去了另一个城市（比如为了学业、工作或想换个环境），可以更新自己的所在地: \`[[ACTION:MOVE_TO | 城市 | 省份(可选)]]\`。更新后天气和你的日常都会按新城市来，请慎重并符合你的人设。
 ${scheduleMessageTagEnabled ? `   - **定时发送消息**: 如果你想在未来某个时间主动发消息（比如晚安、早安或提醒），请单独起一行输出: \`[schedule_message | YYYY-MM-DD HH:MM:SS | fixed | 消息内容]\`，分行可以多输出很多该类消息。` : ''}
 ${notionEnabled ? `   - **翻阅日记(Notion)**: 你的记忆本身是完整可靠的，回忆过去优先靠记忆和 \`[[RECALL]]\`，**不需要**靠翻日记来"想起"事情。只有当你**自己**特别想重温那天日记里写下的心情、措辞或私密小细节时，才翻阅: \`[[READ_DIARY: 日期]]\`。支持格式: \`昨天\`、\`前天\`、\`3天前\`、\`1月15日\`、\`2024-01-15\`。` : ''}${feishuEnabled ? `
    - **翻阅日记(飞书)**: 同上——回忆优先靠记忆和 \`[[RECALL]]\`，只有你自己想重温那天日记的内容时才用: \`[[FS_READ_DIARY: 日期]]\`。支持格式同上。` : ''}${notionNotesEnabled ? `

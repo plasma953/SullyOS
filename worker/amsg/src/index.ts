@@ -101,7 +101,7 @@ import {
   type AmsgToolConfig,
   type AmsgToolPack,
 } from '../../../utils/amsgToolPack';
-import { buildRealtimeWorldBlock } from './realtimeWorld';
+import { buildRealtimeWorldResult } from './realtimeWorld';
 import { handleSelfUpdate } from './selfUpdate';
 import {
   buildMcpDirectHeaders,
@@ -1888,15 +1888,18 @@ export const amsgHooks = {
 
     // 「外面的世界此刻什么样」：今日节日 + 实时天气 + 热搜，到点现拉现填。
     // 拉不到 / 超时都只是返回空串，那一段整个消失，这次触发照常往下走。
-    const realtimeWorldBlock = await buildRealtimeWorldBlock({
+    const realtimeWorld = await buildRealtimeWorldResult({
       toolConfig,
       timeAwarenessEnabled: toolPack.timeAwarenessEnabled,
       tzId: pack.tzId,
       nowMs: ctx.now.getTime(),
+      // 角色活在自己的城市（tool_pack 随包带上来的）；没填地点的角色退全局默认城市。
+      charCity: toolPack.charCity,
       globalRows,
       globalNamespace: AMSG_GLOBAL_NAMESPACE,
       writeState: ctx.writeState,
     });
+    const realtimeWorldBlock = realtimeWorld.block;
 
     // MCP 说明块 / 「给自己排下一条」说明块：两条路都要，只是挂的位置不同
     // （主动消息接在渲染好的 prompt 后面，即时对话拼进末尾追加的那个 system 块）。
@@ -2009,6 +2012,9 @@ export const amsgHooks = {
       selfLog,
       taskListBlock,
       realtimeWorldBlock,
+      // 「此刻在做什么」的天气注与实时世界同一份读数（同城市、同一次拉取）：
+      // 拉到才缀，取数失败/天气没开不传——槽位渲染出来跟没有这回事一样。
+      weather: realtimeWorld.weather,
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled,

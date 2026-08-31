@@ -15,6 +15,8 @@
 import type { CharacterProfile, DailySchedule, ScheduleSlot } from '../types';
 import { getDailyScheduleForChar } from './dailySchedule';
 import { resolveCharTimeZone } from './timezone';
+import { fetchCnHolidays, dateKeyOf } from './cnHoliday';
+import { applyHolidayOverlay } from './scheduleHolidaySync';
 
 /** busy_card 消息正文里存的那 4 个字节。 */
 export const BUSY_PLACEHOLDER = '<busy/>';
@@ -74,11 +76,29 @@ export const getBusyStatus = (
     return { busy: true, slot: hit, endsAt, endsAtMs };
 };
 
-/** 便捷封装：按角色自己的时区日程查忙碌状态。 */
+/**
+ * 便捷封装：按角色自己的时区日程查忙碌状态。
+ *
+ * 节假日状态机联动：法定休息日全部 busy 槽置闲（放假=空闲）、调休补班日注入
+ * 虚拟上班槽（补班=忙碌），直接影响短路与插空/补偿回复。纯内存态不写库；
+ * 节假日数据缺失或联动链路失败时严格降级为原日程（与现状完全一致）。
+ * 仅浏览器环境启用联动（indexedDB 可用性是天然的运行环境判据，node/测试
+ * 环境零网络副作用、保持原行为）。
+ */
 export const getBusyStatusForChar = async (
     char: Pick<CharacterProfile, 'id' | 'customTimezoneEnabled' | 'customTimezone'>,
     now: Date = new Date(),
-): Promise<BusyStatus> => getBusyStatus(await getDailyScheduleForChar(char, now), now);
+): Promise<BusyStatus> => {
+    let schedule = await getDailyScheduleForChar(char, now);
+    if (typeof indexedDB !== 'undefined') {
+        try {
+            const holidayData = await fetchCnHolidays(now.getFullYear());
+            const overlay = applyHolidayOverlay(schedule, dateKeyOf(now), holidayData);
+            schedule = overlay.schedule;
+        } catch { /* 节假日联动失败不影响短路主链路 */ }
+    }
+    return getBusyStatus(schedule, now);
+};
 
 /**
  * 忙完补偿回复的默认延迟：没解析出结束点时兜底 45 分钟。

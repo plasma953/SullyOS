@@ -654,6 +654,7 @@ export const buildFirePack = async (
         })
       : Promise.resolve(null),
   ]);
+  // 角色所在城市随 scene 上云：worker 天气取数与「当前时段」天气注都按它。
   // 角色的时间参照系：开了自定义时区用角色的，没开用设备的。worker 渲染一切给角色看的
   // 时间（当前时间、日程日期、排程清单）都按它来。
   const charTz = resolveCharTimeZone(char);
@@ -685,6 +686,8 @@ export const buildFirePack = async (
           ...(schedule.flowNarrative ? { flowNarrative: schedule.flowNarrative } : {}),
         },
         songPool: buildSongPool(char).map((s) => ({ id: s.id, name: s.name, artists: s.artists })),
+        // 角色活在自己的城市（与自定义时区同构）：worker 天气取数、槽位天气注都按它。
+        ...(char.location?.city?.trim() ? { charCity: char.location.city.trim() } : {}),
       }
     : null;
   const legacyHint = buildLegacyStyleProactiveHint(userProfile.name || '对方', timeAware);
@@ -1203,6 +1206,8 @@ const buildCharStateEntries = async (
 const buildToolConfigEntry = (
   realtimeConfig: RealtimeConfig | undefined,
   updatedAt: number,
+  /** 角色所在城市（可选）：给谁上传就带谁的家，worker 天气取数按它。 */
+  charCity?: string,
 ) => ({
   namespace: AMSG_GLOBAL_NAMESPACE,
   key: AMSG_TOOL_CONFIG_KEY,
@@ -1211,7 +1216,7 @@ const buildToolConfigEntry = (
   value: JSON.stringify(buildToolConfig(realtimeConfig, {
     servers: collectMcpFireServers(),
     useNativeTools: getMcpUseNativeTools(),
-  })),
+  }, charCity)),
   updatedAt,
 });
 
@@ -2297,7 +2302,7 @@ export const ActiveMsgClient = {
       const charEntries = await buildCharStateEntries(char, firePack, now);
       await putClientStateOrThrow(client, [
         ...(owesChat ? charEntries.filter((entry) => entry.key !== AMSG_FIRE_PACK_KEY) : charEntries),
-        buildToolConfigEntry(realtimeConfig, now),
+        buildToolConfigEntry(realtimeConfig, now, char.location?.city?.trim()),
       ], '上传云端状态');
     }
 
@@ -2703,7 +2708,7 @@ export const ActiveMsgClient = {
     const stateEntries = {
       entries: [
         ...(await buildCharStateEntries(char, firePack, now)),
-        buildToolConfigEntry(realtimeConfig, now),
+        buildToolConfigEntry(realtimeConfig, now, char.location?.city?.trim()),
       ],
     };
     const [statePayload, encryptedTask] = await Promise.all([

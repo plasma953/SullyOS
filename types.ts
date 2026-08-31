@@ -2979,6 +2979,17 @@ export interface CharacterProfile {
   customTimezoneEnabled?: boolean;
   customTimezone?: string; // IANA 时区 id，如 'Asia/Tokyo'
 
+  // 角色级地理位置（省市）。与自定义时区同构：每个角色活在自己的城市里，
+  // 天气按这里的城市取；用户在角色档案手动填写，角色也可通过 SET_LOCATION 自改。
+  // location.city 为空 / 整个字段缺失时回退全局默认城市（RealtimeConfig.weatherCity）。
+  location?: {
+    province?: string;
+    city: string;
+    /** 'user' = 用户手动填写；'char' = 角色自己改的 */
+    source: 'user' | 'char';
+    updatedAt: number;
+  };
+
   // 线下时间感知（约会 / 见面 App）：开启（默认）时向见面 system prompt 注入「当前真实时间」。
   // 关掉后见面场景不再注入时间，让剧情脱离现实时间线。独立开关。
   dateTimeAwarenessEnabled?: boolean;

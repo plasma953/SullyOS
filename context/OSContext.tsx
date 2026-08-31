@@ -2867,10 +2867,37 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       window.addEventListener('amsg2-tasks-adopted', tasksAdoptedHandler);
       window.addEventListener('char-music-profile-updated', musicProfileSyncHandler);
+      // 角色搬家（chatParser 的 MOVE_TO / 其他 React 外入口直写 DB 后）把 location 搬回内存：
+      // 字段级 merge（同 tasksAdopted/musicProfileSync 的口径），避免整对象覆盖把同一时刻
+      // 别处刚落的字段倒退。天气取数、日程注入下一轮直接读新城市。
+      const locationSyncHandler = (e: Event) => {
+          const detail = ((e as CustomEvent).detail || {}) as { charId?: string; city?: string; province?: string };
+          const { charId, city, province } = detail;
+          if (!charId || !city) return;
+          void DB.getAllCharacters().then(all => {
+              const fresh = all.find(c => c.id === charId);
+              const location = fresh?.location;
+              // DB 里没有就当没发生（写库方失败时不该让内存凭空多出一个地点）。
+              if (!location || location.city !== city) return;
+              setCharacters(prev => prev.map(c => {
+                  if (c.id !== charId) return c;
+                  const next = normalizeCharacterImpression({ ...c, location });
+                  markAmsgStateDirty({
+                      char: next,
+                      userProfile: userProfileRef.current,
+                      groups: groupsRef.current,
+                      realtimeConfig: realtimeConfigRef.current,
+                  });
+                  return next;
+              }));
+          }).catch(() => {});
+      };
+      window.addEventListener('char-location-updated', locationSyncHandler);
       window.addEventListener(MEMORY_AUTO_ARCHIVE_SYNC_EVENT, memoryAutoArchiveSyncHandler);
       return () => {
           window.removeEventListener('amsg2-tasks-adopted', tasksAdoptedHandler);
           window.removeEventListener('char-music-profile-updated', musicProfileSyncHandler);
+          window.removeEventListener('char-location-updated', locationSyncHandler);
           window.removeEventListener(MEMORY_AUTO_ARCHIVE_SYNC_EVENT, memoryAutoArchiveSyncHandler);
       };
   }, []);

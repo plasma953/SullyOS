@@ -29,7 +29,8 @@ import {
 import { getBuiltinContent } from './promptPresetCatalog';
 import { getResolvedPromptPresets, resolveVoiceGuide } from './promptPresetRuntime';
 import { getTtsProvider, getVoicePromptOverride } from './ttsProvider';
-import { isElevenLabsV3Model, getElevenLabsModel, getElevenLabsVoiceActingGuide } from './elevenLabsTts';
+import { isElevenLabsV3Model, getElevenLabsVoiceActingGuide } from './elevenLabsTts';
+import { getElevenLabsModel } from './ttsProvider';
 import { isScheduleFeatureOn } from './scheduleFeature';
 import { getDailyScheduleForChar } from './dailySchedule';
 import { buildScheduleInjection } from './scheduleInjection';
@@ -37,7 +38,7 @@ import { resolveCharTimeZone, nowInTimeZone } from './timezone';
 import { computeCurrentListening, getCurrentSlot } from './charMusicSchedule';
 import { isMcpChatAvailable, loadMcpSettings } from './mcpClient';
 import { getMcpResultMemoryBlock } from './mcpResultMemory';
-import { RealtimeContextManager, defaultRealtimeConfig } from './realtimeContext';
+import { RealtimeContextManager, defaultRealtimeConfig, resolveCharCity } from './realtimeContext';
 
 // ========== 类型 ==========
 
@@ -327,8 +328,8 @@ export const composePromptPreview = async (
         if (config.weatherEnabled || config.newsEnabled) {
             const realtimeText = await RealtimeContextManager.buildFullContext(config, charTz, {
                 includeTime: char.timeAwarenessEnabled !== false,
-            });
-            const city = (config as any).weatherCity || '（默认城市未配置）';
+            }, resolveCharCity(char, config));
+            const city = resolveCharCity(char, config) || '（默认城市未配置）';
             blocks.push(mkBlock({
                 id: 'volatile.realtime',
                 segment: 'volatileState',
@@ -363,6 +364,15 @@ export const composePromptPreview = async (
         try {
             const schedule = await getDailyScheduleForChar(char);
             if (schedule) {
+                // 天气预览（与实时世界同一份角色级城市取数；失败降级为无天气注）。
+                let wx: { city?: string; description?: string; tempC?: number } | null = null;
+                try {
+                    const cfgW = defaultRealtimeConfig;
+                    if (cfgW.weatherEnabled) {
+                        const w = await RealtimeContextManager.fetchWeather(cfgW, resolveCharCity(char, cfgW));
+                        if (w) wx = { city: w.city, description: w.description, tempC: w.temp };
+                    }
+                } catch { /* 天气取数失败：日程预览不带天气注 */ }
                 const scheduleContext = buildScheduleInjection(
                     schedule as any,
                     undefined,
@@ -371,6 +381,7 @@ export const composePromptPreview = async (
                         includeFullDay: true,
                         includeChangeInstruction: true,
                         includeClock: char.timeAwarenessEnabled !== false,
+                        weather: wx,
                     } as any,
                 );
                 blocks.push(mkBlock({

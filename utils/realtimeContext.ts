@@ -118,9 +118,18 @@ export const defaultRealtimeConfig: RealtimeConfig = {
     cacheMinutes: 30
 };
 
-// 缓存
-let weatherCache: { data: WeatherData | null; timestamp: number } = { data: null, timestamp: 0 };
+// 缓存（按城市键控：每个角色都有自己的城市，各取各的天气，互不串台）
+const weatherCacheByCity: Record<string, { data: WeatherData; timestamp: number }> = {};
 let newsCache: { data: NewsItem[]; timestamp: number } = { data: [], timestamp: 0 };
+
+/**
+ * 角色所在城市：优先角色级 location.city（用户填 / 角色自改），回退全局默认城市。
+ * 与自定义时区同构的「角色活在自己的城市」口径。
+ */
+export const resolveCharCity = (
+    char: { location?: { province?: string; city: string; source: 'user' | 'char'; updatedAt: number } },
+    config: RealtimeConfig,
+): string => (char.location?.city || config.weatherCity || '').trim();
 
 
 export const RealtimeContextManager = {
@@ -128,26 +137,33 @@ export const RealtimeContextManager = {
     /**
      * 获取天气信息。填了 OpenWeatherMap key 优先走 OWM，失败或没填 key 时回落免费的 Open-Meteo。
      */
-    fetchWeather: async (config: RealtimeConfig): Promise<WeatherData | null> => {
-        if (!config.weatherEnabled || !config.weatherCity) {
+    /**
+     * 获取天气信息。填了 OpenWeatherMap key 优先走 OWM，失败或没填 key 时回落免费的 Open-Meteo。
+     * cityOverride：角色级城市（resolveCharCity 的结果）；不传用全局默认城市。
+     * 缓存按城市键控——多角色同城共享缓存，异地各拉各的。
+     */
+    fetchWeather: async (config: RealtimeConfig, cityOverride?: string): Promise<WeatherData | null> => {
+        const city = (cityOverride || config.weatherCity || '').trim();
+        if (!config.weatherEnabled || !city) {
             return null;
         }
 
         const now = Date.now();
         const cacheMs = config.cacheMinutes * 60 * 1000;
 
-        // 检查缓存
-        if (weatherCache.data && (now - weatherCache.timestamp) < cacheMs) {
-            return weatherCache.data;
+        // 检查缓存（按城市）
+        const hit = weatherCacheByCity[city];
+        if (hit?.data && (now - hit.timestamp) < cacheMs) {
+            return hit.data;
         }
 
-        const weather = await fetchWeatherWithFallback(config.weatherCity, config.weatherApiKey);
+        const weather = await fetchWeatherWithFallback(city, config.weatherApiKey);
         if (!weather) {
             return null;
         }
 
         // 更新缓存
-        weatherCache = { data: weather, timestamp: now };
+        weatherCacheByCity[city] = { data: weather, timestamp: now };
 
         return weather;
     },
@@ -419,6 +435,9 @@ export const RealtimeContextManager = {
         // includeTime=false：角色关掉了「时间感知」。天气/新闻还要，但当前时间和今日节日
         // 属于时间感知的范畴，这个开关关着就不该从这一段里漏出去。
         opts: { includeTime: boolean },
+        // 角色级城市（resolveCharCity 的结果）。天气按它取：每个角色各是各的天气，
+        // 全局默认城市只兜没填地点的角色。
+        charCity?: string,
     ): Promise<string> => {
         const includeTime = opts.includeTime;
 
@@ -429,8 +448,10 @@ export const RealtimeContextManager = {
         const timeLine = time ? `${time.dateStr} ${time.dayOfWeek} ${time.timeOfDay} ${time.timeStr}` : undefined;
         const specialDates = includeTime ? RealtimeContextManager.checkSpecialDates(tz) : [];
 
-        // 2. 天气（有没有 OWM key 都能取：无 key 走 Open-Meteo）
-        const weather = config.weatherEnabled ? await RealtimeContextManager.fetchWeather(config) : null;
+        // 2. 天气（有没有 OWM key 都能取：无 key 走 Open-Meteo）。城市按角色自己的家优先。
+        const weather = (config.weatherEnabled && charCity)
+            ? await RealtimeContextManager.fetchWeather(config, charCity)
+            : null;
 
         // 3. 新闻热点（背景认知）
         //    完整快照存 IndexedDB 给「热点」App；这里每轮随机抽几条打散注入，控 token + 保持新鲜感。
@@ -455,10 +476,10 @@ export const RealtimeContextManager = {
     },
 
     /**
-     * 清除缓存
+     * 清除缓存（天气缓存按城市键控，整表清空；调用方多为测试 / 设置页手动刷新）。
      */
     clearCache: () => {
-        weatherCache = { data: null, timestamp: 0 };
+        for (const k of Object.keys(weatherCacheByCity)) delete weatherCacheByCity[k];
         newsCache = { data: [], timestamp: 0 };
         clearGeocodeCache();
     },

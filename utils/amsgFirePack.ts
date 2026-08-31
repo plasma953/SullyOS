@@ -782,6 +782,11 @@ export const renderFirePack = (
     selfLog?: AmsgSelfLog | null;
     taskListBlock?: string;
     realtimeWorldBlock?: string;
+    /**
+     * 到点现拉的天气读数（realtimeWorld 链路，与 realtimeWorldBlock 同一次取数）：
+     * 「此刻在做什么」当前时段的天气注用。不传就没有天气注，输出与从前一模一样。
+     */
+    weather?: { description: string; tempC?: number } | null;
     includeClock?: boolean;
   },
 ): string => {
@@ -806,6 +811,7 @@ export const renderFirePack = (
   out = fillSlot(out, AMSG_SLOT_TASK_LIST, extras?.taskListBlock ?? '');
   out = fillSlot(out, AMSG_SLOT_SCENE, renderFireSceneBlock(pack.scene, nowMs, tz, {
     includeClock: extras?.includeClock !== false,
+    ...(extras?.weather ? { weather: extras.weather } : {}),
   }));
   // 实时世界那一段是独立的一整块，前导空行在这里补：拉到东西才隔开成段，
   // 没拉到（或功能没开）填空串，输出跟没有这个槽位时一模一样。

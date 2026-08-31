@@ -56,6 +56,12 @@ export interface AmsgFireScene {
   evolvedNarrative?: string;
   /** 歌单抽样池（charMusicSchedule.buildSongPool 的结果，最多 20 首）。 */
   songPool: AmsgFireSong[];
+  /**
+   * 角色所在城市（CharacterProfile.location?.city）。天气描述本体不上云——那是到点
+   * 现拉的（realtimeWorld 链路），这里只带「角色说自己住在哪」，city 天气缓存键、
+   * 日程槽位天气注、定位句都用它。不填时天气注退化为「当地当前」、天气取数走全局默认城市。
+   */
+  charCity?: string;
 }
 
 /**
@@ -103,7 +109,14 @@ export const renderFireSceneBlock = (
   scene: AmsgFireScene | null,
   nowMs: number,
   tz: AmsgTzRef,
-  options?: { includeClock?: boolean },
+  options?: {
+    includeClock?: boolean;
+    /**
+     * worker 到点现拉的天气读数（realtimeWorld 链路）。有就缀进「当前时段」那一段，
+     * 取数失败/功能没开不传——输出与没有天气注时一模一样，绝不半截。
+     */
+    weather?: { description: string; tempC?: number } | null;
+  },
 ): string => {
   if (!scene?.schedule?.slots?.length) return '';
 
@@ -112,6 +125,7 @@ export const renderFireSceneBlock = (
   // 跨天的包整段不用：这是 scene.dateKey 那天的安排，第二天再照着念就是在说昨天的事。
   // 宁缺勿错，跟「实时世界拉不到就整段消失」同一条线。
   if (getLocalDateKey(wallNow) !== scene.dateKey) return '';
+  const wx = options?.weather ?? null;
   const scheduleText = buildScheduleInjection(
     scene.schedule,
     scene.evolvedNarrative,
@@ -122,6 +136,8 @@ export const renderFireSceneBlock = (
       // 所以这条路也要教。标签由 worker classifier 摘成 directive 随 push 回来、
       // 客户端落库；落库按 push 的 sentAt 判时段，隔夜的整批丢弃（见 scheduleChange）。
       includeChangeInstruction: true,
+      // 天气：worker 到点现拉的读数经这里缀进「当前时段」（纯提示词层，不动 busy）。
+      ...(wx ? { weather: { city: scene.charCity, description: wx.description, tempC: wx.tempC } } : {}),
     },
   ).trim();
 

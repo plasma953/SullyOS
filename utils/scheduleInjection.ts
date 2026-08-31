@@ -37,6 +37,16 @@ export interface ScheduleInjectionOptions {
      * 关掉钟点时也不教改日程：那条指令拿时段当定位符，角色看不到时刻就写不出来。
      */
     includeClock?: boolean;
+    /**
+     * 角色所在城市的实时天气（提示词层联动，纯展示不改 busy——与「恶劣天气改日程」划清界线）。
+     * 前台由 chatPrompts 用角色级城市现取；主动消息链路由 worker 到点现拉后经 extras 传入。
+     * 只在「当前时段」注入：整日表里每条都缀天气就是噪声。
+     */
+    weather?: {
+        city?: string;
+        description?: string;
+        tempC?: number;
+    } | null;
 }
 
 /** 意识流独白按一天三档取：早 / 午 / 晚。 */
@@ -48,6 +58,58 @@ export function getFlowNarrativeKey(hour: number): 'morning' | 'afternoon' | 'ev
 
 /** 几点之前算「还在前一夜里」。凌晨 0-5 点属于昨晚的尾巴，不是今天的早晨。 */
 const PRE_DAWN_END_HOUR = 5;
+
+// ── 地点 × 天气 提示词层联动 ──────────────────────────────────────────
+//
+// 角色有了自己的城市（CharacterProfile.location），日程槽位又本来就写着小地点
+// （「河边」「健身房」），这两样凑在一起正是这段提示词想要的画面感：
+// 「河边 · 上海当前小雨 18°C」。同时守一条红线：**只改措辞，不改 busy** ——
+// 恶劣天气最多附一句「可能改为室内」，真要改日程让角色用已有的
+// CHANGE_SCHEDULE 自己决定（那是它对自己一天的自主权，不是天气的权力）。
+
+/** 户外活动关键词：命中且天气恶劣才附「室内调整」建议。 */
+const OUTDOOR_ACTIVITY_RE = /户外|跑步|爬山|登山|骑行|郊游|野餐|露营|散步|慢跑|晨跑|夜跑|逛街|摆摊|篮球|足球|球赛|钓鱼|放风筝|骑车/;
+
+/**
+ * 恶劣天气判定。desc 是天气文案（Open-Meteo 的中文描述），cold/hot 走体感常识边界。
+ * 返回建议短句（天气不恶劣 / 未知时为空串）。
+ */
+export const badWeatherAdvice = (desc?: string, tempC?: number): string => {
+    const d = (desc || '').trim();
+    if (!d) return '';
+    if (/雨|雪|雷|冰雹|沙尘|雾霾/.test(d)) return '（天气不佳，可能改为室内活动）';
+    const t = typeof tempC === 'number' && Number.isFinite(tempC) ? tempC : null;
+    if (t === null) return '';
+    if (t >= 35) return '（高温，户外活动注意防暑，可能改到室内）';
+    if (t <= -5) return '（严寒，户外活动注意保暖，可能改到室内）';
+    return '';
+};
+
+/**
+ * 当前时段槽位附天气注：有地点才拼「地点 · 城市 · 天气」，否则只说天气本身；
+ * 户外活动遇恶劣天气补一句室内建议。weather 为空（取数失败/功能关闭）整段不要，
+ * 输出与没有这回事时完全一样。
+ */
+export const appendWeatherToSlot = (
+    slotHeader: string,
+    slot: ScheduleSlot | null,
+    weather: ScheduleInjectionOptions['weather'],
+): string => {
+    if (!slotHeader || !weather?.description) return slotHeader;
+    const tempPart = typeof weather.tempC === 'number' && Number.isFinite(weather.tempC)
+        ? ` ${Math.round(weather.tempC)}°C`
+        : '';
+    const cityPart = weather.city ? `${weather.city}当前` : '当地当前';
+    const seg = `${cityPart}${weather.description}${tempPart}`;
+    const locationPart = slot?.location ? `${slot.location} · ` : '';
+    let line = `${slotHeader.replace(/\n+$/, '')}\n（${locationPart}${seg}`;
+    if (slot && OUTDOOR_ACTIVITY_RE.test(slot.activity)) {
+        const advice = badWeatherAdvice(weather.description, weather.tempC);
+        if (advice) line += ` · ${advice.replace(/^（/, '').replace(/）$/, '')}`;
+    }
+    line += '）\n';
+    return line;
+};
 
 /** 当前时刻落在哪一条日程上，以及紧接着的下一条。都可能为 null（表还没开始 / 表是空的）。 */
 export const resolveScheduleSlots = (
@@ -86,6 +148,7 @@ export const buildScheduleInjection = (
     if (!schedule || !schedule.slots || schedule.slots.length === 0) return '';
     const { current: currentSlot, next: nextSlot } = resolveScheduleSlots(schedule, now);
     const withClock = options.includeClock !== false;
+    const weather = options.weather ?? null;
     /** 报钟点时写「活动（07:00）」，不报时只留活动本身。 */
     const withTime = (text: string, startTime: string) => (withClock ? `${text}（${startTime}）` : text);
 
@@ -111,6 +174,8 @@ export const buildScheduleInjection = (
             ? `夜深了，今天的安排还没开始，最早的一件是${withTime(nextSlot.activity, nextSlot.startTime)}\n`
             : `今天还没开始活动，稍后先${withTime(nextSlot.activity, nextSlot.startTime)}\n`;
     }
+    // 天气注：只在「当前时段」有活动时缀上（刚醒来还没有「正在做」就不硬贴天气）。
+    slotHeader = appendWeatherToSlot(slotHeader, currentSlot, weather);
 
     // 2. 意识流独白
     let narrative = '';

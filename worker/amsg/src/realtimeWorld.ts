@@ -113,14 +113,14 @@ const withBudget = async <T>(job: Promise<T>, ms: number, fallback: T, label: st
   }
 };
 
-/** 天气：同城半小时内复用快照，过期或换城市才真去拉。 */
+/** 天气：同城半小时内复用快照，过期或换城市才真去拉。城市由调用方解析好传入（角色级优先）。 */
 const loadWeather = async (
+  city: string,
   cfg: AmsgToolConfig,
   nowMs: number,
   globalRows: StateRow[],
   pendingWrites: Array<{ key: string; value: string }>,
 ): Promise<WeatherData | null> => {
-  const city = cfg.weatherCity?.trim();
   if (!city) return null;
 
   const snap = parseSnapshot<WeatherSnapshot>(globalRows, AMSG_WEATHER_SNAPSHOT_KEY,
@@ -191,30 +191,42 @@ const loadHotNews = async (
  * 注意这里不给「当前时间」那一行：时间由 fire_pack 自己的 AMSG_SLOT_CURRENT_TIME 填，
  * 两边都出就是一份提示词两个钟。
  */
-export const buildRealtimeWorldBlock = async (args: {
+export const buildRealtimeWorldResult = async (args: {
   toolConfig: AmsgToolConfig;
   /** 角色的时间感知开关（tool_pack 带上来的）：关掉就连今日节日一起不给。 */
   timeAwarenessEnabled: boolean;
   /** 角色的时区，判「今天几号」用。 */
   tzId: string;
   nowMs: number;
+  /**
+   * 角色所在城市（tool_pack.charCity）。天气按它取——角色活在自己的城市里
+   * （与自定义时区同构），全局默认城市只兜没填地点的角色。
+   */
+  charCity?: string;
   /** onBeforeFire 已经读过的 amsg:global 行，直接复用，不再多查一次。 */
   globalRows: StateRow[];
   globalNamespace: string;
   writeState?: WriteState;
-}): Promise<string> => {
+}): Promise<{ block: string; weather: WeatherData | null }> => {
   const { toolConfig: cfg, nowMs, globalRows } = args;
+  // 天气取数城市：角色自己的家优先，没填地点的角色退全局默认城市。
+  let weatherCity = (args.charCity || cfg.weatherCity || '').trim();
 
   const specialDates = args.timeAwarenessEnabled ? checkSpecialDates(args.tzId, nowMs) : [];
   if (!cfg.weatherEnabled && !cfg.newsEnabled) {
-    // 天气热搜都没开，只剩节日：有就单说一句，没有就整段不要。
-    return renderRealtimeWorldBlock({ specialDates });
+    return { block: renderRealtimeWorldBlock({ specialDates }), weather: null };
+  }
+  if (!cfg.weatherEnabled) {
+    // 天气关了（或角色/全局连个城市都没有），weatherCity 置空只挡天气那一支；热搜与城市无关照走。
+    weatherCity = '';
   }
 
   const pendingWrites: Array<{ key: string; value: string }> = [];
   const [weather, news] = await withBudget(
     Promise.all([
-      cfg.weatherEnabled ? loadWeather(cfg, nowMs, globalRows, pendingWrites) : Promise.resolve(null),
+      (cfg.weatherEnabled && weatherCity)
+        ? loadWeather(weatherCity, cfg, nowMs, globalRows, pendingWrites)
+        : Promise.resolve(null),
       cfg.newsEnabled ? loadHotNews(cfg, nowMs, globalRows, pendingWrites) : Promise.resolve([] as NewsItem[]),
     ]),
     FETCH_BUDGET_MS,
@@ -242,5 +254,13 @@ export const buildRealtimeWorldBlock = async (args: {
     热点池: news.length,
     整段字数: block.length,
   });
-  return block;
+  return { block, weather };
 };
+
+/**
+ * 兼容壳：只要那一段文本（历史入口 / 测试都用这个）。天气读数另需要的
+ * （日程「当前时段」天气注）走 buildRealtimeWorldResult。
+ */
+export const buildRealtimeWorldBlock = async (
+  args: Parameters<typeof buildRealtimeWorldResult>[0],
+): Promise<string> => (await buildRealtimeWorldResult(args)).block;

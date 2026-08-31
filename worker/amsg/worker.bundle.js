@@ -7093,6 +7093,32 @@ function getFlowNarrativeKey(hour) {
   return "evening";
 }
 var PRE_DAWN_END_HOUR = 5;
+var OUTDOOR_ACTIVITY_RE = /户外|跑步|爬山|登山|骑行|郊游|野餐|露营|散步|慢跑|晨跑|夜跑|逛街|摆摊|篮球|足球|球赛|钓鱼|放风筝|骑车/;
+var badWeatherAdvice = (desc, tempC) => {
+  const d = (desc || "").trim();
+  if (!d) return "";
+  if (/雨|雪|雷|冰雹|沙尘|雾霾/.test(d)) return "\uFF08\u5929\u6C14\u4E0D\u4F73\uFF0C\u53EF\u80FD\u6539\u4E3A\u5BA4\u5185\u6D3B\u52A8\uFF09";
+  const t = typeof tempC === "number" && Number.isFinite(tempC) ? tempC : null;
+  if (t === null) return "";
+  if (t >= 35) return "\uFF08\u9AD8\u6E29\uFF0C\u6237\u5916\u6D3B\u52A8\u6CE8\u610F\u9632\u6691\uFF0C\u53EF\u80FD\u6539\u5230\u5BA4\u5185\uFF09";
+  if (t <= -5) return "\uFF08\u4E25\u5BD2\uFF0C\u6237\u5916\u6D3B\u52A8\u6CE8\u610F\u4FDD\u6696\uFF0C\u53EF\u80FD\u6539\u5230\u5BA4\u5185\uFF09";
+  return "";
+};
+var appendWeatherToSlot = (slotHeader, slot, weather) => {
+  if (!slotHeader || !weather?.description) return slotHeader;
+  const tempPart = typeof weather.tempC === "number" && Number.isFinite(weather.tempC) ? ` ${Math.round(weather.tempC)}\xB0C` : "";
+  const cityPart = weather.city ? `${weather.city}\u5F53\u524D` : "\u5F53\u5730\u5F53\u524D";
+  const seg = `${cityPart}${weather.description}${tempPart}`;
+  const locationPart = slot?.location ? `${slot.location} \xB7 ` : "";
+  let line = `${slotHeader.replace(/\n+$/, "")}
+\uFF08${locationPart}${seg}`;
+  if (slot && OUTDOOR_ACTIVITY_RE.test(slot.activity)) {
+    const advice = badWeatherAdvice(weather.description, weather.tempC);
+    if (advice) line += ` \xB7 ${advice.replace(/^（/, "").replace(/）$/, "")}`;
+  }
+  line += "\uFF09\n";
+  return line;
+};
 var resolveScheduleSlots = (schedule, now) => {
   if (!schedule?.slots?.length) return { current: null, next: null };
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -7112,6 +7138,7 @@ var buildScheduleInjection = (schedule, evolvedNarrative, now = /* @__PURE__ */ 
   if (!schedule || !schedule.slots || schedule.slots.length === 0) return "";
   const { current: currentSlot, next: nextSlot } = resolveScheduleSlots(schedule, now);
   const withClock = options.includeClock !== false;
+  const weather = options.weather ?? null;
   const withTime = (text, startTime) => withClock ? `${text}\uFF08${startTime}\uFF09` : text;
   const isPreDawnCarryOver = !currentSlot && now.getHours() < PRE_DAWN_END_HOUR;
   let slotHeader = "";
@@ -7129,6 +7156,7 @@ var buildScheduleInjection = (schedule, evolvedNarrative, now = /* @__PURE__ */ 
 ` : `\u4ECA\u5929\u8FD8\u6CA1\u5F00\u59CB\u6D3B\u52A8\uFF0C\u7A0D\u540E\u5148${withTime(nextSlot.activity, nextSlot.startTime)}
 `;
   }
+  slotHeader = appendWeatherToSlot(slotHeader, currentSlot, weather);
   let narrative = "";
   if (evolvedNarrative) {
     narrative = evolvedNarrative;
@@ -7227,6 +7255,7 @@ var renderFireSceneBlock = (scene, nowMs, tz, options) => {
   if (!scene?.schedule?.slots?.length) return "";
   const wallNow = nowInTimeZone(tz.tzId, new Date(nowMs));
   if (getLocalDateKey(wallNow) !== scene.dateKey) return "";
+  const wx = options?.weather ?? null;
   const scheduleText = buildScheduleInjection(
     scene.schedule,
     scene.evolvedNarrative,
@@ -7236,7 +7265,9 @@ var renderFireSceneBlock = (scene, nowMs, tz, options) => {
       // 到点主动开口的角色最容易撞上「表上写着睡觉、我却正在给对方发消息」，
       // 所以这条路也要教。标签由 worker classifier 摘成 directive 随 push 回来、
       // 客户端落库；落库按 push 的 sentAt 判时段，隔夜的整批丢弃（见 scheduleChange）。
-      includeChangeInstruction: true
+      includeChangeInstruction: true,
+      // 天气：worker 到点现拉的读数经这里缀进「当前时段」（纯提示词层，不动 busy）。
+      ...wx ? { weather: { city: scene.charCity, description: wx.description, tempC: wx.tempC } } : {}
     }
   ).trim();
   const lines = [];
@@ -7456,7 +7487,8 @@ var renderFirePack = (pack, nowMs, taskInstruction, extras) => {
   ));
   out = fillSlot(out, AMSG_SLOT_TASK_LIST, extras?.taskListBlock ?? "");
   out = fillSlot(out, AMSG_SLOT_SCENE, renderFireSceneBlock(pack.scene, nowMs, tz, {
-    includeClock: extras?.includeClock !== false
+    includeClock: extras?.includeClock !== false,
+    ...extras?.weather ? { weather: extras.weather } : {}
   }));
   const realtimeWorld = extras?.realtimeWorldBlock?.trim();
   out = fillSlot(out, AMSG_SLOT_REALTIME_WORLD, realtimeWorld ? `
@@ -8419,8 +8451,7 @@ var withBudget = async (job, ms, fallback, label) => {
     if (timer !== void 0) clearTimeout(timer);
   }
 };
-var loadWeather = async (cfg, nowMs, globalRows, pendingWrites) => {
-  const city = cfg.weatherCity?.trim();
+var loadWeather = async (city, cfg, nowMs, globalRows, pendingWrites) => {
   if (!city) return null;
   const snap = parseSnapshot(
     globalRows,
@@ -8471,16 +8502,20 @@ var loadHotNews = async (cfg, nowMs, globalRows, pendingWrites) => {
   }
   return [];
 };
-var buildRealtimeWorldBlock = async (args) => {
+var buildRealtimeWorldResult = async (args) => {
   const { toolConfig: cfg, nowMs, globalRows } = args;
+  let weatherCity = (args.charCity || cfg.weatherCity || "").trim();
   const specialDates = args.timeAwarenessEnabled ? checkSpecialDates(args.tzId, nowMs) : [];
   if (!cfg.weatherEnabled && !cfg.newsEnabled) {
-    return renderRealtimeWorldBlock({ specialDates });
+    return { block: renderRealtimeWorldBlock({ specialDates }), weather: null };
+  }
+  if (!cfg.weatherEnabled) {
+    weatherCity = "";
   }
   const pendingWrites = [];
   const [weather, news] = await withBudget(
     Promise.all([
-      cfg.weatherEnabled ? loadWeather(cfg, nowMs, globalRows, pendingWrites) : Promise.resolve(null),
+      cfg.weatherEnabled && weatherCity ? loadWeather(weatherCity, cfg, nowMs, globalRows, pendingWrites) : Promise.resolve(null),
       cfg.newsEnabled ? loadHotNews(cfg, nowMs, globalRows, pendingWrites) : Promise.resolve([])
     ]),
     FETCH_BUDGET_MS,
@@ -8505,7 +8540,7 @@ var buildRealtimeWorldBlock = async (args) => {
     \u70ED\u70B9\u6C60: news.length,
     \u6574\u6BB5\u5B57\u6570: block.length
   });
-  return block;
+  return { block, weather };
 };
 
 // utils/timeFramingNote.ts
@@ -13253,15 +13288,18 @@ var amsgHooks = {
     }) : "";
     const taskListBlock = baseTaskListBlock && canManageTasks ? `${baseTaskListBlock}
 \uFF08\u6E05\u5355\u91CC\u7684\u4EFB\u52A1\u5F52\u4F60\u7BA1\uFF1A\u60C5\u51B5\u53D8\u4E86\u4E0D\u8BE5\u54CD\u7684\u53EF\u4EE5\u7528 cancel_active_message \u53D6\u6D88\uFF0C\u53EA\u662F\u8981\u6362\u65F6\u95F4\u7684\u7528 renew_active_message \u6539\u671F\uFF0Ctask_id \u5C31\u662F\u6E05\u5355\u91CC\u7684\u77ED id\u3002\uFF09` : baseTaskListBlock;
-    const realtimeWorldBlock = await buildRealtimeWorldBlock({
+    const realtimeWorld = await buildRealtimeWorldResult({
       toolConfig,
       timeAwarenessEnabled: toolPack.timeAwarenessEnabled,
       tzId: pack.tzId,
       nowMs: ctx.now.getTime(),
+      // 角色活在自己的城市（tool_pack 随包带上来的）；没填地点的角色退全局默认城市。
+      charCity: toolPack.charCity,
       globalRows,
       globalNamespace: AMSG_GLOBAL_NAMESPACE,
       writeState: ctx.writeState
     });
+    const realtimeWorldBlock = realtimeWorld.block;
     const mcpBlock = mcpResolve ? buildMcpFireBlock(mcpResolve, { mode: mcpNative ? "native" : "text" }) : "";
     const scheduleBlock = canSelfSchedule ? buildFireScheduleBlock(mcpNative ? "native" : "text", { nowMs: ctx.now.getTime(), tz }) : "";
     const fireTools = [
@@ -13330,6 +13368,9 @@ var amsgHooks = {
       selfLog,
       taskListBlock,
       realtimeWorldBlock,
+      // 「此刻在做什么」的天气注与实时世界同一份读数（同城市、同一次拉取）：
+      // 拉到才缀，取数失败/天气没开不传——槽位渲染出来跟没有这回事一样。
+      weather: realtimeWorld.weather,
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled

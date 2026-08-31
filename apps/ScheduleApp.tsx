@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
@@ -18,7 +15,9 @@ import {
     getNextOccurrenceKey,
     normalizeRepeat,
 } from '../utils/anniversaryEngine';
-import { formatLunarShort, lunarMonthLabel, solarToLunarOf } from '../utils/lunarTable';
+import { formatLunarShort, lunarMonthLabel, lunarDayLabel, solarToLunarOf } from '../utils/lunarTable';
+import { fetchCnHolidays, getHolidayInfo, dateKeyOf } from '../utils/cnHoliday';
+import { RealtimeContextManager, resolveCharCity, defaultRealtimeConfig } from '../utils/realtimeContext';
 import type { AnniversaryRepeat } from '../types';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
@@ -124,6 +123,35 @@ const ScheduleApp: React.FC = () => {
         return { y: now.getFullYear(), m: now.getMonth() };
     });
     const [calSelected, setCalSelected] = useState<string | null>(null);
+
+    // 日历 · 今日城市天气（活动角色的 location.city，与聊天天气同一缓存链路）
+    const [todayWeather, setTodayWeather] = useState<{ city: string; description: string; temp: number } | null>(null);
+    // 日历 · 当年节假日数据（角标：法定假日 / 调休补班；缺失时无角标）
+    const [holidayData, setHolidayData] = useState<Awaited<ReturnType<typeof fetchCnHolidays>>>(null);
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const data = await fetchCnHolidays(new Date().getFullYear());
+                if (!cancelled) setHolidayData(data);
+            } catch { /* 无数据 = 无角标 */ }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const cfg = defaultRealtimeConfig;
+                const char = characters.find(c => c.id === activeCharacterId);
+                const city = char ? resolveCharCity(char, cfg) : (cfg.weatherCity || '');
+                if (!city || !cfg.weatherEnabled) { if (!cancelled) setTodayWeather(null); return; }
+                const w = await RealtimeContextManager.fetchWeather(cfg, city);
+                if (!cancelled) setTodayWeather(w ? { city: w.city, description: w.description, temp: w.temp } : null);
+            } catch { if (!cancelled) setTodayWeather(null); }
+        })();
+        return () => { cancelled = true; };
+    }, [activeCharacterId, characters]);
 
     useEffect(() => {
         loadData();
@@ -588,6 +616,8 @@ const ScheduleApp: React.FC = () => {
                                 const isSel = key === selected;
                                 const dots = dotMap.get(key) || [];
                                 const lunar = formatLunarShort(date);
+                                // 节假日角标：休 / 班（无数据不打扰）
+                                const hInfo = getHolidayInfo(holidayData, key);
                                 return (
                                     <button
                                         key={key}
@@ -607,6 +637,9 @@ const ScheduleApp: React.FC = () => {
                                                 ))}
                                             </span>
                                         )}
+                                        {hInfo && (
+                                            <span className={`absolute top-0.5 right-1 text-[8px] font-bold leading-none ${hInfo.isOffDay ? 'text-red-400' : 'text-amber-400'}`}>{hInfo.isOffDay ? '休' : '班'}</span>
+                                        )}
                                     </button>
                                 );
                             })}
@@ -614,6 +647,12 @@ const ScheduleApp: React.FC = () => {
                         {/* 当日列表 */}
                         <div className={`pt-2 border-t ${theme.border} space-y-2`}>
                             <div className={`text-[10px] font-bold uppercase tracking-widest ${theme.textSub} pt-1`}>{selected} {selected === todayKey ? '· 今天' : ''} {dayAnnis.length > 0 ? `· ${dayAnnis.length} 个契约` : ''}</div>
+                            {selected === todayKey && todayWeather && (
+                                <div className={`text-[11px] font-bold ${theme.text} flex items-center gap-2 flex-wrap`}>
+                                    <span>📍 {todayWeather.city} · {todayWeather.description} {Math.round(todayWeather.temp)}°C</span>
+                                    {(() => { const hi = getHolidayInfo(holidayData, todayKey); return hi ? <span className={hi.isOffDay ? 'text-red-400' : 'text-amber-400'}>{hi.isOffDay ? `法定假日${hi.name ? `· ${hi.name}` : ''}` : `调休补班${hi.name ? `· ${hi.name}` : ''}`}</span> : null; })()}
+                                </div>
+                            )}
                             {dayAnnis.length === 0 ? (
                                 <div className={`text-center text-xs py-6 ${theme.textSub}`}>这一天没有时光契约</div>
                             ) : dayAnnis.map(a => (

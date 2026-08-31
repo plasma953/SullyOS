@@ -1,4 +1,3 @@
-
 import { DB } from './db';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { CharacterProfile, CharPlaylistSong } from '../types';
@@ -469,6 +468,43 @@ export const ChatParser = {
                 await persist({ charId, role: 'system', type: 'text', content: `[系统: ${charName} 新增了日程 "${title}" (${date})]` });
             }
             content = content.replace(eventMatch[0], '').trim();
+        }
+
+        // MOVE_TO — 角色搬去 / 到了另一个城市：更新自己档案里的 location（与用户手填同一字段）。
+        // 纯本地：改内存态（经广播）+ 落库，不弹确认——沿用 AI 自主更新人设的仓库惯例。
+        // 城市为空 / 新旧相同都静默跳过：这不是必须执行的动作，宁可不做也别做错。
+        const moveMatch = content.match(/\[\[ACTION:MOVE_TO\s*\|\s*([^\]|]+?)(?:\s*\|\s*([^\]]+?))?\s*\]\]/);
+        if (moveMatch) {
+            const city = moveMatch[1].trim();
+            const province = ((moveMatch[2] || '').trim() || undefined);
+            if (city) {
+                try {
+                    const chars = await DB.getAllCharacters();
+                    const self = chars.find(c => c.id === charId);
+                    if (self && (self.location?.city || '') !== city) {
+                        const next: CharacterProfile = {
+                            ...self,
+                            location: {
+                                ...(self.location || {}),
+                                province: province ?? self.location?.province,
+                                city,
+                                source: 'char',
+                                updatedAt: Date.now(),
+                            },
+                        };
+                        await DB.saveCharacter(next);
+                        addToast(`${charName} 现在住在${province ? `${province} ` : ''}${city}`, 'info');
+                        await persist({ charId, role: 'system', type: 'text', content: `[系统: ${charName} 搬到了${city}，之后的生活与天气都按新城市算]` });
+                        try {
+                            // OSContext 监听并把内存态合并上（字段级 merge，避免整对象反向覆盖）。
+                            window.dispatchEvent(new CustomEvent('char-location-updated', { detail: { charId, city, province } }));
+                        } catch { /* 非浏览器环境忽略 */ }
+                    }
+                } catch (e) {
+                    console.warn('[chatParser] MOVE_TO 处理失败:', e);
+                }
+            }
+            content = content.replace(moveMatch[0], '').trim();
         }
 
         // SCHEDULE

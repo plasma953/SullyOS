@@ -36,6 +36,11 @@ export interface AmsgToolPack {
    * 也不给今日节日——这个字段不上云的话，前台守着的开关一到主动消息就失效。
    */
   timeAwarenessEnabled: boolean;
+  /**
+   * 角色所在城市（location.city，角色可自改）。天气到点现拉按它取——角色活在自己的
+   * 城市里（与自定义时区同构），全局默认城市只兜没填地点的角色。老 worker 不读它，零影响。
+   */
+  charCity?: string;
 }
 
 /**
@@ -75,6 +80,11 @@ export interface AmsgToolConfig extends AgenticToolRealtimeConfig {
   mcpServers?: McpFireServer[];
   /** 前台「原生 tools」开关：false = 中转拒 tools，worker 退到正文协议。缺省按 true。 */
   mcpUseNativeTools?: boolean;
+  /**
+   * 角色所在城市（AmsgToolPack.charCity，随包上云）。天气/日程槽位天气注都按它取数：
+   * 角色活在自己的城市里（与自定义时区同构），全局默认城市只兜没填地点的角色。
+   */
+  charCity?: string;
 }
 
 /**
@@ -116,6 +126,8 @@ export const buildToolPack = (char: CharacterProfile): AmsgToolPack => ({
   })),
   // 前台的判定是「没显式关就算开」，这边照抄同一句，别让同一个开关两处读出不同结果。
   timeAwarenessEnabled: char.timeAwarenessEnabled !== false,
+  // 角色活在自己的城市（有就带，worker 天气取数按它；没有就退全局默认城市）。
+  ...(char.location?.city?.trim() ? { charCity: char.location.city.trim() } : {}),
 });
 
 /**
@@ -125,6 +137,11 @@ export const buildToolPack = (char: CharacterProfile): AmsgToolPack => ({
 export const buildToolConfig = (
   realtimeConfig: RealtimeConfig | undefined,
   mcp?: { servers: McpFireServer[]; useNativeTools: boolean },
+  /**
+   * 角色所在城市（可选）。给谁上传配置，就带谁的家：worker 天气取数按它走，
+   * 全局默认城市（realtimeConfig.weatherCity）只兜没填地点的角色。
+   */
+  charCity?: string,
 ): AmsgToolConfig => {
   const rc = realtimeConfig;
   const xhs = rc?.xhsMcpConfig;
@@ -133,6 +150,7 @@ export const buildToolConfig = (
     proxyWorkerUrl: getProxyWorkerUrl(),
     weatherEnabled: !!rc?.weatherEnabled,
     ...(rc?.weatherCity ? { weatherCity: rc.weatherCity } : {}),
+    ...(charCity?.trim() ? { charCity: charCity.trim() } : {}),
     ...(rc?.weatherApiKey ? { weatherApiKey: rc.weatherApiKey } : {}),
     newsEnabled: !!rc?.newsEnabled,
     ...(rc?.newsApiKey ? { newsApiKey: rc.newsApiKey } : {}),

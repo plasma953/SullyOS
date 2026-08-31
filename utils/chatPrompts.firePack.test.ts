@@ -25,7 +25,7 @@ const baseChar = (over: Record<string, unknown> = {}) => ({
     ...over,
 }) as any;
 
-const realtimeConfig = { weatherEnabled: true, newsEnabled: true } as any;
+const realtimeConfig = { weatherEnabled: true, newsEnabled: true, weatherCity: '上海' } as any;
 
 // vi.mock 的工厂在模块最顶上执行，schedule 必须是 var 提升上去的（const 会踩 TDZ）。
 // eslint-disable-next-line no-var
