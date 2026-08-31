@@ -11,6 +11,15 @@ import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { getCalendarDayDifference, getLocalDateKey } from '../utils/localDate';
+import {
+    expandOccurrences,
+    isAnniversaryOn,
+    getUpcomingAnniversaries,
+    getNextOccurrenceKey,
+    normalizeRepeat,
+} from '../utils/anniversaryEngine';
+import { formatLunarShort, lunarMonthLabel, solarToLunarOf } from '../utils/lunarTable';
+import type { AnniversaryRepeat } from '../types';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
 import TokenImg from '../components/os/TokenImg';
@@ -37,7 +46,8 @@ const THEMES: Record<ThemeMode, any> = {
         modalBg: 'bg-[#0f172a] border border-cyan-500',
         input: 'bg-slate-800 text-white border-none rounded-none',
         label: 'QUEST LOG',
-        eventLabel: 'SERVER EVENTS'
+        eventLabel: 'SERVER EVENTS',
+        calendarLabel: 'CALENDAR'
     },
     soft: {
         id: 'soft',
@@ -54,7 +64,8 @@ const THEMES: Record<ThemeMode, any> = {
         modalBg: 'bg-white/90 rounded-[2.5rem]',
         input: 'bg-pink-50 text-slate-700 border border-pink-100 rounded-xl',
         label: '心愿单',
-        eventLabel: '纪念日'
+        eventLabel: '纪念日',
+        calendarLabel: '日历'
     },
     minimal: {
         id: 'minimal',
@@ -73,7 +84,8 @@ const THEMES: Record<ThemeMode, any> = {
         modalBg: 'bg-[#eef2f6] rounded-2xl shadow-2xl',
         input: 'bg-[#eef2f6] text-slate-700 rounded-xl shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]',
         label: 'Focus',
-        eventLabel: 'Timeline'
+        eventLabel: 'Timeline',
+        calendarLabel: '日历'
     }
 };
 
@@ -82,7 +94,7 @@ const ScheduleApp: React.FC = () => {
     const localDateKey = useLocalDateKey();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
-    const [activeTab, setActiveTab] = useState<'quest' | 'server_events'>('quest');
+    const [activeTab, setActiveTab] = useState<'quest' | 'server_events' | 'calendar'>('quest');
     
     // Processing State for feedback
     const [processingTaskIds, setProcessingTaskIds] = useState<Set<string>>(new Set());
@@ -104,6 +116,14 @@ const ScheduleApp: React.FC = () => {
     const [newAnniDate, setNewAnniDate] = useState('');
     const [newAnniChar, setNewAnniChar] = useState<string>(activeCharacterId || '');
     const [anniCharGroupId, setAnniCharGroupId] = useState<string>(GROUP_FILTER_ALL); // 纪念日关联对象的分组筛选
+    const [newAnniContent, setNewAnniContent] = useState('');
+    const [newAnniRepeat, setNewAnniRepeat] = useState<AnniversaryRepeat>({ mode: 'yearly' });
+    // 日历视图
+    const [calCursor, setCalCursor] = useState(() => {
+        const now = new Date();
+        return { y: now.getFullYear(), m: now.getMonth() };
+    });
+    const [calSelected, setCalSelected] = useState<string | null>(null);
 
     useEffect(() => {
         loadData();
@@ -333,17 +353,22 @@ const ScheduleApp: React.FC = () => {
 
     const handleAddAnni = async () => {
         if (!newAnniTitle.trim() || !newAnniDate) return;
+        const repeat = normalizeRepeat({ repeat: newAnniRepeat } as Anniversary);
         const anni: Anniversary = {
             id: `anni-${Date.now()}`,
             title: newAnniTitle,
             date: newAnniDate,
-            charId: newAnniChar || characters[0]?.id
+            charId: newAnniChar || characters[0]?.id,
+            ...(newAnniContent.trim() ? { content: newAnniContent.trim() } : {}),
+            repeat,
         };
         await DB.saveAnniversary(anni);
         setAnniversaries(prev => [...prev, anni].sort((a, b) => a.date.localeCompare(b.date)));
         setShowAnniModal(false);
         setNewAnniTitle('');
         setNewAnniDate('');
+        setNewAnniContent('');
+        setNewAnniRepeat({ mode: 'yearly' });
         
         // Remove immediate trigger to avoid double calls (useEffect will handle if it's upcoming)
     };
@@ -359,9 +384,12 @@ const ScheduleApp: React.FC = () => {
         return getCalendarDayDifference(localDateKey, dateStr) ?? Number.POSITIVE_INFINITY;
     };
 
-    const upcomingAnni = useMemo(() => {
-        return anniversaries.filter(a => getDaysUntil(a.date) >= 0).sort((a, b) => a.date.localeCompare(b.date))[0];
-    }, [anniversaries, localDateKey]);
+    // 引擎化：下一次发生的契约（支持重复规则 + 农历），Hero 卡与提醒共用
+    const upcoming = useMemo(() => getUpcomingAnniversaries(anniversaries, localDateKey, 730)[0], [anniversaries, localDateKey]);
+    const upcomingAnni = upcoming?.anni;
+    const upcomingDays = upcoming
+        ? (getCalendarDayDifference(localDateKey, upcoming.nextDateKey) ?? 0)
+        : 0;
 
     // Trigger thoughts for upcoming anniversary on load
     useEffect(() => {
@@ -404,6 +432,7 @@ const ScheduleApp: React.FC = () => {
                 <div className={`flex gap-1 p-1 rounded-lg ${currentThemeMode === 'cyber' ? 'bg-black/40 border border-cyan-900/50' : (currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'bg-white/50')}`}>
                     <button onClick={() => { setActiveTab('quest'); trackEvent('切换日程标签页', { tab: 'quest' }); }} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${activeTab === 'quest' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.label}</button>
                     <button onClick={() => { setActiveTab('server_events'); trackEvent('切换日程标签页', { tab: 'server_events' }); }} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${activeTab === 'server_events' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.eventLabel}</button>
+                    <button onClick={() => { setActiveTab('calendar'); trackEvent('切换日程标签页', { tab: 'calendar' }); }} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${activeTab === 'calendar' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.calendarLabel}</button>
                 </div>
 
                 {/* Right Actions */}
@@ -433,8 +462,8 @@ const ScheduleApp: React.FC = () => {
                     <div className={`w-full rounded-2xl p-5 relative overflow-hidden group transition-all duration-300 ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[inset_5px_5px_10px_#d1d9e6,inset_-5px_-5px_10px_#ffffff]' : (currentThemeMode === 'soft' ? 'bg-gradient-to-r from-pink-300 to-purple-300 text-white shadow-lg shadow-pink-200' : 'bg-gradient-to-r from-slate-900 to-slate-800 border border-purple-500/30')}`}>
                         <div className="relative z-10">
                             <div className="flex justify-between items-start mb-2">
-                                <div className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${currentThemeMode === 'minimal' ? 'text-slate-400' : 'text-white/80 bg-white/20'}`}>即将到来</div>
-                                <div className="text-3xl font-bold tracking-tighter">{getDaysUntil(upcomingAnni.date)} <span className="text-xs opacity-60 font-normal">天后</span></div>
+                                <div className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${currentThemeMode === 'minimal' ? 'text-slate-400' : 'text-white/80 bg-white/20'}`}>即将到来{normalizeRepeat(upcomingAnni).lunar ? ' · 农历' : ''}</div>
+                                <div className="text-3xl font-bold tracking-tighter">{upcomingDays} <span className="text-xs opacity-60 font-normal">天后</span></div>
                             </div>
                             <div className="text-xl font-bold mb-4">{upcomingAnni.title}</div>
                             
@@ -516,24 +545,117 @@ const ScheduleApp: React.FC = () => {
                     </div>
                 )}
 
+                {activeTab === 'calendar' && (() => {
+                    const CAL_WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+                    const firstDay = new Date(calCursor.y, calCursor.m, 1);
+                    const startDow = firstDay.getDay();
+                    const gridStart = new Date(calCursor.y, calCursor.m, 1 - startDow);
+                    const daysGrid: { key: string; inMonth: boolean; date: Date }[] = [];
+                    for (let i = 0; i < 42; i++) {
+                        const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+                        daysGrid.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, inMonth: d.getMonth() === calCursor.m, date: d });
+                    }
+                    const todayKey = localDateKey;
+                    const selected = calSelected || todayKey;
+                    const dayAnnis = anniversaries.filter(a => isAnniversaryOn(a, selected));
+                    const dotMap = new Map<string, string[]>();
+                    for (const a of anniversaries) {
+                        for (const o of expandOccurrences(a, daysGrid[0].key, daysGrid[41].key)) {
+                            const arr = dotMap.get(o.dateKey) || [];
+                            if (!arr.includes(a.charId)) arr.push(a.charId);
+                            dotMap.set(o.dateKey, arr);
+                        }
+                    }
+                    const dotColors = ['bg-pink-400', 'bg-purple-400', 'bg-rose-400', 'bg-fuchsia-400', 'bg-red-300'];
+                    return (
+                    <div className="space-y-4">
+                        {/* 月份导航 */}
+                        <div className={`flex items-center justify-between ${theme.card} px-4 py-2.5`}>
+                            <button onClick={() => setCalCursor(c => ({ y: c.m === 0 ? c.y - 1 : c.y, m: c.m === 0 ? 11 : c.m - 1 }))} className={`p-1.5 rounded-full active:scale-90 transition-transform ${theme.accent}`}>‹</button>
+                            <div className={`text-sm font-bold tracking-wide ${theme.text}`}>{calCursor.y} 年 {calCursor.m + 1} 月</div>
+                            <button onClick={() => setCalCursor(c => ({ y: c.m === 11 ? c.y + 1 : c.y, m: c.m === 11 ? 0 : c.m + 1 }))} className={`p-1.5 rounded-full active:scale-90 transition-transform ${theme.accent}`}>›</button>
+                        </div>
+                        {/* 星期表头 */}
+                        <div className="grid grid-cols-7 gap-1 text-center">
+                            {CAL_WEEKDAYS.map(w => (
+                                <div key={w} className={`text-[10px] font-bold ${theme.textSub} py-1`}>{w}</div>
+                            ))}
+                        </div>
+                        {/* 日期网格 */}
+                        <div className="grid grid-cols-7 gap-1">
+                            {daysGrid.map(({ key, inMonth, date }) => {
+                                const isToday = key === todayKey;
+                                const isSel = key === selected;
+                                const dots = dotMap.get(key) || [];
+                                const lunar = formatLunarShort(date);
+                                return (
+                                    <button
+                                        key={key}
+                                        onClick={() => setCalSelected(key)}
+                                        className={`relative aspect-square rounded-xl flex flex-col items-center justify-center transition-all ${
+                                            isSel
+                                                ? (currentThemeMode === 'cyber' ? 'bg-cyan-900/50 ring-1 ring-cyan-400' : (currentThemeMode === 'minimal' ? 'shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'bg-white ring-1 ring-pink-300'))
+                                                : (inMonth ? 'hover:bg-white/5' : 'opacity-30')
+                                        }`}
+                                    >
+                                        <span className={`text-xs font-bold ${isToday ? theme.accent : theme.text}`}>{date.getDate()}</span>
+                                        <span className={`text-[8px] leading-none mt-0.5 ${inMonth ? theme.textSub : 'opacity-50'}`}>{lunar}</span>
+                                        {dots.length > 0 && (
+                                            <span className="absolute bottom-0.5 flex gap-0.5">
+                                                {dots.slice(0, 3).map((cid, i) => (
+                                                    <span key={cid} className={`w-1 h-1 rounded-full ${dotColors[i % dotColors.length]}`} />
+                                                ))}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {/* 当日列表 */}
+                        <div className={`pt-2 border-t ${theme.border} space-y-2`}>
+                            <div className={`text-[10px] font-bold uppercase tracking-widest ${theme.textSub} pt-1`}>{selected} {selected === todayKey ? '· 今天' : ''} {dayAnnis.length > 0 ? `· ${dayAnnis.length} 个契约` : ''}</div>
+                            {dayAnnis.length === 0 ? (
+                                <div className={`text-center text-xs py-6 ${theme.textSub}`}>这一天没有时光契约</div>
+                            ) : dayAnnis.map(a => (
+                                <div key={a.id} className={`${theme.card} p-3`}>
+                                    <div className={`text-sm font-bold ${theme.text}`}>{a.title}</div>
+                                    {a.content && <div className={`text-[11px] mt-1 leading-relaxed whitespace-pre-wrap ${theme.textSub}`}>{a.content.slice(0, 120)}{a.content.length > 120 ? '…' : ''}</div>}
+                                    <div className={`text-[10px] ${theme.textSub} font-mono mt-1`}>
+                                        {normalizeRepeat(a).lunar ? '农历' : a.date}{normalizeRepeat(a).lunar ? ` (${a.date} 登记)` : ''} · {characters.find(c => c.id === a.charId)?.name}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    );
+                })()}
+
                 {activeTab === 'server_events' && (
                     <div className={`relative pl-6 space-y-8 before:absolute before:left-2 before:top-2 before:bottom-0 before:w-[1px] ${theme.decoLine}`}>
                         {/* Anniversaries List */}
                         <div>
                              <h3 className={`text-xs font-bold uppercase tracking-widest mb-6 -ml-6 pl-6 ${theme.textSub}`}>时间线事件</h3>
                              <div className="space-y-4">
-                                 {anniversaries.map(a => (
+                                 {[...anniversaries]
+                                     .map(a => ({ a, next: getNextOccurrenceKey(a, localDateKey) }))
+                                     .sort((x, y) => (x.next ?? '9999').localeCompare(y.next ?? '9999'))
+                                     .map(({ a, next }) => (
                                      <div key={a.id} className="relative group">
                                          <div className={`absolute -left-[20px] top-4 w-2 h-2 rounded-full z-10 ${currentThemeMode === 'cyber' ? 'bg-black border border-purple-500' : 'bg-pink-400'}`}></div>
                                          <div className={`${theme.card} p-4 flex justify-between items-center transition-colors`}>
-                                             <div>
-                                                 <div className={`text-sm font-bold ${theme.text}`}>{a.title}</div>
-                                                 <div className={`text-[10px] ${theme.textSub} font-mono mt-1`}>{a.date} · {characters.find(c => c.id === a.charId)?.name}</div>
+                                             <div className="min-w-0">
+                                                 <div className={`text-sm font-bold ${theme.text} truncate`}>{a.title}</div>
+                                                 <div className={`text-[10px] ${theme.textSub} font-mono mt-1`}>
+                                                     {next ? `${next}${getNextOccurrenceKey(a, localDateKey) !== a.date ? ` · 下一次` : ` · 今天`}` : `单次已过 (${a.date})`}
+                                                     {normalizeRepeat(a).lunar ? ' · 农历' : ''}
+                                                     {a.repeat && !a.repeat.lunar && a.repeat.mode !== 'yearly' ? ` · ${a.repeat.mode === 'none' ? '单次' : a.repeat.mode === 'monthly' ? '每月' : a.repeat.mode === 'weekly' ? '每周' : `每${a.repeat.intervalDays || '?'}天`}` : ''}
+                                                     {' · '}{characters.find(c => c.id === a.charId)?.name}
+                                                 </div>
                                              </div>
                                              <button onClick={() => handleDeleteAnni(a.id)} className="text-slate-400 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                                          </div>
                                      </div>
-                                 ))}
+                                     ))}
                              </div>
                         </div>
 
@@ -582,6 +704,61 @@ const ScheduleApp: React.FC = () => {
                 <div className={`space-y-4 ${currentThemeMode === 'minimal' ? 'p-2' : ''}`}>
                     <input value={newAnniTitle} onChange={e => setNewAnniTitle(e.target.value)} placeholder="事件名称 (例如: 第一次见面)" className={`w-full px-4 py-3 text-sm focus:outline-none ${theme.input}`} />
                     <input type="date" value={newAnniDate} onChange={e => setNewAnniDate(e.target.value)} className={`w-full px-4 py-3 text-sm focus:outline-none ${theme.input}`} />
+
+                    <textarea
+                        value={newAnniContent}
+                        onChange={e => setNewAnniContent(e.target.value)}
+                        rows={3}
+                        placeholder="契约内容（Markdown，可选）：写下这份约定的心情与细节，角色会记得它……"
+                        className={`w-full px-4 py-3 text-sm focus:outline-none resize-none no-scrollbar ${theme.input}`}
+                    />
+
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">重复规则</label>
+                        <div className="flex gap-2 flex-wrap">
+                            {([
+                                { v: 'yearly', label: '每年' },
+                                { v: 'monthly', label: '每月' },
+                                { v: 'weekly', label: '每周' },
+                                { v: 'interval', label: '间隔' },
+                                { v: 'none', label: '单次' },
+                            ] as const).map(opt => (
+                                <button
+                                    key={opt.v}
+                                    onClick={() => setNewAnniRepeat(prev => ({ ...prev, mode: opt.v }))}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${newAnniRepeat.mode === opt.v
+                                        ? (currentThemeMode === 'minimal' ? 'shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff] text-slate-600' : 'bg-current/10 ring-1 ring-current')
+                                        : 'opacity-50'}`}
+                                >
+                                    <span className={theme.accent}>{opt.label}</span>
+                                </button>
+                            ))}
+                            {newAnniRepeat.mode === 'interval' && (
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={newAnniRepeat.intervalDays ?? 7}
+                                    onChange={e => setNewAnniRepeat(prev => ({ ...prev, intervalDays: Math.max(1, Number(e.target.value) || 1) }))}
+                                    className={`w-20 px-2 py-1.5 text-xs focus:outline-none ${theme.input}`}
+                                    placeholder="天数"
+                                />
+                            )}
+                            <button
+                                onClick={() => setNewAnniRepeat(prev => ({ ...prev, lunar: !prev.lunar }))}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${newAnniRepeat.lunar ? 'bg-rose-400/20 ring-1 ring-rose-400 text-rose-500' : 'opacity-50'}`}
+                                title="按农历每年重复（登记日将按农历月日对齐）"
+                            >
+                                农历 {newAnniRepeat.lunar ? '✓' : ''}
+                            </button>
+                        </div>
+                        {newAnniRepeat.lunar && (
+                            <p className={`text-[10px] mt-1.5 ${theme.textSub}`}>
+                                {newAnniDate
+                                    ? `农历模式：登记日对应 ${(() => { const ld = solarToLunarOf(new Date(newAnniDate + 'T00:00:00')); return ld ? `${lunarMonthLabel(ld)}${lunarDayLabel(ld)}` : '（超出换算范围）'; })()}，将每年对齐农历同月同日。`
+                                    : '农历模式：登记后将按农历同月同日每年重复。'}
+                            </p>
+                        )}
+                    </div>
                     
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">关联对象</label>

@@ -114,7 +114,7 @@ export interface OSTheme {
   contentColor?: string;
   /** 冷启动时是否播放整机开机过场。默认开启（undefined 视为 true）。 */
   bootAnimationEnabled?: boolean;
-  /** 进入聊天或切换角色时是否播放角色登场过场。默认开启。 */
+  /** 进入聊天���切换角色时是否播放角色登场过场。默认开启。 */
   chatCharacterSwitchAnimationEnabled?: boolean;
   /** App 代码块加载较慢时是否显示加载柔光动画。默认开启；超时恢复页不受影响。 */
   appLoadingAnimationEnabled?: boolean;
@@ -345,7 +345,7 @@ export interface InstantPushConfig {
   // 共享同一份，避免两边互相 unsubscribe 抢同一个 pushManager 订阅。
   clientToken?: string;     // 对应 Worker 的 AMSG_CLIENT_TOKEN
   // 发送文本后是否自动触发 AI 回复 (worker 端跑 + push 回写). 仅控制"自动触发"这件事,
-  // 不改变 instant push 本身的开关含义. 关闭时 instant 模式也保留手动 ⚡, 跟本地模式一致.
+  // 不改变 instant push 本身的开��含义. 关闭时 instant 模式也保留手动 ⚡, 跟本地模式一致.
   // 缺省 (undefined) 视为关闭 — 避免"启用 instant = 自动回复"的反直觉强绑定.
   autoTriggerOnSend?: boolean;
   // 大 payload 的传输方式默认走 multipart。只有连接测试确认 Worker 绑定了可用 D1 后,
@@ -1395,7 +1395,7 @@ export interface VRCardMeta {
     signalIsNew?: boolean;
     /** 截至本次贡献后这首诗的全文（逐句），供卡片展示 */
     poemLinesSoFar?: string[];
-    /** 所在册子的标题（如「低电量合唱」），UI 展示 */
+    /** 所在册��的标题（如「低电量合唱」），UI 展示 */
     bookletTitle?: string;
     /** 用户参与时留给角色的耳语（不进诗，只随卡片进聊天/记忆） */
     signalWhisper?: string;
@@ -2107,7 +2107,7 @@ export interface DateObservation {
     state?: string;
     /** 细节：正在发生的动作 / 微小细节 */
     detail?: string;
-    /** 用户追加的自定义维度的值，按 DateObserveCustomField.id 存 */
+    /** 用户追加的自定义���度的值，按 DateObserveCustomField.id 存 */
     extra?: Record<string, string>;
 }
 
@@ -2300,7 +2300,7 @@ export interface ChibiStudioSlot {
     /** 捏人器导出的完整 state（选件+换色+翻转…），再编辑时经 init.savedState 整套还原 */
     state?: any;
     /**
-     * 透明 PNG dataURL 兜底展示图。room/vr 的形象本体以各 App 自己的字段为准
+     * 透明 PNG dataURL 兜底展示图。room/vr 的形象���体以各 App 自己的字段为准
      * （sprites.chibi / vrState.chibi.img）；like520 未通关时靠这里展示 + 预填活动捏人器。
      */
     img?: string;
@@ -2864,7 +2864,7 @@ export interface CharacterProfile {
   chatBackground?: string;
   contextLimit?: number;
   /**
-   * AI 原文读取范围策略：
+   * AI ���文读取范围策略：
    * - adaptive：全自动记忆接管，最大范围从记忆宫殿水位线之后开始；
    * - manual：用户拉杆决定最多读取最近 contextLimit 条完整原文。
    */
@@ -3105,7 +3105,7 @@ export interface CharacterProfile {
 
   /**
    * 思考过程展示（per-character / 会话级）。
-   * - true：把 LLM 返回的 reasoning_content 与 <think>...</think> 抽出来，
+   * - true：把 LLM 返回的 reasoning_content 与 <think>...</think> 抽���来，
    *   作为 metadata.thinkingChain 落库到 assistant 消息上，
    *   MessageItem 在气泡顶部渲染可折叠"💭 思考过程"区块。
    * - false / undefined：依然按旧逻辑剥离，不展示。
@@ -3188,7 +3188,7 @@ export interface GroupProfile {
     memberTimelineCap?: number;
     /**
      * 群回复生成模式：director = 一次调用生成整轮（默认，快、省 token）；
-     * roundRobin = 每位成员单独调用一次 API，按成员顺序逐个发言（更真实、防串号，token ≈ 成员数倍）。
+     * roundRobin = 每位���员单独调用一次 API，按成员顺序逐个发言（更真实、防串号，token ≈ 成员数倍）。
      */
     replyMode?: 'director' | 'roundRobin';
     /**
@@ -3388,7 +3388,7 @@ export type SlotPayload =
     | { kind: 'mood'; rating: number; tag?: string }       // rating 1~5
     | { kind: 'photo'; src?: string; caption: string };   // src 由 user 贴, 也可暂缺
 
-// ─── 单页拼贴排版 ──────────────────────────────────────
+// ─── 单页拼贴排版 ───────────────────────────────��──────
 //
 // v2 设计 (2026-05): "版式优先"。先 roll 一份 layout template (pre-baked JSON),
 // 它已包含每个槽的 {位置, 视觉角色, 字数预算, 可写者} —— LLM 只填空,不排版。
@@ -3657,11 +3657,24 @@ export interface Task {
     createdAt: number;
 }
 
+/** 时光契约重复规则：none=单次 / yearly=每年 / monthly=每月 / weekly=每周 / interval=自定义间隔天 */
+export interface AnniversaryRepeat {
+    mode: 'none' | 'yearly' | 'monthly' | 'weekly' | 'interval';
+    /** mode='interval' 时的间隔天数（≥1） */
+    intervalDays?: number;
+    /** true = date 字段的月/日按农历解释（每年对齐农历同月同日，含闰月/大小月顺延） */
+    lunar?: boolean;
+}
+
 export interface Anniversary {
     id: string;
     title: string;
     date: string;
     charId: string;
+    /** 契约内容（Markdown）：角色对这份约定的心情、承诺细节等，进 stable 背景知识 */
+    content?: string;
+    /** 重复规则；缺省按「每年」处理（向后兼容旧数据） */
+    repeat?: AnniversaryRepeat;
     aiThought?: string;
     lastThoughtGeneratedAt?: number;
 }

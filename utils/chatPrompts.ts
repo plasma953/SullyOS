@@ -21,6 +21,7 @@ import { isWorkerReachableUrl } from './amsgToolPack';
 import { isAmsg2EnabledForChar } from './amsg2Tasks';
 import { getCharNameById } from './charNameRegistry';
 import { getLocalDateKey } from './localDate';
+import { getUpcomingAnniversaries } from './anniversaryEngine';
 import { getDailyScheduleForChar } from './dailySchedule';
 import { formatRelativeAge } from './groupChat/relativeTime';
 import { isBlobRef } from './blobRef';
@@ -423,6 +424,44 @@ export const ChatPrompts = {
         const charNow = nowInTimeZone(charTz);
         const today = getLocalDateKey(charNow);
 
+        // 0. 时光契约档案（stable 背景知识：未来 7 天 + 今日到期的约定）。
+        //    只给角色「这些约定存在」的认知，不催不演；Markdown content 去标记后作为
+        //    契约细节注入。单次已过期的不出现。
+        const anniversaryPromise: Promise<string> = (async () => {
+            try {
+                const all = await DB.getAllAnniversaries();
+                const mine = (all || []).filter(a => a.charId === char.id);
+                if (mine.length === 0) return '';
+                const up = getUpcomingAnniversaries(mine, today, 7);
+                if (up.length === 0) return '';
+                const stripMd = (t: string) => t
+                    .replace(/```[\s\S]*?```/g, ' ')
+                    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+                    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+                    .replace(/^#{1,6}\s+/gm, '')
+                    .replace(/[*_~`>#|-]{1,3}/g, ' ')
+                    .replace(/\s+/g, ' ').trim();
+                const lines: string[] = [];
+                for (const { anni, nextDateKey, fromLunar } of up) {
+                    const diff = Math.round((Date.parse(nextDateKey + 'T00:00:00') - Date.parse(today + 'T00:00:00')) / 86400000);
+                    const when = diff === 0 ? '就是今天' : diff === 1 ? '明天' : `${diff} 天后`;
+                    const tag = fromLunar ? '（农历）' : '';
+                    let line = `- 「${anni.title}」${tag} ${when}（${nextDateKey}）`;
+                    const detail = anni.content ? stripMd(anni.content).slice(0, 100) : '';
+                    if (detail) line += `：${detail}`;
+                    lines.push(line);
+                }
+                return `
+### 【时光契约 · 你记得的约定】
+（这些是你与对方之间真实的约定与纪念日，日期到来前你自然会想着它。自然地记得即可，不必刻意逐条汇报。）
+${lines.join('\n')}
+`;
+            } catch (e) {
+                console.error('Failed to build anniversary archive:', e);
+                return '';
+            }
+        })();
+
         // 1. 实时世界信息（天气/新闻/时间）
         //
         // fire_pack 整块不要：这一段里从时间、节日、天气到热搜全是打包那一刻的读数，
@@ -582,7 +621,7 @@ ${groupLogStr}\n`;
                 return '';
             });
 
-        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, lifeRecordText] =
+        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, lifeRecordText, anniversaryText] =
             await Promise.all([
                 timed('realtime', realtimePromise),
                 timed('schedule', schedulePromise),
@@ -591,9 +630,14 @@ ${groupLogStr}\n`;
                 timed('feishuDiary', feishuDiaryPromise),
                 timed('notionNotes', notionNotesPromise),
                 timed('lifeRecord', lifeRecordPromise),
+                timed('anniversary', anniversaryPromise),
             ]);
 
         // ── 拼接：易变的进 volatileState，稳定的进 baseSystemPrompt ──
+        // 0a. 时光契约档案（stable：约定与纪念日是长期背景知识，不随轮次变化）
+        if (anniversaryText) {
+            baseSystemPrompt += anniversaryText;
+        }
         volatileState += realtimeText;
 
         // 2a. 日程注入（完整今日日程 + 当前时段 + 意识流独白，每轮都可能变）

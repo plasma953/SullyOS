@@ -441,13 +441,29 @@ export const ChatParser = {
             content = content.replace(NEWS_CARD_GLOBAL_RE, '').trim();
         }
 
-        // ADD_EVENT
-        const eventMatch = content.match(/\[\[ACTION:ADD_EVENT\s*\|\s*(.*?)\s*\|\s*(.*?)\]\]/);
+        // ADD_EVENT（支持可选的重复规则第三段：yearly/monthly/weekly/none/interval:N/lunar）
+        const eventMatch = content.match(/\[\[ACTION:ADD_EVENT\s*\|\s*(.*?)\s*\|\s*(.*?)(?:\s*\|\s*(.*?))?\]\]/);
         if (eventMatch) {
             const title = eventMatch[1].trim();
             const date = eventMatch[2].trim();
+            const repeatSpec = (eventMatch[3] || '').trim();
             if (title && date) {
-                const anni: any = { id: `anni-${Date.now()}`, title: title, date: date, charId };
+                // 解析重复段：逗号分隔的标记，如 "yearly,lunar" 或 "interval:14"
+                const repeat: import('../types').AnniversaryRepeat = { mode: 'yearly' };
+                if (repeatSpec) {
+                    for (const rawTag of repeatSpec.split(/[,，]/).map(t => t.trim().toLowerCase()).filter(Boolean)) {
+                        if (rawTag === 'yearly' || rawTag === 'monthly' || rawTag === 'weekly' || rawTag === 'none') {
+                            repeat.mode = rawTag;
+                        } else if (rawTag === 'lunar') {
+                            repeat.lunar = true;
+                        } else if (rawTag.startsWith('interval')) {
+                            const n = Number(rawTag.split(':')[1]);
+                            repeat.mode = 'interval';
+                            repeat.intervalDays = Number.isFinite(n) && n >= 1 ? Math.floor(n) : 7;
+                        }
+                    }
+                }
+                const anni: any = { id: `anni-${Date.now()}`, title: title, date: date, charId, repeat };
                 await DB.saveAnniversary(anni);
                 addToast(`${charName} 添加了新日程: ${title}`, 'success');
                 await persist({ charId, role: 'system', type: 'text', content: `[系统: ${charName} 新增了日程 "${title}" (${date})]` });
