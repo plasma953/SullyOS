@@ -13885,6 +13885,13 @@ var src_default = {
   async fetch(request, env) {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
     const method = request.method.toUpperCase();
+    if (pathname === "/health") {
+      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return jsonWithCors(200, {
+        success: true,
+        data: { status: "healthy", runtime: env.SULLYOS_RUNTIME === "vps" ? "vps" : "cloudflare" }
+      });
+    }
     if (pathname.endsWith("/config-check")) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(200, {

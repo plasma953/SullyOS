@@ -110,6 +110,9 @@ export const probeAmsgWorker = async (_apiConfig: APIConfig): Promise<StatusEntr
         const res = await fetchWithTimeout(`${base}/health`, 5000);
         const ms = fmtMs(performance.now() - t0);
         if (res.ok) return { key: 'amsg', label: '主动消息 worker', status: 'ok', detail: ms };
+        // 404 = worker 在但没挂 /health 探活路由（老 bundle 的典型症状）：服务本身
+        // 可能一切正常，别把它标成红的「不可达」，留给 /config-check 与体检面板细说。
+        if (res.status === 404) return { key: 'amsg', label: '主动消息 worker', status: 'warn', detail: '后端缺 /health 探活（旧版）' };
         if (res.status < 500) return { key: 'amsg', label: '主动消息 worker', status: 'warn', detail: `HTTP ${res.status}` };
         return { key: 'amsg', label: '主动消息 worker', status: 'err', detail: `HTTP ${res.status}` };
     } catch (e: any) {

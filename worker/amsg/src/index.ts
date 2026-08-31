@@ -2984,6 +2984,18 @@ export default {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
     const method = request.method.toUpperCase();
 
+    // 探活：给状态面板与前端连接判定用的最小端点。刻意放在配置门之前 —— 「服务
+    // 活着没」和「配置齐不齐」是两个独立问题：配置缺一半时这里照样回 200（缺什么
+    // 让 /config-check 去说），否则面板会把「没配好」误报成「没连上」。VPS 宿主经
+    // Caddy handle_path /amsg/* 剥前缀转发，前端探 {workerUrl}/health 即本路由。
+    if (pathname === '/health') {
+      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return jsonWithCors(200, {
+        success: true,
+        data: { status: 'healthy', runtime: env.SULLYOS_RUNTIME === 'vps' ? 'vps' : 'cloudflare' },
+      });
+    }
+
     if (pathname.endsWith('/config-check')) {
       if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       // 刻意不校验 X-Client-Token：worker 配了口令而前端没填正是要诊断的情形之一，

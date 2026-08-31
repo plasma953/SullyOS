@@ -3088,6 +3088,30 @@ describe('worker 入口 — 配置不全时的响应', () => {
     const response = await call('https://w.example/', {}, fullEnv);
     expect(response.status).toBe(404);
   });
+
+  // /health 探活：状态面板（utils/statusPanel.ts probeAmsgWorker）只看这条路由——
+  // 它回不上 200，设置页就会把「主动消息 worker」标成红的「未连接」。它刻意排在
+  // 配置门之前：服务活着（能答探活）和配置齐不齐（/config-check 的事）是两个问题。
+  it('/health 探活在配置缺一半时也回 200——服务活着和配置齐不齐是两回事', async () => {
+    const response = await call('https://w.example/health', {}, brokenEnv);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.status).toBe('healthy');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('/health 带 CORS 预检放行，浏览器才读得到探活结果', async () => {
+    const response = await call('https://w.example/health', { method: 'OPTIONS' }, brokenEnv);
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('/health 自报宿主运行时（VPS 兼容层经 SULLYOS_RUNTIME）', async () => {
+    const response = await call('https://w.example/health', {}, { ...brokenEnv, SULLYOS_RUNTIME: 'vps' });
+    const body = await response.json();
+    expect(body.data.runtime).toBe('vps');
+  });
 });
 
 // 上游报的 missing 是一摞带类型前缀的串（table: / column: / index:），体检面板按
