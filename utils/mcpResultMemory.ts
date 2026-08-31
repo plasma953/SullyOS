@@ -250,14 +250,17 @@ export const getMcpResultMemoryBlock = (charId: string, keepTurns: number): stri
 };
 
 /**
- * 清空 MCP 调用记忆。
+ * 清空 MCP 调用记忆（分级）。
+ * scope='recent'：只清近期窗口（非 persistent）条目，手册类长期结果不动；
  * scope='manual'：只清手册类长期结果（近期窗口条目继续自动滚动）；
- * scope='all'：清空该角色全部记录。
+ * scope='all'：清空该角色全部记录（短期 + 长期）。
  */
-export const clearMcpResults = (charId: string, scope: 'manual' | 'all'): void => {
+export const clearMcpResults = (charId: string, scope: 'recent' | 'manual' | 'all'): void => {
     const all = readAllEntries();
     const next = scope === 'all'
         ? all.filter(e => e.charId !== charId)
-        : all.filter(e => e.charId !== charId || !e.persistent);
+        : scope === 'recent'
+            ? all.filter(e => e.charId !== charId || e.persistent)
+            : all.filter(e => e.charId !== charId || !e.persistent);
     writeAllEntries(next);
 };
