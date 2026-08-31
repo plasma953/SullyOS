@@ -1,20 +1,21 @@
 /**
- * 系统状态面板 —— 探测层。
+ * 模块级状态探测层。
  *
- * 逐项探测各后端功能的存在性 / 连通性，给设置页顶部的常驻状态面板
- * （components/StatusPanel.tsx）消费。全部条目独立 try/catch + 超时控制，
- * 单项挂了不拖累整块；结果在调用方缓存，60 秒静默刷新。
+ * 设置页已没有统一「系统状态」面板：各功能模块的卡片标题栏各挂一枚 StatusBadge
+ * （components/StatusBadge.tsx），这里按模块 key 提供独立探针。全部探针独立
+ * try/catch + 超时控制，单个模块挂了不拖累别的模块；结果由 StatusBadge 缓存
+ * （60 秒内复用，跨区块切换不闪灰）。
  *
  * 状态口径：
- *   ok      绿 —— 在且连通
- *   warn    琥珀 —— 在，但配置不完整 / 行为异常
+ *   ok      绿 —— 配置齐且连通 / 就绪
+ *   warn    琥珀 —— 配了但未验证 / 配置不完整
  *   err     红 —— 配了但不可达
- *   off     灰 —— 未启用（合法状态，不是错误）
+ *   off     灰 —— 未配置（合法状态，不是错误）
  *   checking 脉冲 —— 探测中
  */
-import type { APIConfig, BridgeConfig } from '../types';
-import { DB } from './db';
+import type { APIConfig, BridgeConfig, RealtimeConfig } from '../types';
 import { ActiveMsgStore } from './activeMsgStore';
+import { loadMcpServers } from './mcpClient';
 
 export type BridgeProbeStatus = 'ok' | 'warn' | 'err' | 'off' | 'checking';
 
@@ -22,16 +23,16 @@ export interface StatusEntry {
     key: string;
     label: string;
     status: BridgeProbeStatus;
-    /** 一句话说明（如「47ms」「HTTP 403」「未启用」）。 */
+    /** 一句话说明（如「47ms」「HTTP 403」「未配置」），徽章直接显示它。 */
     detail?: string;
 }
 
 /** 带超时的 fetch（AbortController）。 */
-const fetchWithTimeout = async (url: string, ms: number, headers?: Record<string, string>): Promise<Response> => {
+const fetchWithTimeout = async (url: string, ms: number, init?: RequestInit): Promise<Response> => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
     try {
-        return await fetch(url, { signal: ctrl.signal, headers });
+        return await fetch(url, { signal: ctrl.signal, ...init });
     } finally {
         clearTimeout(timer);
     }
@@ -48,10 +49,31 @@ const errMessage = (body: unknown): string | undefined => {
 };
 
 /**
+ * API 配置：三件套（地址/密钥/模型）齐全即绿，缺项按缺几样报灰/黄。零网络依赖 ——
+ * 「配置完备」和「服务可达」分开说：可达性由聊天本身与「测试连接」按钮负责。
+ */
+export const probeApiConfig = async (apiConfig: APIConfig): Promise<StatusEntry> => {
+    const entry: StatusEntry = { key: 'api', label: 'API 配置', status: 'off', detail: '未配置' };
+    const hasUrl = !!apiConfig.baseUrl?.trim();
+    const hasKey = !!apiConfig.apiKey?.trim();
+    const hasModel = !!apiConfig.model?.trim();
+    const filled = [hasUrl, hasKey, hasModel].filter(Boolean).length;
+    if (filled === 0) return entry;
+    if (filled === 3) return { ...entry, status: 'ok', detail: '配置齐全' };
+    const missing = [
+        !hasUrl ? '地址' : '',
+        !hasKey ? '密钥' : '',
+        !hasModel ? '模型' : '',
+    ].filter(Boolean).join('、');
+    return { ...entry, status: 'warn', detail: `缺${missing}` };
+};
+
+/**
  * 主代理中转：`GET {agentUrl}/agent/v1/health`；4xx 说明服务在、是鉴权/参数口径问题 → warn。
+ * 留空 = 直连模式（合法状态，灰）。
  */
 export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => {
-    const entry: StatusEntry = { key: 'agent', label: '主代理中转', status: 'off', detail: '未配置' };
+    const entry: StatusEntry = { key: 'agent-relay', label: '主代理中转', status: 'off', detail: '直连' };
     const base = (apiConfig.agentUrl || '').replace(/\/+$/, '');
     if (!base) return entry;
     const t0 = performance.now();
@@ -59,17 +81,17 @@ export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => 
         const res = await fetchWithTimeout(`${base}/agent/v1/health`, 5000);
         const ms = fmtMs(performance.now() - t0);
         if (res.ok) {
-            return { key: 'agent', label: '主代理中转', status: 'ok', detail: ms };
+            return { ...entry, status: 'ok', detail: ms };
         }
         if (res.status < 500) {
             let body: unknown = null;
             try { body = await res.json(); } catch { /* body 可能不是 JSON */ }
             const msg = errMessage(body);
-            return { key: 'agent', label: '主代理中转', status: 'warn', detail: `HTTP ${res.status}${msg ? ' · ' + msg : ''}` };
+            return { ...entry, status: 'warn', detail: `HTTP ${res.status}${msg ? ' · ' + msg : ''}` };
         }
-        return { key: 'agent', label: '主代理中转', status: 'err', detail: `HTTP ${res.status}` };
+        return { ...entry, status: 'err', detail: `HTTP ${res.status}` };
     } catch (e: any) {
-        return { key: 'agent', label: '主代理中转', status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
+        return { ...entry, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
     }
 };
 
@@ -86,111 +108,144 @@ export const probeBridge = async (bridge?: BridgeConfig): Promise<StatusEntry> =
     try {
         const headers: Record<string, string> = {};
         if (bridge.token) headers['Authorization'] = `Bearer ${bridge.token}`;
-        const res = await fetchWithTimeout(`${base}${path.startsWith('/') ? path : '/' + path}`, 3000, headers);
+        const res = await fetchWithTimeout(`${base}${path.startsWith('/') ? path : '/' + path}`, 3000, { headers });
         const ms = fmtMs(performance.now() - t0);
-        if (res.ok) return { key: 'bridge', label: '外部连接桥', status: 'ok', detail: ms };
-        if (res.status < 500) return { key: 'bridge', label: '外部连接桥', status: 'warn', detail: `HTTP ${res.status}` };
-        return { key: 'bridge', label: '外部连接桥', status: 'err', detail: `HTTP ${res.status}` };
+        if (res.ok) return { ...entry, status: 'ok', detail: ms };
+        if (res.status < 500) return { ...entry, status: 'warn', detail: `HTTP ${res.status}` };
+        return { ...entry, status: 'err', detail: `HTTP ${res.status}` };
     } catch (e: any) {
-        return { key: 'bridge', label: '外部连接桥', status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
+        return { ...entry, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
     }
 };
 
 /**
- * 主动消息 2.0（AMSG worker）：配置在 amsg2GlobalConfig（activeMsgStore），按角色开关。
- * 这里只探 worker 地址可达性；任务细节看 ActiveMsg2 面板。
+ * 主动消息 2.0（AMSG worker）：`GET {workerUrl}/health` 探活。
+ * 老 bundle 没有 /health 路由（404），此时回退 /config-check：能答上来说明服务
+ * 本身在跑，只是探活端点缺席 —— 报 warn「已配置·未验证」而不是红的「不可达」。
  */
-export const probeAmsgWorker = async (_apiConfig: APIConfig): Promise<StatusEntry> => {
-    const entry: StatusEntry = { key: 'amsg', label: '主动消息 worker', status: 'off', detail: '未配置' };
+export const probeAmsgWorker = async (): Promise<StatusEntry> => {
+    const entry: StatusEntry = { key: 'amsg', label: '主动消息', status: 'off', detail: '未配置' };
     try {
         const cfg = await ActiveMsgStore.getGlobalConfig();
         if (!cfg || !cfg.workerUrl) return entry;
         const base = cfg.workerUrl.replace(/\/+$/, '');
         const t0 = performance.now();
-        const res = await fetchWithTimeout(`${base}/health`, 5000);
+        let res: Response;
+        try {
+            res = await fetchWithTimeout(`${base}/health`, 5000);
+        } catch (e: any) {
+            return { ...entry, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
+        }
         const ms = fmtMs(performance.now() - t0);
-        if (res.ok) return { key: 'amsg', label: '主动消息 worker', status: 'ok', detail: ms };
-        // 404 = worker 在但没挂 /health 探活路由（老 bundle 的典型症状）：服务本身
-        // 可能一切正常，别把它标成红的「不可达」，留给 /config-check 与体检面板细说。
-        if (res.status === 404) return { key: 'amsg', label: '主动消息 worker', status: 'warn', detail: '后端缺 /health 探活（旧版）' };
-        if (res.status < 500) return { key: 'amsg', label: '主动消息 worker', status: 'warn', detail: `HTTP ${res.status}` };
-        return { key: 'amsg', label: '主动消息 worker', status: 'err', detail: `HTTP ${res.status}` };
+        if (res.ok) return { ...entry, status: 'ok', detail: ms };
+        if (res.status === 404) {
+            // 老 bundle：没有探活路由。拿 config-check 再确认一次服务在不在。
+            try {
+                const r2 = await fetchWithTimeout(`${base}/config-check`, 5000);
+                if (r2.ok) return { ...entry, status: 'warn', detail: '已配置·未验证' };
+            } catch { /* config-check 也挂 → 走下面的 err */ }
+            return { ...entry, status: 'err', detail: '不可达' };
+        }
+        if (res.status < 500) return { ...entry, status: 'warn', detail: `HTTP ${res.status}` };
+        return { ...entry, status: 'err', detail: `HTTP ${res.status}` };
+    } catch {
+        return { ...entry, status: 'err', detail: '读取失败' };
+    }
+};
+
+/**
+ * 识图 API：开关 + 三件套齐全即绿；开着但缺项报黄缺什么；关着是灰。
+ * 可达性不在这里探 —— 识图走聊天内真实调用，配置完备性才是这个徽章的职责。
+ */
+export const probeVisionApi = async (apiConfig: APIConfig): Promise<StatusEntry> => {
+    const entry: StatusEntry = { key: 'vision-api', label: '识图 API', status: 'off', detail: '未接入' };
+    const v = apiConfig.visionApi;
+    if (!v?.enabled) return entry;
+    const missing = [
+        !v.baseUrl?.trim() ? '地址' : '',
+        !v.apiKey?.trim() ? '密钥' : '',
+        !v.model?.trim() ? '模型' : '',
+    ].filter(Boolean);
+    if (missing.length === 0) return { ...entry, status: 'ok', detail: '已接入' };
+    return { ...entry, status: 'warn', detail: `缺${missing.join('、')}` };
+};
+
+/**
+ * 云端备份：GitHub 供应商现场验一次令牌（GET api.github.com/user）；
+ * WebDAV 只看配置完备性（跨域环境里浏览器侧无中转探测不了，留给真实备份去验）。
+ * 都没配是灰。
+ */
+export const probeCloudBackup = async (apiConfig: APIConfig): Promise<StatusEntry> => {
+    const entry: StatusEntry = { key: 'cloud-backup', label: '云端备份', status: 'off', detail: '未配置' };
+    let cfg: any = null;
+    try {
+        const raw = localStorage.getItem('os_cloud_backup_config');
+        if (raw) cfg = JSON.parse(raw);
+    } catch { /* 坏 JSON 当没配 */ }
+    if (!cfg) return entry;
+    const provider = cfg.provider === 'github' ? 'github' : 'webdav';
+    if (provider === 'webdav') {
+        const ok = !!(cfg.webdavUrl?.trim() && cfg.username?.trim() && cfg.password?.trim());
+        return ok ? { ...entry, status: 'ok', detail: 'WebDAV 已配置' } : { ...entry, status: 'warn', detail: 'WebDAV 缺配置' };
+    }
+    // GitHub：令牌在手里就现场验一遍，4xx = 令牌失效（这是真实会发生的坏法）。
+    if (!cfg.githubToken?.trim()) return { ...entry, status: 'warn', detail: 'GitHub 缺令牌' };
+    try {
+        const res = await fetchWithTimeout('https://api.github.com/user', 5000, {
+            headers: { 'Authorization': `Bearer ${cfg.githubToken}`, 'Accept': 'application/vnd.github+json' },
+        });
+        if (res.ok) return { ...entry, status: 'ok', detail: 'GitHub 已连接' };
+        if (res.status === 401 || res.status === 403) return { ...entry, status: 'err', detail: '令牌无效' };
+        return { ...entry, status: 'warn', detail: `HTTP ${res.status}` };
     } catch (e: any) {
-        return { key: 'amsg', label: '主动消息 worker', status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
-    }
-};
-
-/** 本地日 key（与 dailySchedule 同口径的简化版，避免引入时区依赖）。 */
-const getLocalDateKeySafe = (): string => {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
-
-/**
- * 日程忙碌检测：本地能力，今天的日程存在即 ok；日程还没生成是 off。零网络依赖。
- */
-export const probeBusy = async (): Promise<StatusEntry> => {
-    try {
-        const chars = await DB.getAllCharacters();
-        if (!chars || chars.length === 0) {
-            return { key: 'busy', label: '日程忙碌检测', status: 'off', detail: '无角色' };
-        }
-        let withSchedule = 0;
-        let busyNow = 0;
-        const now = new Date();
-        for (const c of chars) {
-            const sched = await DB.getDailySchedule(c.id, getLocalDateKeySafe());
-            if (sched && sched.slots && sched.slots.length) {
-                withSchedule++;
-                const minutes = now.getHours() * 60 + now.getMinutes();
-                for (let i = sched.slots.length - 1; i >= 0; i--) {
-                    const parts = (sched.slots[i].startTime || '').split(':').map(Number);
-                    const h = parts[0], m = parts[1];
-                    if (Number.isFinite(h) && Number.isFinite(m) && minutes >= h * 60 + m) {
-                        if (sched.slots[i].busy) busyNow++;
-                        break;
-                    }
-                }
-            }
-        }
-        if (withSchedule === 0) {
-            return { key: 'busy', label: '日程忙碌检测', status: 'off', detail: '今日无日程' };
-        }
-        return {
-            key: 'busy', label: '日程忙碌检测', status: 'ok',
-            detail: busyNow > 0 ? `${busyNow} 个角色忙` : `${withSchedule} 份日程`,
-        };
-    } catch {
-        return { key: 'busy', label: '日程忙碌检测', status: 'err', detail: '读取失败' };
+        return { ...entry, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
     }
 };
 
 /**
- * 提示词预设：本地 store 有启用条目即 ok；没有条目是 off（不是错误）。
+ * 实时感知：五个子能力各答各的「开了但配置没填全」。全没开是灰；
+ * 开了的都齐是绿；开了但缺 Key 报黄缺哪几样。零网络依赖。
  */
-export const probePresets = async (): Promise<StatusEntry> => {
-    try {
-        const rows = await DB.getPromptPresets();
-        const enabled = rows.filter((p) => p.enabled && (p.content || '').trim()).length;
-        if (rows.length === 0) return { key: 'presets', label: '提示词预设', status: 'off', detail: '无预设' };
-        return { key: 'presets', label: '提示词预设', status: 'ok', detail: `${enabled}/${rows.length} 启用` };
-    } catch {
-        return { key: 'presets', label: '提示词预设', status: 'err', detail: '读取失败' };
+export const probeRealtime = async (realtimeConfig: RealtimeConfig): Promise<StatusEntry> => {
+    const entry: StatusEntry = { key: 'realtime', label: '实时感知', status: 'off', detail: '未启用' };
+    const missing: string[] = [];
+    let enabled = 0;
+    if (realtimeConfig.weatherEnabled) {
+        enabled++;
+        // 天气免 Key 也能走（Open-Meteo），只要求城市。
+        if (!realtimeConfig.weatherCity?.trim()) missing.push('天气·城市');
     }
+    if (realtimeConfig.newsEnabled) enabled++;
+    if (realtimeConfig.notionEnabled) {
+        enabled++;
+        if (!realtimeConfig.notionApiKey?.trim()) missing.push('Notion·Key');
+        if (!realtimeConfig.notionDatabaseId?.trim()) missing.push('Notion·库 ID');
+    }
+    if (realtimeConfig.feishuEnabled) {
+        enabled++;
+        if (!realtimeConfig.feishuAppId?.trim() || !realtimeConfig.feishuAppSecret?.trim()) missing.push('飞书·凭据');
+        if (!realtimeConfig.feishuBaseId?.trim()) missing.push('飞书·表 ID');
+    }
+    if (realtimeConfig.xhsEnabled) enabled++;
+    if (enabled === 0) return entry;
+    if (missing.length > 0) return { ...entry, status: 'warn', detail: `缺 ${missing.join('、')}` };
+    return { ...entry, status: 'ok', detail: `${enabled} 项启用` };
 };
 
-/** 全量探测（并行、互不拖累）。设置页状态面板的唯一入口。 */
-export const probeAllStatus = async (apiConfig: APIConfig): Promise<StatusEntry[]> => {
-    const tasks: Array<Promise<StatusEntry>> = [
-        probeAgent(apiConfig),
-        probeAmsgWorker(apiConfig),
-        probeBusy(),
-        probePresets(),
-        probeBridge(apiConfig.bridge),
-    ];
-    const settled = await Promise.allSettled(tasks);
-    return settled.map((r) => r.status === 'fulfilled'
-        ? r.value
-        : { key: 'unknown', label: '探测失败', status: 'err' as const });
+/**
+ * MCP 工具服务器：本地清单有没有、启没启用。有启用的报工具数；
+ * 配了但全关着是 warn（配了不用，多半是忘了）；没配是灰。
+ */
+export const probeMcpServers = async (): Promise<StatusEntry> => {
+    const entry: StatusEntry = { key: 'mcp-servers', label: 'MCP', status: 'off', detail: '未配置' };
+    try {
+        const list = loadMcpServers();
+        if (!list.length) return entry;
+        const on = list.filter((s) => s.enabled && s.tools?.length);
+        const toolCount = on.reduce((n, s) => n + (s.tools?.length || 0), 0);
+        if (on.length === 0) return { ...entry, status: 'warn', detail: `${list.length} 个配置·0 启用` };
+        return { ...entry, status: 'ok', detail: `${on.length} 启用${toolCount ? `·${toolCount} 工具` : ''}` };
+    } catch {
+        return { ...entry, status: 'err', detail: '读取失败' };
+    }
 };

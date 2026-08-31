@@ -42,7 +42,8 @@ import {
 } from '../utils/avatarModelBackup';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../utils/apiConfigNormalize';
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
-import StatusPanel from '../components/StatusPanel';
+import StatusBadge from '../components/StatusBadge';
+import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers } from '../utils/statusPanel';
 import type { APIConfig, TtsProvider } from '../types';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
 import {
@@ -2121,6 +2122,9 @@ const Settings: React.FC = () => {
         {/* 云端备份区域 */}
         <SettingsSection
             title="云端备份"
+            badge={
+                <StatusBadge badgeKey="cloud-backup" probe={() => probeCloudBackup(apiConfig)} />
+            }
             icon={
                 <div className="p-2 bg-sky-100 rounded-xl text-sky-600">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" /></svg>
@@ -2256,6 +2260,9 @@ const Settings: React.FC = () => {
         {/* AI 连接设置区域 */}
         <SettingsSection
             title="API 配置"
+            badge={
+                <StatusBadge badgeKey="api" probe={() => probeApiConfig(apiConfig)} />
+            }
             icon={
                 <div className="p-2 bg-emerald-100/50 rounded-xl text-emerald-600">
                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
@@ -2463,18 +2470,6 @@ const Settings: React.FC = () => {
             </div>
         </SettingsSection>
 
-        {/* ───────── 系统状态（常驻面板，非弹窗） ───────── */}
-        <SettingsSection
-            title="系统状态"
-            defaultOpen
-            icon={
-                <div className="p-2 bg-emerald-100/70 rounded-xl text-emerald-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
-                </div>
-            }
-        >
-            <StatusPanel apiConfig={apiConfig} />
-        </SettingsSection>
 
         {/* ───────── 外部连接桥 ───────── */}
         <SettingsSection
@@ -2487,14 +2482,12 @@ const Settings: React.FC = () => {
                 </div>
             }
             badge={
-                <span className={`text-[9px] font-bold px-2 py-1 rounded-full ${localBridgeEnabled && localBridgeUrl.trim() ? 'bg-cyan-100 text-cyan-700' : 'bg-slate-100 text-slate-400'}`}>
-                    {localBridgeEnabled && localBridgeUrl.trim() ? '已启用' : '未启用'}
-                </span>
+                <StatusBadge badgeKey="bridge" probe={() => probeBridge(apiConfig.bridge)} />
             }
         >
             <div className="space-y-3">
                 <p className="text-xs text-slate-500 leading-relaxed">
-                    把外部 MCP / HTTP 服务（如 galatea-garden-wake-bridge 这类 wake bridge）挂进统一配置位。启用后连通性会显示在上方「系统状态」面板里，无弹窗。
+                    把外部 MCP / HTTP 服务（如 galatea-garden-wake-bridge 这类 wake bridge）挂进统一配置位。启用后连通性直接显示在标题栏状态徽章里，无弹窗。
                 </p>
                 <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">桥地址</label>
@@ -2507,7 +2500,7 @@ const Settings: React.FC = () => {
                 <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">健康检查路径（可选）</label>
                     <input type="text" value={localBridgeHealthPath} onChange={(e) => setLocalBridgeHealthPath(e.target.value)} placeholder="/（默认探根路径；对方有 /health 就填它）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
-                    <p className="text-[9px] text-slate-400 mt-1 pl-1">探测方式：GET 桥地址 + 此路径，3 秒超时，结果进系统状态面板。</p>
+                    <p className="text-[9px] text-slate-400 mt-1 pl-1">探测方式：GET 桥地址 + 此路径，3 秒超时，结果显示在标题栏状态徽章。</p>
                 </div>
                 <label className="flex items-center justify-between cursor-pointer select-none">
                     <span className="text-xs font-semibold text-slate-600">启用连接桥</span>
@@ -2537,9 +2530,7 @@ const Settings: React.FC = () => {
                 </div>
             }
             badge={
-                <span className={`text-[9px] font-bold px-2 py-1 rounded-full ${localAgentUrl.trim() ? 'bg-violet-100 text-violet-600' : 'bg-slate-100 text-slate-400'}`}>
-                    {localAgentUrl.trim() ? '已配置' : '直连'}
-                </span>
+                <StatusBadge badgeKey="agent-relay" probe={() => probeAgent(apiConfig)} />
             }
         >
             <div className="space-y-3">
@@ -2568,13 +2559,7 @@ const Settings: React.FC = () => {
         <SettingsSection
             title="识图 API"
             badge={
-                <span className={`text-[9px] font-bold px-2 py-1 rounded-full ${
-                    apiConfig.visionApi?.enabled
-                        ? 'bg-violet-100 text-violet-600'
-                        : 'bg-slate-100 text-slate-400'
-                }`}>
-                    {apiConfig.visionApi?.enabled ? '已接入' : '未接入'}
-                </span>
+                <StatusBadge badgeKey="vision-api" probe={() => probeVisionApi(apiConfig)} />
             }
             icon={
                 <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
@@ -3079,6 +3064,9 @@ const Settings: React.FC = () => {
         {/* 实时感知配置区域 */}
         <SettingsSection
             title="实时感知"
+            badge={
+                <StatusBadge badgeKey="realtime" probe={() => probeRealtime(realtimeConfig)} />
+            }
             icon={
                 <div className="p-2 bg-violet-100/50 rounded-xl text-violet-600">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
@@ -3118,7 +3106,7 @@ const Settings: React.FC = () => {
         {/* MCP 工具服务器（高级玩法）—— 通用外接工具，独立于实时感知 */}
         <SettingsSection
             title="MCP 工具服务器"
-            badge={<span className="text-[9px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded-full font-bold shrink-0">高级玩法</span>}
+            badge={<StatusBadge badgeKey="mcp-servers" probe={() => probeMcpServers()} />}
             icon={
                 <div className="p-2 bg-violet-100/50 rounded-xl text-violet-600">
                     <PlugsConnected size={16} weight="fill" />
@@ -3176,6 +3164,9 @@ const Settings: React.FC = () => {
         {/* ───────── 主动消息（VPS 定时推送） ───────── */}
         <SettingsSection
             title="主动消息"
+            badge={
+                <StatusBadge badgeKey="amsg" probe={() => probeAmsgWorker()} />
+            }
             defaultOpen
             icon={
                 <div className="p-2 bg-violet-100/60 rounded-xl text-violet-600">
