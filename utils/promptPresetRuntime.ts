@@ -122,3 +122,36 @@ export const resolveTechnicalPromptSync = (sourceKey: string, fallback: string):
     }
     return fallback;
 };
+
+/**
+ * 语音指南三级解析（voice.minimax / voice.fish / voice.elevenlabs* / voice.date）：
+ * 1) 预设面板行被用户改过 -> 用面板内容（面板即唯一入口）；
+ * 2) 行停用 -> 返回 null（调用方整段不注入，面向用户文案语义）；
+ * 3) 行未动过 -> 设置页旧覆盖（便捷入口）仍生效；最后由调用方回退内置默认。
+ */
+export const resolveVoiceGuide = async (sourceKey: string, legacyOverride?: string): Promise<string | null> => {
+    try {
+        const rows = await getResolvedPromptPresets();
+        const hit = rows.find((r) => r.preset.sourceKey === sourceKey);
+        if (hit) {
+            if (!hit.preset.enabled) return null;
+            if (hit.preset.content && hit.preset.content !== hit.builtin.content) return hit.preset.content;
+        }
+    } catch {
+        /* fallthrough */
+    }
+    return legacyOverride && legacyOverride.trim() ? legacyOverride : null;
+};
+
+/** 同步版：只读模块级缓存（未就绪时直接走旧覆盖/回退，行为同迁移前的同步路径）。 */
+export const resolveVoiceGuideSync = (sourceKey: string, legacyOverride?: string): string | null => {
+    const rows = cache;
+    if (rows) {
+        const hit = rows.find((r) => r.preset.sourceKey === sourceKey);
+        if (hit) {
+            if (!hit.preset.enabled) return null;
+            if (hit.preset.content && hit.preset.content !== hit.builtin.content) return hit.preset.content;
+        }
+    }
+    return legacyOverride && legacyOverride.trim() ? legacyOverride : null;
+};

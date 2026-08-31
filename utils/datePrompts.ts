@@ -34,7 +34,7 @@ export type ApiMessage = { role: string; content: any };
  * 用户自定义覆盖仍走 getVoicePromptOverride('dateVoice')，留空回退这份内置默认。
  */
 import { getBuiltinContent } from './promptPresetCatalog';
-import { resolveManagedPromptSync } from './promptPresetRuntime';
+import { resolveManagedPromptSync, resolveVoiceGuideSync } from './promptPresetRuntime';
 export const DATE_VOICE_GUIDE = getBuiltinContent('voice.date');
 
 /**
@@ -595,7 +595,7 @@ const buildVNModeBlock = (char: CharacterProfile, userName: string): string => {
 1. **禁止混写**: 严禁在同一行里既写动作又写带引号的台词。
 2. **情绪标签**: **每一行都必须以** \`[emotion]\` **开头**，表示该行的表情立绘。情绪随内容变化——台词温柔就用 [happy]，动作紧张就用 [shy]，语气冲就用 [angry]。**不要整段只用一个情绪，要逐行根据语境切换。** 仅限使用以下情绪: ${dateEmotions.join(', ')}。不要使用任何不在此列表中的标签。
 3. **格式**: 台词用双引号 **"..."**，动作/叙述直接写（不加引号）。
-${char.dateVoiceEnabled ? (getVoicePromptOverride('dateVoice') ?? DATE_VOICE_GUIDE) : ''}
+${char.dateVoiceEnabled ? (resolveVoiceGuideSync('voice.date', getVoicePromptOverride('dateVoice')) ?? DATE_VOICE_GUIDE) : ''}
 
 ${preset.block}
 

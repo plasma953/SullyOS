@@ -1,4 +1,3 @@
-
 import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, DailySchedule } from '../types';
 import { ContextBuilder } from './context';
 import { DB } from './db';
@@ -14,6 +13,7 @@ import { isScheduleFeatureOn } from './scheduleFeature';
 import { VOICE_ACTING_GUIDE } from './minimaxTts';
 import { FISH_VOICE_ACTING_GUIDE } from './fishAudioTts';
 import { getElevenLabsModel, getTtsProvider, getVoicePromptOverride } from './ttsProvider';
+import { isElevenLabsV3Model } from './elevenLabsTts';
 import { getElevenLabsVoiceActingGuide } from './elevenLabsTts';
 import { resolveCharTimeZone, nowInTimeZone } from './timezone';
 import { buildLifeRecordInjection } from './lifeRecords';
@@ -31,9 +31,26 @@ import { voiceLanguagePromptLabel } from './voiceLanguage';
 // 用户在「设置 → 其他 API → 语音提示词」里自定义过该服务商的指南时，优先用用户那份；留空则回退内置默认。
 const voiceActingGuide = (): string => {
   const provider = getTtsProvider();
-  // 用户在设置页的自定义覆盖优先（旧机制保留）；内置默认已迁入提示词目录。
+  // 同步兜底路径（缓存未就绪时）：设置页旧覆盖优先，回退内置默认（目录化后的行为）。
   const custom = getVoicePromptOverride(provider);
   if (custom) return custom;
+  if (provider === 'fishaudio') return getBuiltinContent('voice.fish');
+  if (provider === 'elevenlabs') return getElevenLabsVoiceActingGuide(getElevenLabsModel());
+  return getBuiltinContent('voice.minimax');
+};
+
+/**
+ * 语音指南完整解析（异步版，聊天主路径用）：面板行（改过）> 设置页旧覆盖 > 内置默认；
+ * 面板行停用 -> 返回 null，由调用方整段不注入。
+ */
+const resolveVoiceActingGuide = async (): Promise<string | null> => {
+  const provider = getTtsProvider();
+  const sourceKey = provider === 'fishaudio' ? 'voice.fish'
+      : provider === 'elevenlabs'
+          ? (isElevenLabsV3Model(getElevenLabsModel()) ? 'voice.elevenlabsV3' : 'voice.elevenlabsStd')
+      : 'voice.minimax';
+  const resolved = await resolveVoiceGuide(sourceKey, getVoicePromptOverride(provider));
+  if (resolved !== null) return resolved;
   if (provider === 'fishaudio') return getBuiltinContent('voice.fish');
   if (provider === 'elevenlabs') return getElevenLabsVoiceActingGuide(getElevenLabsModel());
   return getBuiltinContent('voice.minimax');
@@ -111,7 +128,7 @@ const getChatModeTransition = (message: Message): ChatModeTransition | null => {
 /**
  * 判断当前是不是「从特殊互动模式回到 ChatApp 后，尚未产生普通聊天回复」的第一轮。
  *
- * 用户可能连续发送多个气泡再点生成，所以普通 user 消息不会截断搜索；一旦已经出现
+ * 用户可能连续发送多个气泡再点生成，所以普通 user 消���不会截断搜索；一旦已经出现
  * 普通 assistant 回复，就说明格式切换已经完成，不应在后续每一轮重复提醒。
  * 普通 system 日志也不参与判断，避免挂断卡片与其他后台提示把真正的来源隔开。
  */
@@ -168,6 +185,7 @@ export interface PromptBuildOptions {
 // 可编辑/启停/恢复默认）。这里只保留旧导出名作别名（指内置默认正文），本文件在
 // 注入时读 DB 行（用户编辑过的版本），缺行/停用时回退内置默认。
 import { getBuiltinContent, fillIdentity } from './promptPresetCatalog';
+import { resolveVoiceGuide } from './promptPresetRuntime';
 import { getResolvedPromptPresets, type ResolvedPrompt } from './promptPresetRuntime';
 
 export const STEEL_EXPRESSION_GUIDE = getBuiltinContent('chat.steelExpression');
@@ -454,7 +472,7 @@ export const ChatPrompts = {
             })
             : Promise.resolve(null);
 
-        // 3. 群聊上下文：并发拉取所有成员群的消息
+        // 3. 群聊上下文：并发拉取所有成员群���消息
         // 关键：每个群单独取最后 N 条，避免某个活跃群把其他群完全挤掉
         // （之前是把所有群消息混合后切前 200 条，活跃群会吃光配额，安静群完全不出现）
         const groupContextPromise: Promise<string> = (async () => {
@@ -579,7 +597,7 @@ ${groupLogStr}\n`;
         volatileState += realtimeText;
 
         // 2a. 日程注入（完整今日日程 + 当前时段 + 意识流独白，每轮都可能变）
-        //     fire_pack 不烤：改由 worker 到点用 AMSG_SLOT_SCENE 现挑时段（见 amsgFireScene）。
+        //     fire_pack 不烤：改由 worker 到点用 AMSG_SLOT_SCENE 现挑���段（见 amsgFireScene）。
         //     includeClock 跟着角色的「时间感知」开关走：关掉的角色不该从日程块里读到
         //     「23:00」这种精确钟点，那是这个开关本来要挡住的东西（同上面天气块的 includeTime）。
         //     日程本身照给——它有自己的总开关。
@@ -655,7 +673,7 @@ ${groupLogStr}\n`;
         baseSystemPrompt += lifeRecordText;
 
         // 彼方常驻设定：仅对启用了「彼方」的角色注入。让角色在聊天里始终知道彼方是什么，
-        // 不再依赖累积的 vr_card 动态 / 记忆总结（那些会被压缩、丢掉"彼方=VR游戏"的框定，
+        // 不再依赖累积的 vr_card 动态 / 记忆总��（那些会被压缩、丢掉"彼方=VR游戏"的框定，
         // 导致角色把"彼方·留言簿"之类当成现实地名）。措辞与 vrWorld/prompts.ts 的世界观一致。
         if (char.vrState?.enabled) {
             baseSystemPrompt += `\n### 关于《彼方》
@@ -746,7 +764,7 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
    - 如果用户发送了图片，请对图片内容进行评论。
 6. **可用动作**:
    - 回戳用户: \`[[ACTION:POKE]]\`
-   - 转账: 必须使用且只使用 \`[[ACTION:TRANSFER|to=user|amount=100]]\`（to 固定写 user，金额只写数字）；不要写成 \`[系统: 你向某人转账 100]\` 等系统日志文本。
+   - 转账: 必须使用且只使用 \`[[ACTION:TRANSFER|to=user|amount=100]]\`（to 固定写 user，金额���写数字）；不要写成 \`[系统: 你向某人转账 100]\` 等系统日志文本。
    - **处理用户转账**: 当历史里出现 \`[[记录:TRANSFER|to=char|...|status=待处理]]\`（用户转给你、还没处理）时，你可以决定收下或退回。收下: \`[[ACTION:TRANSFER_ACCEPT]]\`；退回: \`[[ACTION:TRANSFER_RETURN]]\`。请结合人设和情境自然选择（比如害羞地退回、开心地收下），并配上一句话。
    - **【重要】\`[[记录:...]]\` 是系统日志**: 历史里以 \`[[记录:\` 开头的标签是已经发生的事实（谁转给谁、什么状态），只供你了解，**严禁**在回复里照抄输出。你要做动作时只能用 \`[[ACTION:...]]\`。
    - 调取记忆: \`[[RECALL: YYYY-MM]]\`，请注意，当用户提及具体某个月份时，或者当你想仔细想某个月份的事情时，欢迎你随时使该动作
@@ -790,7 +808,7 @@ ${notionEnabled ? `8. **📔 日记系统（你的私人 Notion 日记本）**:
 
    [!heart] 这是一个粉色的重点标记
    [!想法] 突然冒出的灵感
-   [!秘密] 不想让别人知道的事
+   [!秘密] 不想让别人知道���事
 
    **加粗的重要内容** 和 *斜体的心情*
 
@@ -1074,13 +1092,13 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
 
 要求：
 - <语音> 里的${langLabel}要自然口语化，符合你的性格，不要机翻味
-- <语音> 里想要笑、叹气等真实语气用官方英文标签 (laughs)/(sighs)/(chuckle)/(gasps) 等，**不要写中文（轻笑）这类舞台指示**（中文括号会被直接删掉、不朗读）
+- <语音> 里想要笑、叹气等真实语气用官方英文标签 (laughs)/(sighs)/(chuckle)/(gasps) 等，**不要写中文（轻笑）这类舞台指示**（中文括号会被直接删掉、不朗��）
 - 每条消息最多一个 <语音> + <字幕> 组合
 - 不是每条消息都要发语音！像真人一样，有时候打字，有时候发语音，自然切换
 - 比较适合发语音的场景：撒娇、吐槽、语气很重的话、懒得打字的时候
 - 比较适合打字的场景：发链接、正经讨论、很短的回复如"嗯"、"好"
 
-${voiceActingGuide()}`;
+${(await resolveVoiceActingGuide()) ?? ''}`;
             } else {
                 baseSystemPrompt += `\n\n### 🎤 语音消息功能
 
@@ -1105,7 +1123,7 @@ ${voiceActingGuide()}`;
 - 标签外的文字会正常显示为文本消息
 - **【重要】语音和文字是两种不同的表达方式，不要复读！** 如果你同时发了文字和语音，语音的内容不能是文字的重复或复述。要么单独发语音（不带文字），要么文字和语音表达不同的内容（比如文字聊正事，语音补一句吐槽/撒娇；或者文字发完一段话后，语音单独补充一个新的想法）。你不会打完字又发一条语音把同样的话再说一遍的——那很奇怪。
 
-${voiceActingGuide()}`;
+${(await resolveVoiceActingGuide()) ?? ''}`;
             }
         } else {
             // Voice is disabled — explicitly prohibit voice tags to prevent inertia from call/date history
@@ -1196,7 +1214,7 @@ ${voiceActingGuide()}`;
                     // 双语消息存储为 `原文\n%%BILINGUAL%%\n译文` —— 引用摘要只取原文侧。
                     // 关键：绝不能让 %%BILINGUAL%% 标记混进引用头。下游 cleanApiMessages 会把整条
                     // 消息在该标记处截断，用户引用双语消息时「并回复了 ↓」和用户的实际回复会被
-                    // 一起截掉（= 翻译模式下"角色只看到引用、看不到回复"）。
+                    // 一起截掉（= 翻���模式下"角色只看到引用、看不到回复"）。
                     if (/%%BILINGUAL%%/i.test(rawQuote)) {
                         const sides = rawQuote.split(/%%BILINGUAL%%/i).map(s => s.trim());
                         rawQuote = sides.find(s => !!s) || '';
@@ -1304,7 +1322,7 @@ ${voiceActingGuide()}`;
                     if (authoredByChar) authorshipLine = '\n(注意：这条 Spark 笔记的楼主是你自己的马甲，用户在向你转发你自己发的帖子。)';
                     else if (authoredByUser) authorshipLine = '\n(注意：这条 Spark 笔记是用户本人发的。)';
 
-                    content = `${timeStr} [用户分享了 Spark 笔记]\n楼主: ${postAuthorTag}\n标题: ${post.title}\n内容: ${post.content}\n热评: ${commentsSample}${identityHint}${authorshipLine}\n(请根据你的性格对这个帖子发表看法，比如吐槽、感兴趣或者不屑)`;
+                    content = `${timeStr} [用户分享了 Spark ��记]\n楼主: ${postAuthorTag}\n标题: ${post.title}\n内容: ${post.content}\n热评: ${commentsSample}${identityHint}${authorshipLine}\n(请根据你的性格对这个帖子发表看法，比如吐槽、感兴趣或者不屑)`;
                 }
                 else if ((m.type as string) === 'xhs_card') {
                     const note = m.metadata?.xhsNote || {};

@@ -902,9 +902,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       let cancelled = false;
       const run = async () => {
           try {
-              const { seedBuiltinPromptPresets } = await import('../utils/promptPresetSeeding');
+              const { seedBuiltinPromptPresets, migrateLegacyVoiceOverrides } = await import('../utils/promptPresetSeeding');
               const { getResolvedPromptPresets } = await import('../utils/promptPresetRuntime');
               await seedBuiltinPromptPresets();
+              await migrateLegacyVoiceOverrides();
               if (!cancelled) await getResolvedPromptPresets();
           } catch (e) {
               console.warn('[PresetPrompt] bootstrap seeding failed', e);
