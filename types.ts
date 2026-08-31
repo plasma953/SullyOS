@@ -822,6 +822,16 @@ export interface PromptPreset {
     enabled: boolean;     // 启停开关：关掉 = 不注入
     createdAt: number;
     updatedAt: number;
+    /**
+     * 内置目录锚点（P3 提示词管理）：有值的行来自 utils/promptPresetCatalog
+     * 的内置登记（聊天钢印/语音指南/记忆模板/情绪评估…），Preset App 凭它提供
+     * 「恢复默认」。undefined = 用户手建的自定义段落。
+     */
+    sourceKey?: string;
+    /** 分类 id（chat/date/song/voice/memory/amsg），内置行随目录登记写入。 */
+    category?: string;
+    /** 该行内容对应的内置版本号；目录升级内容时可据此提示用户文案有更新。 */
+    builtinVersion?: number;
 }
 
 export interface DailySchedule {

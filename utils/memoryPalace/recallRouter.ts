@@ -10,6 +10,9 @@
 import type { Message } from '../../types';
 import { extractContent, extractJson, safeFetchJson } from '../safeApi';
 import { sanitizeQuerySourceMessages } from './querySanitizer';
+import { getBuiltinContent } from '../promptPresetCatalog';
+import { resolveTechnicalPrompt } from '../promptPresetRuntime';
+const MEMORY_RECALL_ROUTER_BUILTIN = getBuiltinContent('memory.recallRouter');
 
 export type RecallQueryScope = 'memory' | 'event_box';
 export type RecallQuerySource = 'reference' | 'event_update' | 'continuation';
@@ -400,7 +403,7 @@ export function renderLocalContextGuidance(analysis: LocalContextAnalysis | unde
         '对方这轮更像是在承接刚才或既有事件，并省略了部分对象。先把它当作当前话题的后续，结合紧邻对话和本轮已经召回的记忆理解；不要因为句子短就把它当成无关的新话题。',
     ];
     if (analysis.signals.resultUpdate >= 0.4) {
-        lines.push('这也像一次结果落地或进展更新。先接住结果和对方此刻的情绪，再决定是否追问细节；不要先输出分析报告。');
+        lines.push('这也像一次结果落地或进展更新。先接住结果和对方此刻的情绪，再决定是否追问细节；不要���输出分析报告。');
     }
     if (analysis.signals.ambiguity >= 0.5) {
         lines.push('若现有线索共同指向同一件事，可以自然接住，不必解释检索过程；若线索互相冲突，保留不确定或自然确认，不要擅自补成唯一答案。');
@@ -487,19 +490,8 @@ export async function runLightRecallRouter(
         return { status: 'invalid_response', plan: emptyRecallPlan(), durationMs: 0 };
     }
 
-    const systemPrompt = `你是聊天应用的记忆检索路由器，不回答用户，只生成额外检索计划。
-本地闸门已认为最后一句可能缺少指代对象。请结合给出的最近对话，判断是否能生成比原句更明确的检索词。
-
-规则：
-1. 不得虚构对话里没有依据的人名、事件名或事实。无法可靠补全时 route=false。
-2. 原始用户消息会由系统继续检索；这里只补充 1-3 条更明确的 query，不要复述原句。
-3. scope 只能是 memory 或 event_box。memory 查人物、事实、经历；event_box 查持续事件或进度变化。不要输出 month。
-4. source 只能是 reference、event_update、continuation。
-5. weight 与 confidence 都是 0..1。
-6. 只输出一个 JSON 对象，不要 Markdown 或解释。
-
-格式：
-{"route":true,"confidence":0.82,"queries":[{"text":"雾港观测员成绩","scope":"event_box","weight":0.9,"source":"event_update"}]}`;
+    // 检索路由模板走提示词目录（memory.recallRouter，技术模板：停用回退默认）。
+    const systemPrompt = await resolveTechnicalPrompt('memory.recallRouter', MEMORY_RECALL_ROUTER_BUILTIN);
 
     try {
         const data = await safeFetchJson(

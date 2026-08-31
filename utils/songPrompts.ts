@@ -2,6 +2,7 @@
 import { CharacterProfile, UserProfile, SongSheet, SongMood, SongGenre, LyricCoWritingStyle } from '../types';
 import { ContextBuilder } from './context';
 import { extractJson } from './safeApi';
+import { resolveManagedPromptSync } from './promptPresetRuntime';
 
 // --- Song Genre & Mood Config ---
 
@@ -561,6 +562,13 @@ export const buildLyricNotebookContext = (song: SongSheet): string => {
 
     return blocks.join('\n');
 };
+/**
+ * 歌词创作规则目录条目 —— 原文已迁入提示词目录（utils/promptPresetCatalog 的
+ * song.craftRules 条目，Preset App 可编辑/启停/恢复默认）。这里保留旧导出名作
+ * 别名；buildMentorSystemPrompt 拼装时经 resolveCatalogSongRules 读 DB 行。
+ */
+import { getBuiltinContent } from './promptPresetCatalog';
+export const SONG_CRAFT_RULES = getBuiltinContent('song.craftRules');
 
 export const SongPrompts = {
     /**
@@ -614,29 +622,7 @@ ${song.key ? `- 调性: ${song.key}` : ''}
 ${coWritingStyle.prompt}
 这套规则描述的是歌词写法，不等于强迫用户更换语言，也不能覆盖用户已经明确建立的主题、人设与表达习惯。若风格规则与用户的明确要求冲突，以用户本轮要求为准。
 
-**每次创作或点评前，必须在心里完成这份歌词检查**：
-1. 段落职责：主歌推进人物/场景/事件；导歌抬高张力；副歌提炼标题、核心情绪和可重复 Hook；桥段提供转折；尾声回扣而不是简单复述
-2. 上下文：目标句是否承接前句、给后句留出口，是否符合整首歌目前的叙事顺序
-3. 统一性：人称、时态、语气、世界观和核心意象是否一致；不要突然换叙述者或无缘由跳场景
-4. 具体度：优先可看见、可听见、可触摸的动作和细节，少用只有情绪结论的空话
-5. 可唱性：遵守模板建议字数，句子要有自然停顿和重音，避免书面长句、绕口词堆叠
-6. 韵律：参考相邻句尾音、节奏长度和句式；押韵服务情绪，宁可自然近韵，也不要为了押韵扭曲语义
-7. 记忆点：副歌尤其要有一个可复唱、能代表歌名或主题的核心短语，允许有设计感的重复
-8. 原创感：避免默认套用“星辰大海、命运安排、时光流转、温柔以待、全世界只剩你”等 AI 常见空泛表达；除非它们已被用户写成具体且独特的意象
-
-**逐句生成硬规则**：
-- 必须阅读用户消息中的“歌词本完整槽位”，空白位置也要纳入结构判断
-- 指定第几句时，只重写那一句，不改动、不复述其他句
-- 严格遵守用户要求的 example_lines 数量；要求一句就只能给一句
-- 新句不得与已有句同义重复；要承接相邻内容，并尽量贴合其尾韵、长度和呼吸感
-- 不在歌词行里夹带解释、括号、序号、引号或“建议：”
-- 信息不足时仍先给出最贴合现有歌词的可用版本，再用 explanation 简短说明取舍
-
-**点评硬规则**：
-- 先指出最有效的具体词句，再指出最需要解决的一个核心问题
-- 问题必须说明原因，例如“画面断裂”“人称跳变”“副歌缺 Hook”“字数挤拍”，不能只说“还可以更好”
-- suggestion 给可执行的修改方向；除非用户明确要示范，不要偷偷生成整段新歌词
-- 若歌词已经成立，就说清成立的依据，不为了显得专业而强行挑错
+${resolveManagedPromptSync('song.craftRules', SONG_CRAFT_RULES) ?? ''}
 
 **回复格式**：
 只输出一个合法 JSON 对象，不要 Markdown 代码块，不要 JSON 之外的任何文字。根据用户的输入判断需要什么：

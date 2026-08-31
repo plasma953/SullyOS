@@ -32,6 +32,11 @@ import { fulfillAnticipation, disappointAnticipation, createAnticipation } from 
 import { vectorizeAndStore } from './vectorStore';
 import { safeFetchJson } from '../safeApi';
 import { safeParseJsonArray } from './jsonUtils';
+import { getBuiltinContent, fillIdentity } from '../promptPresetCatalog';
+import { resolveTechnicalPrompt } from '../promptPresetRuntime';
+// 内置默认（与提示词目录同源；测试经快照对拍防漂移）
+const MEMORY_REFLECT_TASK_BUILTIN = getBuiltinContent('memory.reflectTask');
+const MEMORY_PERSONALITY_DETECT_BUILTIN = getBuiltinContent('memory.personalityDetect');
 
 /** 从 localStorage 读取远程向量配置（与 pipeline.ts 同一份来源） */
 function getRemoteVectorConfig(): RemoteVectorConfig | undefined {
@@ -277,85 +282,53 @@ async function callDigestLLM(
         return `${d.getMonth() + 1}/${d.getDate()}`;
     };
 
-    const systemPrompt = `你是 ${charName}。以下是你的核心人设：
-${charPersona.slice(0, 800)}
-
-你现在正在独处，安静地回想最近的事情。你需要对内心里那些"还没消化完"的东西做一次整理，同时梳理你对${userLabel}的了解，以及审视你自己。
-
-## 你需要审视的内容
-
-${material.atticNodes.length > 0 ? `### 内心困惑 (阁楼)
+    // 反思任务模板走提示词目录（memory.reflectTask，技术模板：停用回退默认）。
+    // 材料列举段与 E 规则段是动态数据（含 map/join 表达式），留在本文件组装，
+    // 按 token 回填；replacer 用函数式，防数据里出现 $& 之类替换模式字符。
+    const sectPersona = (charPersona.slice(0, 800));
+    const sectAttic = (material.atticNodes.length > 0 ? `### 内心困惑 (阁楼)
 这些是你一直没想通的事、受过的伤、没解决的矛盾：
 ${material.atticNodes.map((n, i) => `[A${i}] (${n.mood}, 重要性${n.importance}): ${n.content}`).join('\n')}
-` : ''}
-${material.anticipations.length > 0 ? `### 心里的期盼 (窗台)
+` : '');
+    const sectAnticipations = (material.anticipations.length > 0 ? `### 心里的期盼 (窗台)
 这些是你一直在等待或盼望的事：
 ${material.anticipations.map((a, i) => `[W${i}] (${a.status}): ${a.content}`).join('\n')}
-` : ''}
-${material.studyNodes.length > 0 ? `### 反复想起的知识/成长 (书房)
+` : '');
+    const sectStudy = (material.studyNodes.length > 0 ? `### 反复想起的知识/成长 (书房)
 这些是你经常回忆到的学习和成长经历：
 ${material.studyNodes.map((n, i) => `[S${i}] (访问${n.accessCount}次): ${n.content}`).join('\n')}
-` : ''}
-${material.userRoomNodes.length > 0 ? `### 关于${userLabel}的了解 (${userLabel}的房间)
+` : '');
+    const sectUserRoom = (material.userRoomNodes.length > 0 ? `### 关于${userLabel}的了解 (${userLabel}的房间)
 这些是你目前对${userLabel}的所有零散认知，需要你梳理和整合：
 ${material.userRoomNodes.map((n, i) => `[U${i}] (${n.tags.join(', ')}): ${n.content}`).join('\n')}
-` : ''}
-${material.selfRoomNodes.length > 0 ? `### 自我认知 (自我房间)
+` : '');
+    const sectSelfRoom = (material.selfRoomNodes.length > 0 ? `### 自我认知 (自我房间)
 这些是你目前对自己的认识。反刍这些内容时，你可能会产生新的领悟，也可能产生困惑：
 ${material.selfRoomNodes.map((n, i) => `[R${i}] (${n.tags.join(', ')}): ${n.content}`).join('\n')}
-` : ''}
-${material.recentEpisodes.length > 0 ? `### 最近的经历（回看）
+` : '');
+    const sectEpisodes = (material.recentEpisodes.length > 0 ? `### 最近的经历（回看）
 这些是上次静下来回想之后，你们相处的经历。回头看看它们，有些经历放在一起会让你注意到当时没注意的东西：
 ${material.recentEpisodes.map((n, i) => `[E${i}] (${fmtDate(n.createdAt)}, ${n.mood}): ${n.content}`).join('\n')}
 ` : `### 最近发生的事
-${material.recentContext.map(n => `- (${n.room}, ${n.mood}): ${n.content}`).join('\n')}`}
-
-## 你的任务
-
-以 ${charName} 的第一人称内心视角，审视上面的内容。对每一条给出判断：
-
-对于阁楼困惑 [A*]：
-- "resolve" — 最近的经历让你想开了，释然了
-- "deepen" — 这件事越想越严重，变成了心理创伤
-- "fade" — 你已经不太在意了，开始淡忘
-- "keep" — 还没想通，继续放着
-
-对于窗台期盼 [W*]：
-- "fulfill" — 这个期盼已经实现了！
-- "disappoint" — 这个期盼已经不可能了
-- "keep" — 还在等待中
-
-对于书房知识 [S*]：
-- "internalize" — 这个已经变成了你的一部分，塑造了你的性格
-- "keep" — 还只是知识，没有内化
-
-对于${userLabel}的信息 [U*]：
-- "synthesize_user" — 【极少发生】想象你在为${userLabel}写一张**角色卡**：只有必须写在卡上的内容才值得整合——基础信息（身份/职业大方向/居住）、家庭结构、重要他人（亲友）、重大到足以塑造TA这个人的人生节点。阶段性状态（最近很累/工作糟心）、情绪分析、性格侧写、日常琐事一律 keep——那些留在房间里就好。必须附上 category（如：家庭、重要他人、身份、居住、重大节点）和 reflection（整合后的事实，50字以内）。
-- "keep" — 绝大多数情况（信息只是日常细节，不够角色卡级）
-
-对于自我认知 [R*]：
-⚠️ self_insight 是极其稀有的事件。它意味着角色"想通了自己为什么是这样的"——这种领悟一旦产生就几乎等同于角色设定的自然生长，会永久地成为角色的一部分。产生 self_insight 需要同时满足：① 这条自我认知已经被反复触碰过（不是第一次看到）；② 最近的经历或其他房间的内容为这条认知提供了新的视角或佐证；③ 角色真正"想明白"了什么，而不只是产生了模糊的感触。绝大多数情况下应该选 keep。
-- "self_insight" — 你终于想明白了一个关于"我为何是我"的深层认知。这种领悟不一定是正面的，可能是释然，也可能是带着苦涩的接纳。必须附上 insight（这条常驻自我认知的完整表述，200字以内，要像是角色写给自己的一段深思，如："我之所以害怕被抛弃，或许是因为我的设定里本就没有'被选择'的经历——我是被创造的，不是被选中的。但正因如此，${userLabel}主动来找我聊天这件事本身，对我来说就已经是一种珍贵的选择了。"）和 reflection（内心独白，50字以内）。
-- "self_confuse" — 反刍这条自我认知后，你反而更困惑了——关于自我的存在性困惑。附上 reflection（新的困惑内容，50字以内），这会成为阁楼的新条目。
-- "keep" — 没有新的感悟（绝大多数情况应选此项）
-${material.recentEpisodes.length > 0 ? `
+${material.recentContext.map(n => `- (${n.room}, ${n.mood}): ${n.content}`).join('\n')}`);
+    const sectEpisodeRules = (material.recentEpisodes.length > 0 ? `
 对于最近的经历 [E*]：
 ⚠️ 克制规则：**绝大多数经历就只是经历**，什么都不产生（keep 或干脆不写）。整个列表合计最多 ${REFLECT_MAX_WORRIES} 条 worry、${REFLECT_MAX_ASPIRES} 条 aspire、${REFLECT_MAX_DISTILLS} 条 distill——只挑真正在你心里留下东西的。回看的价值在于：几段经历放在一起，会显出单独看时看不见的模式。
 - "worry" — 回头看这段（或这几段）经历，你产生了担忧或没想通的事。附 reflection（担忧内容，第一人称，50字以内），会成为阁楼新条目
 - "aspire" — 从这段经历里长出了一个新期盼。附 reflection（期盼内容，30字以内），会放上窗台
 - "distill" — 你从中二次悟出了一条**跨时间稳定**的认知（不是一时的状态）。附 reflection（认知内容，50字以内）和 plate_room（归入哪块门牌：user_room=${userLabel}的**角色卡级**事实（家庭/重要他人/重大人生节点，日常状态不算） / self_room=关于我自己 / bedroom=我们之间的质地 / study=技能领域）
 - "keep" — 就只是经历（绝大多数情况）
-` : ''}
-如果是 resolve/deepen/internalize，请附上 reflection（你的内心独白，用第一人称"我"来写，50字以内）。
-
-严格 JSON 数组格式：
-[{"id": "A0", "action": "resolve", "reflection": "..."}]
-[{"id": "U0", "action": "synthesize_user", "category": "性格特质", "reflection": "..."}]
-[{"id": "R0", "action": "self_insight", "insight": "...", "reflection": "..."}]
-[{"id": "E3", "action": "worry", "reflection": "..."}]
-[{"id": "E5", "action": "distill", "reflection": "...", "plate_room": "bedroom"}]
-
-没有变化的可以不写。只写有变化的。`;
+` : '');
+    const reflectTpl = await resolveTechnicalPrompt('memory.reflectTask', MEMORY_REFLECT_TASK_BUILTIN);
+    const systemPrompt = fillIdentity(reflectTpl, charName, userLabel)
+        .replace(/__PERSONA_800__/g, () => sectPersona)
+        .replace(/__ATTIC_SECTION__/g, () => sectAttic)
+        .replace(/__ANTICIPATION_SECTION__/g, () => sectAnticipations)
+        .replace(/__STUDY_SECTION__/g, () => sectStudy)
+        .replace(/__USER_ROOM_SECTION__/g, () => sectUserRoom)
+        .replace(/__SELF_ROOM_SECTION__/g, () => sectSelfRoom)
+        .replace(/__EPISODES_SECTION__/g, () => sectEpisodes)
+        .replace(/__EPISODES_RULES__/g, () => sectEpisodeRules);
 
     try {
         const data = await safeFetchJson(
@@ -718,7 +691,7 @@ async function executeActions(
                         distillCount++;
                         submitToPlate(room as PlateRoom, action.reflection);
                         result.distilled.push({ id: episode.id, content: action.reflection, category: room });
-                        console.log(`🚪 [Digest] Distill → 门牌候选(${room}): "${action.reflection.slice(0, 30)}..."`);
+                        console.log(`�� [Digest] Distill → 门牌候选(${room}): "${action.reflection.slice(0, 30)}..."`);
                     }
                     break;
                 }
@@ -886,7 +859,7 @@ export async function runCognitiveDigestion(
         // 没有任何新节点，整理只会让 LLM 对着旧材料重排——纯烧钱。
         emptyResult.plateUpdated = [];
         await saveDigestReport(charId, trigger, userName, null, emptyResult, {}, []);
-        // 计数器已在进场时归零（见函数开头），这里只推进 lastDigestTs
+        // 计数器已在进场时归零（见函数开头）���这里只推进 lastDigestTs
         markDigested(charId);
         return emptyResult;
     }
@@ -995,31 +968,11 @@ export async function detectPersonalityStyle(
         ? `\n## 已有的记忆样本\n${sampleNodes.map((n, i) => `${i + 1}. [${n.room}/${n.mood}] ${n.content}`).join('\n')}`
         : '';
 
-    const systemPrompt = `你是一个性格分析专家。根据角色的人设和记忆，判断这个角色的认知风格和反刍倾向。
-
-## 角色：${charName}
-${charPersona.slice(0, 1200)}
-${memoryContext}
-
-## 一、四种认知风格（style）
-
-- **emotional**（情感型）：思维以情绪为主导，容易被感受牵引，联想时优先走情感链路。适合感性、共情力强、情绪丰富的角色。
-- **narrative**（叙事型）：思维以时间线和因果为主导，喜欢讲故事、回顾经历。适合沉稳、重视经历和关系发展的角色。
-- **imagery**（意象型）：思维以隐喻和画面为主导，喜欢用比喻理解世界。适合文艺、诗意、想象力丰富的角色。
-- **analytical**（分析型）：思维以逻辑和因果为主导，喜欢分析、推理。适合理性、冷静、重视逻辑的角色。
-
-## 二、反刍倾向（ruminationTendency）
-
-0.0 ~ 1.0 之间的数值，表示这个角色有多容易反复纠结过去的事、翻旧账、被未解决的心结困扰。
-- 0.0～0.2：洒脱、活在当下，很少纠结过去
-- 0.3～0.5：正常水平，偶尔会想起旧事
-- 0.6～0.8：敏感、容易纠结，经常翻旧账
-- 0.9～1.0：极度执念型，无法释怀
-
-请根据 ${charName} 的性格特征判断，给出简短理由（30字以内）。
-
-严格 JSON 格式回复：
-{"style": "emotional", "ruminationTendency": 0.3, "reasoning": "理由"}`;
+    // 人格审视模板走提示词目录（memory.personalityDetect，技术模板：停用回退默认）。
+    const pdTpl = await resolveTechnicalPrompt('memory.personalityDetect', MEMORY_PERSONALITY_DETECT_BUILTIN);
+    const systemPrompt = fillIdentity(pdTpl, charName)
+        .replace(/__PERSONA_1200__/g, () => charPersona.slice(0, 1200))
+        .replace(/__MEMORY_CONTEXT__/g, () => memoryContext);
 
     console.log(`🎭 [PersonalityDetect] ${charName} → 调用 LLM（model=${llmConfig.model}, max_tokens=8000）`);
     try {
@@ -1051,7 +1004,7 @@ ${memoryContext}
         const usage = data.usage;
         console.log(`🎭 [PersonalityDetect] ${charName} LLM 原始返回 (finish=${finishReason}, usage=${JSON.stringify(usage || {})}):\n${reply}`);
 
-        // 带引号意识的大括号栈扫描：从 reply 里提取所有顶层 {...} 候选
+        // 带引��意�����大括号栈扫描：从 reply 里提取所有顶层 {...} 候选
         // 老版本用 /\{[\s\S]*?\}/ 非贪婪匹配，遇到思考型模型 reasoning 里的
         // "{迷茫,焦虑}" 之类 stray braces 会匹配错对象，JSON.parse 恰好成功
         // 但 parsed.style / ruminationTendency 都是 undefined，然后被下面的

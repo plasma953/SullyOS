@@ -30,20 +30,11 @@ export const normalizeElevenLabsModel = (raw?: string | null): string => {
 
 export const isElevenLabsV3Model = (raw?: string | null): boolean =>
   normalizeElevenLabsModel(raw) === 'eleven_v3';
-
-export const ELEVENLABS_V3_VOICE_ACTING_GUIDE = `### ElevenLabs v3 语音表演规则
-
-你写的是马上会被角色亲口说出来的台词，不是小说旁白。句子要口语化、有呼吸、有长短变化；不要写“她轻声说道”之类会被念出来的叙述。
-
-Eleven v3 支持方括号 Audio Tags。只在情绪真正变化的位置少量使用：\`[laughs]\`、\`[chuckles]\`、\`[whispers]\`、\`[sighs]\`、\`[excited]\`、\`[curious]\`、\`[sarcastic]\`、\`[crying]\`、\`[hesitates]\`、\`[softly]\`、\`[pause]\`。标签用半角英文方括号，通常一段 0–2 个；不要每句开头都塞标签，不要自造中文标签。
-
-停顿优先靠逗号、句号、省略号、破折号和自然换行；确实需要明显沉默才用 \`[pause]\`。标签是演出指令，不要在标签外再复述动作。`;
-
-export const ELEVENLABS_STANDARD_VOICE_ACTING_GUIDE = `### ElevenLabs 语音表演规则
-
-你写的是马上会被角色亲口说出来的台词，不是小说旁白。只写会说出口的话，保持口语化、自然、有长短句变化；不要写“她轻声说道”一类叙述。
-
-当前模型不是 Eleven v3，**不要输出方括号 Audio Tags、圆括号动作词或 SSML**，否则它们可能被原样念出来。情绪和停顿只靠措辞、语气词、逗号、句号、省略号、破折号与自然换行表达。强情绪也要克制，避免播音腔和每句同一种节奏。`;
+// ElevenLabs v3 / 标准两套语音表演规则原文已迁入提示词目录（utils/promptPresetCatalog）。
+// 保留旧导出名作别名（目录登记为内容源，getElevenLabsVoiceActingGuide 照常工作）。
+import { getBuiltinContent } from './promptPresetCatalog';
+export const ELEVENLABS_V3_VOICE_ACTING_GUIDE = getBuiltinContent('voice.elevenlabsV3');
+export const ELEVENLABS_STANDARD_VOICE_ACTING_GUIDE = getBuiltinContent('voice.elevenlabsStd');
 
 export const getElevenLabsVoiceActingGuide = (model?: string | null): string =>
   isElevenLabsV3Model(model)

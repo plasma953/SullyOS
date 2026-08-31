@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, CharacterGroup, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, MemoryPalaceFeatureFlags } from '../types';
 import { DB } from '../utils/db';
@@ -355,7 +354,7 @@ interface OSContextType {
   updateApiPreset: (id: string, name: string, config: APIConfig) => void;
   removeApiPreset: (id: string) => void;
 
-  // 实时配置 (天气、新闻、Notion等)
+  // 实时���置 (天气、新闻、Notion等)
   realtimeConfig: RealtimeConfig;
   updateRealtimeConfig: (updates: Partial<RealtimeConfig>) => void;
 
@@ -896,6 +895,25 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 内置提示词条目的一次性播种（P3）：首装 / 内置目录升级新增条目时，按 sourceKey
+  // 补齐 prompt_presets 缺失的行；已有行永不覆盖（用户编辑/启停/排序原样保留）。
+  // 完成后顺手预热运行时缓存，让同步注入点（写歌/约会深挖/技术模板）首条消息即可命中。
+  useEffect(() => {
+      let cancelled = false;
+      const run = async () => {
+          try {
+              const { seedBuiltinPromptPresets } = await import('../utils/promptPresetSeeding');
+              const { getResolvedPromptPresets } = await import('../utils/promptPresetRuntime');
+              await seedBuiltinPromptPresets();
+              if (!cancelled) await getResolvedPromptPresets();
+          } catch (e) {
+              console.warn('[PresetPrompt] bootstrap seeding failed', e);
+          }
+      };
+      run();
+      return () => { cancelled = true; };
+  }, []);
+
   const [characters, setCharacters] = useState<CharacterProfile[]>([]);
   const [activeCharacterId, setActiveCharacterId] = useState<string>('');
 
@@ -1140,7 +1158,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           body = JSON.stringify(parsed);
                       }
                       // 透明流式升级：主 API 开了 stream 时，把硬编码非流式的旁路调用
-                      // （查手机/记忆宫殿/日程/剧场/群聊…40+ 处）升级为流式**传输**，防网关
+                      // （查手机/记忆宫殿/日程/剧场/群聊…40+ 处）升级为流式**传输**，防��关
                       // 空闲超时把长生成掐成半截；响应会在下面攒齐拼回标准 JSON，调用方无感。
                       // 已自带 stream:true 的请求（聊天主路径/见面/情绪评估）不碰。
                       if (isGlobalStreamEnabled()) {
@@ -1305,7 +1323,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   // 这里把浏览器肯在 JS 侧交出来的旁证一次性补齐：方法、耗时、在线状态、是否跨域、
                   // Resource Timing 里那条记录，再给一句初判；随后异步做一次 no-cors 连通性复检，
                   // 结论回填到同一条日志上——「网络不通」和「网络通但响应被 CORS 拦」要走的排查路
-                  // 完全相反，不分开的话用户只能瞎试。详见 utils/networkFailureDiagnosis.ts。
+                  // 完全相反，不分���的话用户只能瞎试。详见 utils/networkFailureDiagnosis.ts。
                   const logId = `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                   const requestMeta = (sendArgs[1] as any)?.__sullyMeta || ambientMetaAtStart;
                   const recentSuccess = recentSuccessfulFetches.get(requestComparisonKey);
@@ -2058,7 +2076,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       };
 
       // 本地 fetch 聊天回复的全局回落：triggerAI 的异步闭包在 Chat 卸载后继续跑完
-      // 并落库，但它捕获的 setMessages 指向已卸载的实例。这里是它跟当前 UI 的唯一桥：
+      // 并落库，但它捕获的 setMessages 指向已卸���的实例。这里是它跟当前 UI 的唯一桥：
       //   - replyArrived（后处理管线全部落库后）→ bump lastMsgTimestamp 让当前挂载的
       //     Chat 重新 reloadMessages；用户不在该会话时补未读 + toast——与 instant push
       //     的 'active-msg-received' 行为对齐。
@@ -3272,7 +3290,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; });
     await DB.deleteCharacter(id);
     // 表情分类不随角色级联删除会留下「幽灵专属包」：单聊面板被可见性过滤掉（删不掉），
-    // 群聊面板/提示词却还能看到。删完角色顺手按剩余角色清一次残留（详见 DB.cleanupEmojiResidue）。
+    // 群聊面板/提示词却还能看到。删完��色顺手按剩余角色清一次残留（详见 DB.cleanupEmojiResidue）。
     try {
         const remainingIds = characters.filter(c => c.id !== id).map(c => c.id);
         const report = await DB.cleanupEmojiResidue(remainingIds);
@@ -3842,7 +3860,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           };
 
           // 把一条 data:image base64 落进 ZIP 的 assets/ 文件夹，返回它的 assets/* 路径。
-          // 同一份 base64 全局只存一份（assetDedupMap 按完整 base64 去重）。无法识别但
+          // 同一份 base64 全局只存一���（assetDedupMap 按完整 base64 去重）。无法识别但
           // 不一定损坏的 data url 原样保留；确认损坏的正文只在导出副本里置空。
           const resolveImage = (value: string, location: string): string => {
               try {
@@ -4129,7 +4147,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               })() : undefined,
 
               // 本机 localStorage 配置（导入端 importFullData 已支持恢复，之前导出漏发导致丢失）
-              //  · 瑞幸 / 麦当劳 MCP 的点单 token + 启用状态（用户说的「那个码」）
+              //  · 瑞幸 / 麦当劳 MCP 的点单 token + 启用状态（用户说的「那个码���）
               //  · 邮局身份、家园全局 API + 文风收藏
               vrPostOffice: (mode === 'text_only' || mode === 'full') ? exportPostOfficeLocal() : undefined,
               vrSignal: (mode === 'text_only' || mode === 'full') ? exportSignalLocal() : undefined, // 信号坠落处：句子归属「你·角色」+ 反复用清单
@@ -4787,7 +4805,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const manifestFile = loadedZip.file("manifest.json");
                   if (manifestFile) {
                       // v2：manifest 驱动的分片备份。assembleV2Backup 只读 zip、组装内存对象，
-                      // 校验不过直接抛错——此时 importFullData 还没调，DB 一字未动。
+                      // 校验���过直接抛错——此时 importFullData 还没调，DB 一字未动。
                       let manifest: BackupManifest;
                       try {
                           manifest = JSON.parse(await manifestFile.async("string"));

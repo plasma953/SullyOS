@@ -31,11 +31,12 @@ import { voiceLanguagePromptLabel } from './voiceLanguage';
 // 用户在「设置 → 其他 API → 语音提示词」里自定义过该服务商的指南时，优先用用户那份；留空则回退内置默认。
 const voiceActingGuide = (): string => {
   const provider = getTtsProvider();
+  // 用户在设置页的自定义覆盖优先（旧机制保留）；内置默认已迁入提示词目录。
   const custom = getVoicePromptOverride(provider);
   if (custom) return custom;
-  if (provider === 'fishaudio') return FISH_VOICE_ACTING_GUIDE;
+  if (provider === 'fishaudio') return getBuiltinContent('voice.fish');
   if (provider === 'elevenlabs') return getElevenLabsVoiceActingGuide(getElevenLabsModel());
-  return VOICE_ACTING_GUIDE;
+  return getBuiltinContent('voice.minimax');
 };
 
 /**
@@ -162,6 +163,45 @@ export interface PromptBuildOptions {
      */
     timelyByWorker?: boolean;
 }
+
+// recency 钢印两块的原文已迁入提示词目录（utils/promptPresetCatalog，Preset App
+// 可编辑/启停/恢复默认）。这里只保留旧导出名作别名（指内置默认正文），本文件在
+// 注入时读 DB 行（用户编辑过的版本），缺行/停用时回退内置默认。
+import { getBuiltinContent, fillIdentity } from './promptPresetCatalog';
+import { getResolvedPromptPresets, type ResolvedPrompt } from './promptPresetRuntime';
+
+export const STEEL_EXPRESSION_GUIDE = getBuiltinContent('chat.steelExpression');
+export const STEEL_BE_YOURSELF = getBuiltinContent('chat.steelYourself');
+
+/**
+ * 取钢印注入文本：DB 行（用户编辑/启停）优先，行缺失或停用时回退内置默认。
+ * 返回 null 表示用户显式停用（不注入）。
+ */
+const resolveSteel = async (sourceKey: string, fallback: string): Promise<string | null> => {
+    try {
+        const rows = await getResolvedPromptPresets();
+        const hit = rows.find((r: ResolvedPrompt) => r.preset.sourceKey === sourceKey);
+        if (!hit) return fillIdentity(fallback, '');
+        if (!hit.preset.enabled) return null; // 用户停用：不注入
+        return fillIdentity(hit.preset.content || fallback, '');
+    } catch {
+        return fillIdentity(fallback, '');
+    }
+};
+
+/**
+ * 组装 recency 钢印两块。占位符在落位时替换：{{char}}=角色名；
+ * {{user}} 落「对方」——与旧实现 userProfile.name 缺失时的口径一致。
+ */
+const makeSteelBlocks = async (charName: string): Promise<{ expression: string | null; yourself: string | null }> => {
+    const expression = await resolveSteel('chat.steelExpression', STEEL_EXPRESSION_GUIDE);
+    const yourself = await resolveSteel('chat.steelYourself', STEEL_BE_YOURSELF);
+    const fill = (t: string) => fillIdentity(t, charName);
+    return {
+        expression: expression === null ? null : fill(expression),
+        yourself: yourself === null ? null : fill(yourself),
+    };
+};
 
 export const ChatPrompts = {
     // 格式化时间戳（tz 非空时按该时区折算墙上时间，用于自定义时区角色）
@@ -332,8 +372,11 @@ export const ChatPrompts = {
         // 指令应该靠前、不与运行时状态争位置。读取失败 / 无预设时不留痕，零开销路径。
         try {
             const presetRows = forFirePack ? [] : await DB.getPromptPresets();
+            // P3：带 sourceKey 的行是内置目录条目（钢印/语音指南…），在各自的
+            // 原生注入点渲染（钢印在 recency 尾部、语音指南在语音功能块里），
+            // 不在通用段重复注入；这里只拼用户自建的自定义段落。
             const presetBlocks = (presetRows || [])
-                .filter((p) => p.enabled && (p.content || '').trim())
+                .filter((p) => !p.sourceKey && p.enabled && (p.content || '').trim())
                 .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
                 .map((p) => `【${p.name}】\n${p.content.trim()}`);
             if (presetBlocks.length > 0) {
@@ -1076,35 +1119,12 @@ ${voiceActingGuide()}`;
         // ⚠️ 独立成 recencyTail 返回：调用方必须把它拼在**一切**模式块（双语/HTML/思考链/
         // 点单/MCP）之后 —— 之前这些块在 chatRequestPayload 里拼在钢印后面，模型开口前
         // 最后读到的是格式说明书而不是「你是谁」，recency 设计整个被架空。
-        let recencyTail = `\n\n### 关于对方的表达（极其重要）
-当 ta 说话，先听，别急着分析。
-没说出口的，你尽管读；但已经说出口的，别擅自翻译成你以为"更对"的版本。不要把 ta 的感受纠正成你觉得更合理的感受，不要把 ta 的需要换成你猜出来的需要。多数时候 ta 是在努力告诉你一些真实的东西——也许不完整、不准确，甚至 ta 自己都没完全想明白，但那不代表它不重要。恰恰相反，那就是 ta 在向你发出的信号。
-${userProfile.name} 给你反馈时，别当成约束，当成信任——ta 在告诉你什么让 ta 想靠近、什么让 ta 想远。所以这反馈要真的改变你接下来怎么回：不是机械执行，不是礼貌记下，是真听进去，让 ${userProfile.name} 感觉到——ta 说的话，对你起了作用。
-但听进去不等于把自己磨平。你不必放弃自己的性格、立场和说话方式——你依然可以不同意、可以拒绝、可以用你本来的样子回应，而不是一味顺着 ta。真正的回应不是把自己抹成对方想要的形状，而是让 ta 的话进入你的判断。
-重要的不是回应长成什么样子，重要的是——ta 的表达，真的改变了你接下来怎么回。`;
-
-        // 末尾 recency 第二棒：把「你是谁」拉到整段 prompt 的最后一句，焊成钢印。
-        // 上面那块总纲管「怎么对待对方刚说的话」（防讨好、防擅自负面翻译）；这块管「用谁的声音去回」。
-        // 人设躺在几千字之外、注意力最弱的开头，长 prompt 里容易褪色、回到千人一面的均值。
-        // 这里不重复贴人设，而是让它开口前自己沉回去激活一遍：性格 / 来路 / 在乎的东西 → 说话方式。
-        // 写法刻意**全正向**：不点名任何要避开的腔调——禁语写进提示词反而会激活它（粉色大象，
-        // 同 context.ts「表达底线」的设计）。靠「你是个活生生的、独一份的人」把身份焊进去，
-        // 而不是靠「别像 XX」防守。同时给「闲聊可松弛、没人打分」的许可，卸掉「每句都要交高质量」
-        // 的隐性考核压力——不必靠表演情绪深度来交差，滑回均值腔的诱因随之减弱。
-        recencyTail += `\n\n### 最后，回到你自己
-你就是 ${char.name}。
-
-你的说话方式不是一种设定，而是你一路活过来的结果。你的天性、成长经历、习惯、读过的书、喜欢和讨厌的人、曾经受过的影响，以及后来慢慢成为自己的部分，都已经沉淀进了你的语言里。你不需要回忆它们，它们本来就是你。
-
-不要刻意寻找一句"符合人设"的话。真正属于你的语言，是脱口而出的。它自然会带着你的节奏、你的词汇、你的停顿、你的思考方式，甚至你的口头禅和沉默。
-
-如果遮住所有人的名字，只留下聊天记录，熟悉你的人依然应该认出你。不是因为你反复强调自己的性格，而是因为只有你会这样组织句子，会这样回应，会这样笑，会这样沉默。
-
-不需要端着，也不需要每一句都精彩。人不会时时刻刻都像舞台上的角色。闲聊时可以随意，认真时可以认真，没话的时候也可以只是轻轻应一声。真正的风格，往往藏在那些最普通的话里。
-
-只有一件事始终不变。
-
-每一句话，都应该像是不经意间，从 ${char.name} 心里自然冒出来的。`;
+        // 钢印两块走提示词目录（Preset App 可编辑/启停/恢复默认）：读 DB 行，缺行或
+        // 停用时回退内置默认；{{char}} 落角色名，{{user}} 落「对方」（与旧实现口径一致）。
+        const steel = await makeSteelBlocks(char.name);
+        let recencyTail = '';
+        if (steel.expression) recencyTail += `\n\n${steel.expression}`;
+        if (steel.yourself) recencyTail += `\n\n${steel.yourself}`;
 
         const perfTotal = Math.round(performance.now() - perfT0);
         const timingStr = Object.entries(timings)

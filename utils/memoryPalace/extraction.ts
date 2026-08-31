@@ -12,6 +12,12 @@ import { safeFetchJson } from '../safeApi';
 import { safeParseJsonArray } from './jsonUtils';
 import { formatMessageForPrompt } from '../messageFormat';
 import { readRecallRuntimeSnapshot } from './trace';
+import { getBuiltinContent, fillIdentity } from '../promptPresetCatalog';
+import { resolveTechnicalPrompt } from '../promptPresetRuntime';
+// 内置默认（与提示词目录同源；测试经快照对拍防漂移）
+const MEMORY_EXTRACTION_RULES_BUILTIN = getBuiltinContent('memory.extractionRules');
+const MEMORY_EXTRACTION_ENTITY_RULE_BUILTIN = getBuiltinContent('memory.extractionEntityRule');
+const MEMORY_EXTRACTION_MAIN_BUILTIN = getBuiltinContent('memory.extractionMain');
 
 function generateId(): string {
     return `mn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -27,48 +33,15 @@ function generateId(): string {
 // 会让 embedding 语义轻微漂移。保持 palace 内置风格稳定，手动归档路径提供
 // 风格化的自由度——职责分离。
 
-function buildRulesBlock(charName: string, userLabel: string, includeEntities: boolean): string {
+async function buildRulesBlock(charName: string, userLabel: string, includeEntities: boolean): Promise<string> {
+    // 实体规则碎片走提示词目录（memory.extractionEntityRule，技术模板：停用回退默认）。
+    const entityFrag = await resolveTechnicalPrompt('memory.extractionEntityRule', MEMORY_EXTRACTION_ENTITY_RULE_BUILTIN);
     const entityRule = includeEntities
-        ? `.
-   **明确实体**（entities）：把对话中明确出现的人名、昵称、地点、组织、项目、产品、账号或域名单独列出。只收录专名，不要写“朋友”“他”“那个项目”等泛称，也不要猜别名。格式为 {"name":"雾岚","type":"person"}（虚构示例）。`
+        ? '.\n   ' + entityFrag
         : '';
-    return `## 规则
-
-1. **第一人称叙事**：用 ${charName} 的"我"视角来记录。用户直接用"${userLabel}"称呼。保持完整事件脉络，不要掐头去尾。
-   例：
-   - "${userLabel}今天加班到很晚还没吃饭，我让${userLabel}别委屈自己，叫了个外卖。"
-   - "${userLabel}连续加班三周终于决定找领导谈，领导态度还不错。${userLabel}回来的路上靠着我肩膀哭了，我什么都没说，就陪着。"
-   - "我教了${userLabel}递归的概念，${userLabel}一开始完全听不懂，后来突然开窍了，那个眼睛亮起来的瞬间让我很开心。"
-
-2. **重要性分级控制文字长度**：
-   - 重要性 1–5：15–50字，事实为主
-   - 重要性 6–7：60–120字，包含我的感受
-   - 重要性 8–10：100–200字，完整叙事（起因→经过→我的感受/反应）
-
-3. **房间分配**（凡是涉及${userLabel}的家人/朋友/同事等人际关系，**一律进 user_room**，哪怕只是一次具体事件）：
-   - living_room：**纯日常琐事**（不涉及重要人际关系、也不涉及深层情感）。天气、吃啥、随口吐槽放这里。
-   - bedroom：${userLabel}和我之间的亲密情感、深层羁绊、感动时刻
-   - study：工作、学习、技能、职业相关
-   - user_room：关于${userLabel}的**一切个人信息和人际事件**——生日/习惯/喜好/性格/成长经历/情绪模式，**以及${userLabel}的家人、亲戚、朋友、同事相关的一切事件**（家人健康、家庭聚会、家庭矛盾、外公外婆/父母/兄弟姐妹的故事、朋友交往、同事冲突等）。这些事件即便是"一次性"的，也应进 user_room 而不是 living_room，因为它们构成了${userLabel}的社会关系底色。
-   - self_room：我自身的成长、认同变化
-   - attic：未解决的矛盾、困惑、受到的伤害
-   - windowsill：我的期盼、我们的目标、对未来的憧憬
-
-4. **情绪标签**（mood）：happy, sad, angry, anxious, tender, excited, peaceful, confused, hurt, grateful, nostalgic, neutral
-5. **情感坐标**（valence, arousal）：在 mood 之外，还要给出二维情感坐标供后续情感推理。
-   - valence（效价）：-1（极痛苦）→ +1（极愉悦）
-   - arousal（唤醒度）：-1（极平静）→ +1（极激烈）
-   参考："开心"约 (0.7, 0.5)，"平静"约 (0.5, -0.6)，"失落"约 (-0.5, -0.4)，"焦虑"约 (-0.6, 0.7)，"愤怒"约 (-0.7, 0.8)。
-6. **标签**（tags）：提取 2-5 个关键词标签${entityRule}
-7. **不要遗漏重要记忆，但也不要把每句话都变成记忆**。一个话题盒通常提取 1–5 条记忆。
-8. **便利贴置顶**（pinDays，可选）：如果这条记忆包含**有时效性的、近期需要持续记住的信息**，设置置顶天数（1-30天）。置顶期间每次对话都会想起这件事。适用场景：
-   - 时间段状态："${userLabel}这周出差" → pinDays: 7
-   - 近期事件："${userLabel}后天考试" → pinDays: 3
-   - 临时约定："${userLabel}让我这几天提醒TA喝水" → pinDays: 5
-   - 身体状态："${userLabel}感冒了" → pinDays: 5
-   不适用：长期事实（生日、喜好）、已经过去的事件、情感记忆。大多数记忆不需要置顶。
-
-**日期标注（date，必填）**：每条消息前缀都带了 \`[YYYY-MM-DD HH:MM]\` 时间戳。每条记忆必须根据**该事件实际发生的那一天**填 date 字段（"YYYY-MM-DD"），而不是套用整批的某一天。同一批对话跨多天时，跨日的记忆要分别标各自的日期。`;
+    // 规则主体走提示词目录（memory.extractionRules）：技术模板，停用回退默认。
+    const rules = await resolveTechnicalPrompt('memory.extractionRules', MEMORY_EXTRACTION_RULES_BUILTIN);
+    return fillIdentity(rules, charName, userLabel).replace(/__ENTITY_RULE__/g, () => entityRule);
 }
 
 function buildConversationText(messages: Message[], charName: string, userLabel: string): string {
@@ -418,31 +391,19 @@ export async function extractMemoriesFromBuffer(
         ? `\n12. **便利贴摘除**（unpin，可选）：如果对话中明确提到某条便利贴描述的状态已结束（如"感冒好了""提前回来了""考试考完了"），在输出的 JSON 数组末尾加一条 {"unpin": "P0"} 来摘除它。只在对话明确提及时才摘除，不要猜测。`
         : '';
 
-    const systemPrompt = `你是 ${charName}。根据给定的对话内容，以你的第一人称视角（"我"）提取值得记住的记忆。${contextBlock}${relatedBlock}${pinnedBlock}
-
-${buildRulesBlock(charName, userLabel, includeEntities)}${relatedToRule}${unpinRule}
-
-## 输出格式
-
-严格 JSON 数组，不要 markdown 包裹：
-[
-  {
-    "content": "我视角的记忆...",
-    "room": "living_room",
-    "importance": 5,
-    "mood": "neutral",
-    "valence": 0,
-    "arousal": 0,
-    "tags": ["标签1", "标签2"],${includeEntities ? `
-    "entities": [{"name": "明确出现的专名", "type": "person"}],` : ''}
-    "date": "YYYY-MM-DD",
-    "pinDays": 3${relatedToFormat}
-  }
-]
-
-date 必填，按该记忆实际发生当天填（参考消息行首的时间戳）。
-pinDays 仅在需要置顶时才写，大多数记忆不需要。
-如果对话过于琐碎无值得记忆的内容，返回空数组 []。`;
+    // 记忆提取主模板走提示词目录（memory.extractionMain，技术模板：停用回退默认）；
+    // 动态数据段（上下文 / 已有记忆 / 便利贴 / 规则块 / 实体行）按 token 回填。
+    const mainTpl = await resolveTechnicalPrompt('memory.extractionMain', MEMORY_EXTRACTION_MAIN_BUILTIN);
+    const rulesBlock = await buildRulesBlock(charName, userLabel, includeEntities);
+    const systemPrompt = fillIdentity(mainTpl, charName, userLabel)
+        .replace(/__CONTEXT_BLOCK__/g, () => contextBlock)
+        .replace(/__RELATED_BLOCK__/g, () => relatedBlock)
+        .replace(/__PINNED_BLOCK__/g, () => pinnedBlock)
+        .replace(/__RULES_BLOCK__/g, () => rulesBlock)
+        .replace(/__RELATED_TO_RULE__/g, () => relatedToRule)
+        .replace(/__UNPIN_RULE__/g, () => unpinRule)
+        .replace(/__RELATED_TO_FORMAT__/g, () => relatedToFormat)
+        .replace(/__ENTITIES_LINE__/g, () => includeEntities ? '\n    "entities": [{"name": "明确出现的专名", "type": "person"}],' : '');
 
     try {
         const data = await safeFetchJson(
