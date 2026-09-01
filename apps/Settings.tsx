@@ -20,7 +20,7 @@ import {
     getElevenLabsVoiceActingGuide,
 } from '../utils/elevenLabsTts';
 import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
-import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected } from '@phosphor-icons/react';
+import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected, Binoculars } from '@phosphor-icons/react';
 import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
 import { getMcpResultList, clearMcpResults } from '../utils/mcpResultMemory';
 import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
@@ -42,7 +42,7 @@ import {
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../utils/apiConfigNormalize';
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
 import StatusBadge from '../components/StatusBadge';
-import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers } from '../utils/statusPanel';
+import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers, probePerspective } from '../utils/statusPanel';
 import type { APIConfig, BridgeConfig, TtsProvider } from '../types';
 import { getEffectiveBridges, normalizeBridges, makeBridgeId } from '../utils/bridgeRegistry';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
@@ -749,6 +749,14 @@ const Settings: React.FC = () => {
   const [rtFeishuBaseId, setRtFeishuBaseId] = useState(realtimeConfig.feishuBaseId);
   const [rtFeishuTableId, setRtFeishuTableId] = useState(realtimeConfig.feishuTableId);
   const [rtXhsEnabled, setRtXhsEnabled] = useState(realtimeConfig.xhsEnabled);
+  // 透视窗配置的本地编辑态
+  const [rtPerspectiveEnabled, setRtPerspectiveEnabled] = useState(realtimeConfig.perspectiveEnabled);
+  const [rtPerspectiveUrl, setRtPerspectiveUrl] = useState(realtimeConfig.perspectiveSupabaseUrl);
+  const [rtPerspectiveKey, setRtPerspectiveKey] = useState(realtimeConfig.perspectiveSupabaseAnonKey);
+  const [rtPerspectiveDays, setRtPerspectiveDays] = useState(String(realtimeConfig.perspectiveDays ?? 7));
+  const [rtPerspectiveInterval, setRtPerspectiveInterval] = useState(String(realtimeConfig.perspectiveMinIntervalSec ?? 60));
+  const [rtPerspectiveSummary, setRtPerspectiveSummary] = useState(realtimeConfig.perspectiveSummaryEnabled);
+  const [rtPerspectiveThreshold, setRtPerspectiveThreshold] = useState(String(realtimeConfig.perspectiveSummaryThreshold ?? 500));
   // lite 模式走中心配置的主代理 worker（/api 是 worker/index.js 里的 XHSLite 桥）。
   // 用户改了「自定义网络代理」，lite 模式自动跟着切到新 worker。
   const XHS_LITE_URL = `${getProxyWorkerUrl()}/api`;
@@ -1700,7 +1708,15 @@ const Settings: React.FC = () => {
               loggedInNickname: rtXhsNickname || undefined,
               loggedInUserId: rtXhsUserId || undefined,
               userXsecToken: realtimeConfig.xhsMcpConfig?.userXsecToken,
-          }
+          },
+          // 透视窗（perspectiveEnabled 开着才校验端点必填）
+          perspectiveEnabled: rtPerspectiveEnabled && rtPerspectiveUrl.trim() && rtPerspectiveKey.trim() ? true : false,
+          perspectiveSupabaseUrl: rtPerspectiveUrl.trim(),
+          perspectiveSupabaseAnonKey: rtPerspectiveKey.trim(),
+          perspectiveDays: Math.min(Math.max(parseInt(rtPerspectiveDays, 10) || 7, 1), 30),
+          perspectiveMinIntervalSec: Math.max(parseInt(rtPerspectiveInterval, 10) || 60, 0),
+          perspectiveSummaryEnabled: rtPerspectiveSummary,
+          perspectiveSummaryThreshold: Math.max(parseInt(rtPerspectiveThreshold, 10) || 500, 10),
       };
       updateRealtimeConfig(updates);
       RealtimeContextManager.clearCache();
@@ -3138,7 +3154,10 @@ const Settings: React.FC = () => {
         <SettingsSection
             title="实时感知"
             badge={
-                <StatusBadge badgeKey="realtime" probe={() => probeRealtime(realtimeConfig)} />
+                <div className="flex items-center gap-1.5">
+                    <StatusBadge badgeKey="realtime" probe={() => probeRealtime(realtimeConfig)} />
+                    <StatusBadge badgeKey="perspective" probe={() => probePerspective(realtimeConfig)} />
+                </div>
             }
             icon={
                 <div className="p-2 bg-violet-100/50 rounded-xl text-violet-600">
@@ -4285,6 +4304,62 @@ const Settings: React.FC = () => {
                               2. Token 保存在本机配置中；使用点单功能时会随 MCP 请求由网络 Worker 转发，项目不主动留存<br/>
                               3. 下单类操作涉及真实支付，角色会先复述清单等你确认再下单<br/>
                               4. 仅中国大陆 (不含港澳台)
+                          </p>
+                      </div>
+                  )}
+              </div>
+
+              {/* 透视窗 */}
+              <div className="bg-cyan-50/60 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                          <Binoculars size={20} weight="fill" className="text-cyan-600" />
+                          <span className="text-sm font-bold text-cyan-700">透视窗</span>
+                          <span className="text-[9px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full">Supabase</span>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" checked={rtPerspectiveEnabled} onChange={e => setRtPerspectiveEnabled(e.target.checked)} className="sr-only peer" />
+                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+                      </label>
+                  </div>
+                  <p className="text-[10px] text-cyan-700/70 leading-relaxed">
+                      开启后，被授权的角色可以在聊天里查看你近期的操作轨迹（打开过哪些 App、发消息、切角色等），数据存 Supabase。仅操作行为，绝不含聊天内容。
+                  </p>
+                  {rtPerspectiveEnabled && (
+                      <div className="space-y-2">
+                          <div>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Supabase URL</label>
+                              <input value={rtPerspectiveUrl} onChange={e => setRtPerspectiveUrl(e.target.value)} className="w-full bg-white/80 border border-cyan-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="https://xxxx.supabase.co" />
+                          </div>
+                          <div>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">anon key</label>
+                              <input type="password" value={rtPerspectiveKey} onChange={e => setRtPerspectiveKey(e.target.value)} className="w-full bg-white/80 border border-cyan-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="eyJhbGciOi...（anon 角色）" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">可查天数上限</label>
+                                  <input type="number" min="1" max="30" value={rtPerspectiveDays} onChange={e => setRtPerspectiveDays(e.target.value)} className="w-full bg-white/80 border border-cyan-200 rounded-xl px-3 py-2 text-sm" />
+                              </div>
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">查询间隔（秒）</label>
+                                  <input type="number" min="0" value={rtPerspectiveInterval} onChange={e => setRtPerspectiveInterval(e.target.value)} className="w-full bg-white/80 border border-cyan-200 rounded-xl px-3 py-2 text-sm" />
+                              </div>
+                          </div>
+                          <div className="flex items-center justify-between pt-1">
+                              <label className="text-[11px] font-bold text-slate-500">数据量大时自动总结（省 token）</label>
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                  <input type="checkbox" checked={rtPerspectiveSummary} onChange={e => setRtPerspectiveSummary(e.target.checked)} className="sr-only peer" />
+                                  <div className="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+                              </label>
+                          </div>
+                          {rtPerspectiveSummary && (
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">总结触发阈值（条）</label>
+                                  <input type="number" min="10" value={rtPerspectiveThreshold} onChange={e => setRtPerspectiveThreshold(e.target.value)} className="w-full bg-white/80 border border-cyan-200 rounded-xl px-3 py-2 text-sm" />
+                              </div>
+                          )}
+                          <p className="text-[10px] text-cyan-700/70 leading-relaxed">
+                              总结走主聊天 API（借用系统 API 设置），产出缓存在 Supabase，角色查总结秒回。
                           </p>
                       </div>
                   )}

@@ -102,6 +102,9 @@ interface ChatModalsProps {
     // XHS toggle
     xhsEnabled?: boolean;
     onToggleXhs?: () => void;
+    // 透视窗 toggle（char 查看用户真实设备操作记录；需全局设置配好 Supabase）
+    perspectiveEnabled?: boolean;
+    onTogglePerspective?: () => void;
     // HTML mode
     htmlModeEnabled?: boolean;
     onToggleHtmlMode?: () => void;
@@ -260,6 +263,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     allCharacters = [], onSaveCategoryVisibility,
     translationEnabled, onToggleTranslation, translationExpanded, onToggleTranslationExpanded, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
     xhsEnabled, onToggleXhs,
+    perspectiveEnabled, onTogglePerspective,
     htmlModeEnabled, onToggleHtmlMode, htmlModeCustomPrompt, setHtmlModeCustomPrompt,
     chatVoiceEnabled, onToggleChatVoice, chatVoiceAutoPlay, onToggleChatVoiceAutoPlay, chatVoiceLang, onSetChatVoiceLang,
     onGenerateVoice, voiceAvailable, onDownloadVoice, voiceDownloadable, voiceCollectable, onToggleVoiceFavorite, voiceFavorited,
@@ -583,6 +587,19 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                          </div>
                          <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
                              开启后，角色在聊天中可以搜索、浏览、发帖、评论小红书。需要在全局设置中配置 MCP 或 Cookie。
+                         </p>
+                     </div>
+
+                     {/* 透视窗 Toggle */}
+                     <div className="pt-2 border-t border-slate-100">
+                         <div className="flex justify-between items-center cursor-pointer" onClick={onTogglePerspective}>
+                             <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">透视窗</label>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${perspectiveEnabled ? 'bg-cyan-500' : 'bg-slate-200'}`}>
+                                 <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${perspectiveEnabled ? 'translate-x-4' : ''}`}></div>
+                             </div>
+                         </div>
+                         <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                             开启后，角色可以在聊天中通过透视窗了解你在 SullyOS 里的真实操作轨迹（打开过哪些 App、发消息等，不含聊天内容）。需要在全局设置中配置 Supabase。
                          </p>
                      </div>
 

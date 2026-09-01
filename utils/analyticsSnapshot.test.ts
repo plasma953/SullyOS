@@ -60,6 +60,13 @@ function poisonedRealtimeConfig(overrides: Partial<RealtimeConfig> = {}): Realti
             loggedInNickname: POISON.myName,
         },
         cacheMinutes: 30,
+        perspectiveEnabled: true,
+        perspectiveSupabaseUrl: POISON.url,
+        perspectiveSupabaseAnonKey: POISON.key,
+        perspectiveDays: 7,
+        perspectiveMinIntervalSec: 60,
+        perspectiveSummaryEnabled: true,
+        perspectiveSummaryThreshold: 500,
         ...overrides,
     };
 }

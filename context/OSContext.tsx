@@ -39,6 +39,8 @@ import { isAnalyticsRequestUrl, trackEvent, trackDataScaleOnce, trackCurrentAppe
 import { collectAppearance, collectCharSettings, collectDataScale, collectFeatureFlagsAsync } from '../utils/analyticsSnapshot';
 import { normalizeApiConfig, normalizeApiPreset } from '../utils/apiConfigNormalize';
 import { getCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
+import { PERSPECTIVE_DEFAULTS } from '../types';
+import { setPerspectiveTelemetryRuntime, installPerspectiveLifecycle, emitPerspectiveEvent } from '../utils/perspectiveTelemetry';
 import { markBackupDone } from '../utils/backupReminder';
 import { normalizeCharacterImpression, normalizeCharacterDefaults } from '../utils/impression';
 import { normalizeModelIds } from '../utils/modelList';
@@ -239,6 +241,7 @@ const defaultRealtimeConfig: RealtimeConfig = {
   feishuBaseId: '',
   feishuTableId: '',
   xhsEnabled: false,
+  ...PERSPECTIVE_DEFAULTS,
   cacheMinutes: 30
 };
 
@@ -859,6 +862,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return () => clearInterval(timer);
   }, []);
 
+  // 透视窗遥测：注入配置读取器 + 挂生命周期埋点（setActiveCharacterId 在下面才声明，放 effect 里拿）。
+  useEffect(() => {
+      setPerspectiveTelemetryRuntime({
+          getConfig: () => realtimeConfigRef.current,
+      });
+      installPerspectiveLifecycle();
+      return () => setPerspectiveTelemetryRuntime(null);
+  }, []);
+
   // 启动后台扫描一次，把还停留在老 number[] 形态的向量记录升级到 Uint8Array
   // 紧凑存储。完全无损，不影响召回质量。重度用户磁盘可省 ~12×（500MB → 40MB
   // 量级）。fire-and-forget，不阻塞 UI；只在确实有数据被升级时弹一次 toast
@@ -916,7 +928,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   const [characters, setCharacters] = useState<CharacterProfile[]>([]);
-  const [activeCharacterId, setActiveCharacterId] = useState<string>('');
+  const [activeCharacterId, setActiveCharacterIdRaw] = useState<string>('');
+  // 透视窗埋点：切角色是一道明确的行为信号（char 能看到 user 在跟谁聊）。
+  const setActiveCharacterId = (id: string) => {
+      if (id && id !== activeCharacterId) emitPerspectiveEvent('char.switch', id);
+      setActiveCharacterIdRaw(id);
+  };
 
   // 刷新后能恢复"上一次聊的角色"：所有调用方（聊天切换/通知 onclick/记忆宫殿 handleSwitchChar）
   // 都走裸 setActiveCharacterId，集中在这里同步到 localStorage，避免每个调用点各写一遍
@@ -4035,6 +4052,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               version: 3,
               apiConfig: (mode === 'text_only' || mode === 'full') ? apiConfig : undefined,
               checkPhoneApi: (mode === 'text_only' || mode === 'full') ? getCheckPhoneApi() : undefined,
+              // 透视窗配置随 realtimeConfig 一并备份/恢复（PERSPECTIVE_DEFAULTS 合并口径），无需单独字段。
               apiPresets: (mode === 'text_only' || mode === 'full') ? apiPresets : undefined,
               availableModels: (mode === 'text_only' || mode === 'full') ? availableModels : undefined,
               realtimeConfig: (mode === 'text_only' || mode === 'full') ? realtimeConfig : undefined,
@@ -5321,7 +5339,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   const resetSystem = async () => { try { await DB.deleteDB(); localStorage.clear(); window.location.reload(); } catch (e) { console.error(e); addToast('重置失败，请手动清除浏览器数据', 'error'); } };
-  const openApp = (appId: AppID) => setActiveApp(appId);
+  const openApp = (appId: AppID) => { emitPerspectiveEvent('app.open', appId); setActiveApp(appId); };
   const closeApp = () => setActiveApp(AppID.Launcher);
   // 从聊天直接进入某角色的见面：切换当前角色 + 标记自动进入 + 打开见面 App
   const openDateWithChar = (charId: string) => {

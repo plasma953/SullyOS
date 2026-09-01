@@ -14,6 +14,7 @@
  *   checking 脉冲 —— 探测中
  */
 import type { APIConfig, RealtimeConfig } from '../types';
+import { queryPerspectiveEvents } from './perspective';
 import { getEffectiveBridges } from './bridgeRegistry';
 import { ActiveMsgStore } from './activeMsgStore';
 import { loadMcpServers } from './mcpClient';
@@ -253,5 +254,27 @@ export const probeMcpServers = async (): Promise<StatusEntry> => {
         return { ...entry, status: 'ok', detail: `${on.length} 启用${toolCount ? `·${toolCount} 工具` : ''}` };
     } catch {
         return { ...entry, status: 'err', detail: '读取失败' };
+    }
+};
+
+/**
+ * 透视窗：Supabase 端点配好 + 拉一次空查询即 ok。失败给具体 HTTP 状态。
+ * off = 未配置（不是错误）；配了但连不上才是红。
+ */
+export const probePerspective = async (realtimeConfig: RealtimeConfig): Promise<StatusEntry> => {
+    const entry: StatusEntry = { key: 'perspective', label: '透视窗', status: 'off', detail: '未配置' };
+    if (!realtimeConfig.perspectiveEnabled) return entry;
+    if (!realtimeConfig.perspectiveSupabaseUrl?.trim() || !realtimeConfig.perspectiveSupabaseAnonKey?.trim()) {
+        return { ...entry, status: 'warn', detail: '缺 URL 或 anon key' };
+    }
+    try {
+        const r = await queryPerspectiveEvents(realtimeConfig, { days: 1, limit: 1 });
+        if (r.ok) return { key: 'perspective', label: '透视窗', status: 'ok', detail: 'Supabase 已连接' };
+        if (r.reason === 'empty') return { key: 'perspective', label: '透视窗', status: 'ok', detail: '已连接 · 暂无记录' };
+        if (r.reason === 'http' && r.status === 401) return { ...entry, status: 'err', detail: '鉴权失败 (401)' };
+        if (r.reason === 'http') return { ...entry, status: 'err', detail: `HTTP ${r.status}` };
+        return { ...entry, status: 'err', detail: r.message || '不可达' };
+    } catch {
+        return { ...entry, status: 'err', detail: '探测失败' };
     }
 };

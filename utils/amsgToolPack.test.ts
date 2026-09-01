@@ -32,6 +32,8 @@ describe('buildToolPack / parseToolPack', () => {
       v: 1,
       charName: '小鹿',
       xhsEnabled: true,
+      // buildToolPack 现在无条件携带布尔量（worker 端 buildToolCtx 类型要求），关闭角色为 false
+      perspectiveEnabled: false,
       activeMemoryMonths: ['2026-06'],
       memories: [
         { date: '2026-06-12', summary: '一起看了落日', mood: 'happy' },
@@ -48,6 +50,7 @@ describe('buildToolPack / parseToolPack', () => {
       v: 1,
       charName: '阿绫',
       xhsEnabled: false,
+      perspectiveEnabled: false,
       activeMemoryMonths: [],
       memories: [],
       timeAwarenessEnabled: true,

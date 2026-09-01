@@ -33,6 +33,17 @@ import {
     normalizeXhsComments,
     normalizeXhsLiteDetail,
 } from './xhsMcpClient';
+import {
+    isPerspectiveEnabled,
+    queryPerspectiveEvents,
+    countPerspectiveEvents,
+    getLatestPerspectiveSummary,
+    checkPerspectiveInterval,
+    markPerspectiveCalled,
+    buildPerspectiveDigest,
+    perspectiveWindow,
+    PERSPECTIVE_MAX_DAYS,
+} from './perspective';
 import { getLocalDateKey } from './localDate';
 
 // ─── 共用类型 ────────────────────────────────────────────────────────────────
@@ -66,6 +77,14 @@ export interface XhsConfig {
  * 那边自动跟上——两份字段表靠人工对齐的话，漏一个就是 worker 侧运行时静默拿 undefined。
  */
 export interface AgenticToolRealtimeConfig {
+    // 透视窗端点（Supabase 公网可达，worker 端可直连；字段缺省 = 该功能未开）。
+    perspectiveEnabled?: boolean;
+    perspectiveSupabaseUrl?: string;
+    perspectiveSupabaseAnonKey?: string;
+    perspectiveDays?: number;
+    perspectiveMinIntervalSec?: number;
+    perspectiveSummaryEnabled?: boolean;
+    perspectiveSummaryThreshold?: number;
     newsEnabled: boolean;
     newsApiKey?: string;
     notionEnabled: boolean;
@@ -78,8 +97,8 @@ export interface AgenticToolRealtimeConfig {
     feishuBaseId?: string;
     feishuTableId?: string;
     xhsMcpConfig?: {
-        enabled?: boolean;
-        serverUrl?: string;
+        enabled: boolean;
+        serverUrl: string;
         loggedInUserId?: string;
         loggedInNickname?: string;
         userXsecToken?: string;
@@ -116,6 +135,8 @@ export function resolveXhsConfig(
 export interface AgenticToolChar {
     name: string;
     xhsEnabled?: boolean;
+    /** 透视窗：char 可查用户设备操作记录（pack 上云端时只在开启时携带）。 */
+    perspectiveEnabled?: boolean;
     activeMemoryMonths?: string[];
     memories?: AgenticToolMemory[];
 }
@@ -832,7 +853,130 @@ export async function dispatchAgenticTool(
         case 'xhs_browse': return runXhsBrowse(args, ctx);
         case 'xhs_my_profile': return runXhsMyProfile(args, ctx);
         case 'xhs_detail': return runXhsDetail(args, ctx);
+        case 'perspective_query': return runPerspectiveQuery(args, ctx);
+        case 'perspective_summary': return runPerspectiveSummary(args, ctx);
         default:
             throw new Error(`Unknown agentic tool: ${toolName}`);
+    }
+}
+// ─── 透视窗（perspective）──────────────────────────────────────────────────
+// char 查看用户真实设备操作记录。数据在 Supabase，前端经 realtimeConfig 里的
+// perspective* 字段拿到端点；worker 端经 AmsgToolConfig 透传同名字段。
+
+export type PerspectiveQueryResult =
+    | { ok: true; eventsText: string; digestText: string; total: number; windowDays: number }
+    | { ok: false; reason: 'not_enabled' | 'not_configured' | 'rate_limited' | 'unreachable' | 'empty'; waitSec?: number; message?: string };
+
+/**
+ * [[PERSPECTIVE_QUERY: 天数]] 的工具实现。
+ *
+ * 入参 days 是「char 想看多久」，真正的上限由全局配置 perspectiveDays 决定（两者取小）。
+ * 冷却由 realtimeConfig.perspectiveMinIntervalSec 控制（0 = 不限），超频返回 rate_limited。
+ * 数据量超过阈值且开了总结开关时，本工具只回一句「去看总结」的提示——总结由
+ * perspective_summary 工具（或二段 LLM 块）给出，避免把几千行原始记录塞进上下文。
+ */
+export async function runPerspectiveQuery(
+    args: { days?: number; type?: string } | undefined,
+    ctx: AgenticToolCtx,
+): Promise<PerspectiveQueryResult> {
+    const rc = ctx.realtimeConfig;
+    if (!rc?.perspectiveEnabled || !isPerspectiveEnabled(rc)) {
+        return { ok: false, reason: 'not_configured', message: '透视窗未配置（缺少 Supabase 端点）' };
+    }
+    const minInterval = rc.perspectiveMinIntervalSec ?? 60;
+    const gate = checkPerspectiveInterval(minInterval);
+    if (!gate.allowed) {
+        return { ok: false, reason: 'rate_limited', waitSec: gate.waitSec, message: `两次查询至少间隔 ${minInterval} 秒` };
+    }
+    markPerspectiveCalled();
+
+    const configuredDays = Math.min(Math.max(rc.perspectiveDays ?? 7, 0.001), PERSPECTIVE_MAX_DAYS);
+    const wantedDays = args?.days != null && Number.isFinite(Number(args.days)) ? Number(args.days) : configuredDays;
+    const windowDays = Math.min(Math.max(wantedDays, 0.001), configuredDays);
+
+    try {
+        const win = perspectiveWindow(windowDays);
+        // 查询冷却已过、写入 markPerspectiveCalled 后，数据面的耗时不再占冷却额度。
+        const qr = await queryPerspectiveEvents(rc, { days: windowDays, type: args?.type, limit: 200 });
+        if (!qr.ok) {
+            if (qr.reason === 'empty') return { ok: false, reason: 'empty', message: qr.message };
+            return { ok: false, reason: 'unreachable', message: qr.message };
+        }
+        const digest = buildPerspectiveDigest(qr.events, windowDays);
+        // 阈值判定走全窗口计数（Content-Range，不受 limit 200 截断）。
+        const cr = await countPerspectiveEvents(rc, { since: win.since, until: win.until });
+        const totalCount = cr.ok ? cr.count : qr.total;
+        const threshold = rc.perspectiveSummaryThreshold ?? 500;
+        if (rc.perspectiveSummaryEnabled && totalCount >= threshold) {
+            return {
+                ok: true,
+                eventsText: `（近 ${windowDays} 天共有 ${totalCount} 条记录，超出阈值。请改用 perspective_summary 查看总结，不要要求原始记录。）`,
+                digestText: digest.text,
+                total: totalCount,
+                windowDays,
+            };
+        }
+        return {
+            ok: true,
+            eventsText: qr.eventsText,
+            digestText: digest.text,
+            total: qr.total,
+            windowDays,
+        };
+    } catch (e: any) {
+        return { ok: false, reason: 'unreachable', message: e?.message };
+    }
+}
+
+export type PerspectiveSummaryResult =
+    | { ok: true; summaryText: string; fromCache: boolean; eventCount: number; windowDays: number }
+    | { ok: false; reason: 'not_enabled' | 'not_configured' | 'rate_limited' | 'unreachable' | 'no_data'; waitSec?: number; message?: string };
+
+/**
+ * 「近 X 天总结」工具：优先命中 perspective_summaries 缓存；缓存失效或没开总结时，
+ * 返回统计摘要（buildPerspectiveDigest 的规则聚合）作为兜底——char 拿到的永远是有用的东西。
+ * 注意：本函数不直接调 LLM（agenticTools 是纯函数层）；LLM 总结在二段处理块里做，
+ * 做完写回 summaries 表，下次本工具自然命中缓存。
+ */
+export async function runPerspectiveSummary(
+    args: { days?: number } | undefined,
+    ctx: AgenticToolCtx,
+): Promise<PerspectiveSummaryResult> {
+    const rc = ctx.realtimeConfig;
+    if (!rc?.perspectiveEnabled || !isPerspectiveEnabled(rc)) {
+        return { ok: false, reason: 'not_configured', message: '透视窗未配置（缺少 Supabase 端点）' };
+    }
+    const minInterval = rc.perspectiveMinIntervalSec ?? 60;
+    const gate = checkPerspectiveInterval(minInterval);
+    if (!gate.allowed) {
+        return { ok: false, reason: 'rate_limited', waitSec: gate.waitSec, message: `两次查询至少间隔 ${minInterval} 秒` };
+    }
+    const configuredDays = Math.min(Math.max(rc.perspectiveDays ?? 7, 0.001), PERSPECTIVE_MAX_DAYS);
+    const wantedDays = args?.days != null && Number.isFinite(Number(args.days)) ? Number(args.days) : configuredDays;
+    const windowDays = Math.min(Math.max(wantedDays, 0.001), configuredDays);
+
+    try {
+        const win = perspectiveWindow(windowDays);
+        const cache = await getLatestPerspectiveSummary(rc, { until: win.since, windowDays });
+        if (cache.ok && cache.summary && cache.summary.event_count > 0) {
+            markPerspectiveCalled();
+            return {
+                ok: true,
+                summaryText: cache.summary.summary,
+                fromCache: true,
+                eventCount: cache.summary.event_count,
+                windowDays,
+            };
+        }
+        // 缓存未命中：落库一个空总结占位？——不。落库留给二段 LLM；这里直接给规则聚合兜底。
+        const qr = await queryPerspectiveEvents(rc, { days: windowDays, limit: 500 });
+        if (!qr.ok) {
+            return { ok: false, reason: qr.reason === 'empty' ? 'no_data' : 'unreachable', message: qr.message };
+        }
+        markPerspectiveCalled();
+        const digest = buildPerspectiveDigest(qr.events, windowDays);
+        return { ok: true, summaryText: digest.text, fromCache: false, eventCount: qr.total, windowDays };
+    } catch (e: any) {
+        return { ok: false, reason: 'unreachable', message: e?.message };
     }
 }

@@ -87,6 +87,7 @@ import {
   resolveFireTargetTask,
   buildTaskInstruction,
 } from '../../../utils/amsgFireSchedule';
+import { buildPerspectiveFireTools } from '../../../utils/amsgFirePerspective';
 import {
   AMSG_CHAT_PRESENCE_KEY,
   isFreshChatPresence,
@@ -463,6 +464,7 @@ const buildToolCtx = (
   const char: AgenticToolChar = {
     name: pack.charName,
     xhsEnabled: pack.xhsEnabled,
+    perspectiveEnabled: pack.perspectiveEnabled,
     activeMemoryMonths: pack.activeMemoryMonths,
     memories: pack.memories,
   };
@@ -1915,6 +1917,14 @@ export const amsgHooks = {
 
     const fireTools = [
       ...(mcpResolve && mcpNative ? buildMcpFireTools(mcpResolve) : []),
+      // 透视窗：角色开了 + 凭据上了云才注入（缺一不可，否则角色会「看了一眼」并不存在的记录）。
+      // 开关以 tool_config 的 perspectiveEnabled 为准（云端 buildToolConfig 只在端点齐全时写 true），
+      // pack 上的布尔量仅用于 buildToolCtx 的 char 透传。
+      ...(mcpNative && toolConfig?.perspectiveEnabled === true
+        && typeof toolConfig?.perspectiveSupabaseUrl === 'string' && toolConfig.perspectiveSupabaseUrl
+        && typeof toolConfig?.perspectiveSupabaseAnonKey === 'string' && toolConfig.perspectiveSupabaseAnonKey
+        ? buildPerspectiveFireTools()
+        : []),
       ...(canSelfSchedule && mcpNative
         ? [buildFireScheduleTool({ nowMs: ctx.now.getTime(), tz })]
         : []),

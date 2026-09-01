@@ -114,7 +114,7 @@ export interface OSTheme {
   contentColor?: string;
   /** 冷启动时是否播放整机开机过场。默认开启（undefined 视为 true）。 */
   bootAnimationEnabled?: boolean;
-  /** 进入聊天���切换角色时是否播放角色登场过场。默认开启。 */
+  /** 进入聊天或切换角色时是否播放角色登场过场。默认开启。 */
   chatCharacterSwitchAnimationEnabled?: boolean;
   /** App 代码块加载较慢时是否显示加载柔光动画。默认开启；超时恢复页不受影响。 */
   appLoadingAnimationEnabled?: boolean;
@@ -345,7 +345,7 @@ export interface InstantPushConfig {
   // 共享同一份，避免两边互相 unsubscribe 抢同一个 pushManager 订阅。
   clientToken?: string;     // 对应 Worker 的 AMSG_CLIENT_TOKEN
   // 发送文本后是否自动触发 AI 回复 (worker 端跑 + push 回写). 仅控制"自动触发"这件事,
-  // 不改变 instant push 本身的开��含义. 关闭时 instant 模式也保留手动 ⚡, 跟本地模式一致.
+  // 不改变 instant push 本身的开关含义. 关闭时 instant 模式也保留手动 ⚡, 跟本地模式一致.
   // 缺省 (undefined) 视为关闭 — 避免"启用 instant = 自动回复"的反直觉强绑定.
   autoTriggerOnSend?: boolean;
   // 大 payload 的传输方式默认走 multipart。只有连接测试确认 Worker 绑定了可用 D1 后,
@@ -632,7 +632,27 @@ export interface RealtimeConfig {
 
   // 缓存配置
   cacheMinutes: number;
+
+  // 透视窗配置（char 查看用户真实设备操作记录；数据存 Supabase）
+  perspectiveEnabled: boolean;
+  perspectiveSupabaseUrl: string;      // https://xxx.supabase.co（无尾斜杠）
+  perspectiveSupabaseAnonKey: string;  // anon key（公开角色，受 RLS 保护）
+  perspectiveDays: number;             // char 最多可查近 N 天（1-30）
+  perspectiveMinIntervalSec: number;   // 两次查询最小间隔秒数（0 = 不限）
+  perspectiveSummaryEnabled: boolean;  // 副 API 总结开关（开 = 数据量大时给总结而非原始记录）
+  perspectiveSummaryThreshold: number; // 触发总结的条数阈值
 }
+
+// 透视窗默认值（realtimeConfig 是旧数据合并口径，这里统一出口）
+export const PERSPECTIVE_DEFAULTS = {
+  perspectiveEnabled: false,
+  perspectiveSupabaseUrl: '',
+  perspectiveSupabaseAnonKey: '',
+  perspectiveDays: 7,
+  perspectiveMinIntervalSec: 60,
+  perspectiveSummaryEnabled: false,
+  perspectiveSummaryThreshold: 500,
+} as const;
 
 // 热点单条（与 realtimeContext 的 NewsItem 结构一致，单独放在 types 里避免循环依赖）
 export interface HotNewsItem {
@@ -1395,7 +1415,7 @@ export interface VRCardMeta {
     signalIsNew?: boolean;
     /** 截至本次贡献后这首诗的全文（逐句），供卡片展示 */
     poemLinesSoFar?: string[];
-    /** 所在册��的标题（如「低电量合唱」），UI 展示 */
+    /** 所在册子的标题（如「低电量合唱」），UI 展示 */
     bookletTitle?: string;
     /** 用户参与时留给角色的耳语（不进诗，只随卡片进聊天/记忆） */
     signalWhisper?: string;
@@ -2107,7 +2127,7 @@ export interface DateObservation {
     state?: string;
     /** 细节：正在发生的动作 / 微小细节 */
     detail?: string;
-    /** 用户追加的自定义���度的值，按 DateObserveCustomField.id 存 */
+    /** 用户追加的自定义维度的值，按 DateObserveCustomField.id 存 */
     extra?: Record<string, string>;
 }
 
@@ -2905,6 +2925,9 @@ export interface CharacterProfile {
 
   // 小红书 per-character toggle
   xhsEnabled?: boolean;
+
+  // 透视窗 per-character toggle：char 可查看用户真实设备操作记录（需全局配置 Supabase 端点）
+  perspectiveEnabled?: boolean;
 
   socialProfile?: {
       handle: string;

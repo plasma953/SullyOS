@@ -373,6 +373,11 @@ export interface AmsgFirePack {
   /** 用户称呼（userProfile.name || '对方'），awayHint 文案用。 */
   targetName: string;
   /**
+   * 透视窗开关（与 AmsgToolPack.perspectiveEnabled 同步打包）。worker 端 buildToolCtx
+   * 无条件读它；真正的凭据在 tool_config 的 perspective* 字段（云端 buildToolConfig 写入）。
+   */
+  perspectiveEnabled?: boolean;
+  /**
    * 这份模板打包的时刻（epoch ms），self_log 的 tasks 段拿它当对齐锚点：日志里记的
    * basePackAt 和这个值不一样，说明客户端之后又传了一份新模板，自排任务已随
    * pendingTasks 回来，tasks 段作废；连发记录（entries）不看它，只认用户有没有开口

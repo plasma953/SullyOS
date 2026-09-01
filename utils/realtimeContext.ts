@@ -4,6 +4,7 @@
  */
 
 import { safeResponseJson } from './safeApi';
+import { PERSPECTIVE_DEFAULTS } from '../types';
 import { DB } from './db';
 import { getProxyWorkerUrl } from './proxyWorker';
 import { nowInTimeZone } from './timezone';
@@ -115,6 +116,7 @@ export const defaultRealtimeConfig: RealtimeConfig = {
         loggedInUserId: undefined,
         userXsecToken: undefined,
     },
+    ...PERSPECTIVE_DEFAULTS,
     cacheMinutes: 30
 };
 

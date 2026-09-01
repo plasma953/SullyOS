@@ -48,7 +48,10 @@ import {
     runXhsBrowse,
     runXhsMyProfile,
     runXhsDetail,
+    runPerspectiveQuery,
+    runPerspectiveSummary,
 } from './agenticTools';
+import { savePerspectiveSummary, perspectiveWindow } from './perspective';
 import { getLocalDateKey } from './localDate';
 import { normalizeAssistantActionFormatting } from './assistantActionFormat';
 import { markAmsgStateDirty } from './amsgStateSync';
@@ -1570,6 +1573,111 @@ export async function applyAssistantPostProcessing(
         aiContent = aiContent.replace(xhsBrowseMatch[0], '').trim();
     }
     aiContent = aiContent.replace(/\[\[XHS_BROWSE(?::.*?)?\]\]/g, '').trim();
+
+    // 5.11 透视窗（[[PERSPECTIVE_QUERY / _SUMMARY]]）
+    // char 查用户设备操作记录。二段 LLM 走主聊天 API（与小红书同一模式），
+    // 数据量大时副 API 总结写回 perspective_summaries（下次走缓存，同批语义）。
+    {
+        const perspQueryMatch = aiContent.match(/\[\[PERSPECTIVE_QUERY(?::\s*([\d.]+))?\]\]/);
+        const perspSummaryMatch = aiContent.match(/\[\[PERSPECTIVE_SUMMARY(?::\s*([\d.]+))?\]\]/);
+        const perspMatch = perspQueryMatch || perspSummaryMatch;
+        if (!skipSecondPassLLM && perspMatch) {
+            const isSummary = !!perspSummaryMatch;
+            const daysArg = perspMatch[1] ? Number(perspMatch[1]) : undefined;
+            console.log(`🔍 [透视窗] char想${isSummary ? '看总结' : '查记录'}: days=${daysArg ?? '默认'}`);
+
+            try {
+                const pr = isSummary
+                    ? await runPerspectiveSummary({ days: daysArg }, agenticCtx)
+                    : await runPerspectiveQuery({ days: daysArg }, agenticCtx);
+
+                if (pr.ok) {
+                    const cleaned = aiContent.replace(/\[\[PERSPECTIVE_(?:QUERY|SUMMARY)(?::.*?)?\]\]/g, '').trim() || '让我看看……';
+                    // 数据量大 + 开了总结 → 趁这次二段把 LLM 总结落库（复用主聊天 API，符合「副 API 借用自带设置」）。
+                    // runPerspectiveQuery 返回的 eventsText 在阈值分支已是引导语，此时原始行不在上下文里，
+                    // 把统计摘要（digestText）交给 LLM 提炼，兼顾可读与不撑上下文。
+                    let material: string;
+                    if ('summaryText' in pr) {
+                        material = pr.summaryText;
+                    } else {
+                        // 数据量大时 eventsText 是引导语，改用统计摘要给 LLM 提炼（不撑上下文）。
+                        material = /超出阈值/.test(pr.eventsText) ? (pr.digestText || pr.eventsText) : pr.eventsText;
+                    }
+                    const perspMessages = [
+                        ...fullMessages,
+                        { role: 'assistant', content: cleaned },
+                        { role: 'user', content: `[系统: 你查看了${userProfile.name}最近${pr.windowDays}天的设备操作记录（仅操作轨迹，无聊天内容），结果如下]
+
+${material}
+
+[系统: 现在请你：
+1. 用自然的口吻提起你「注意到」的事（比如“你今天挺忙啊”“昨晚又熬夜了？”），不要逐条复述记录，不要暴露数据格式
+2. 可以表达关心或好奇，也可以聊聊你自己 related 的体验
+3. 如果里面没什么值得说的，就轻轻带过（“瞄了一眼，你最近挺平静的”）
+4. 严禁再输出 [[PERSPECTIVE_QUERY]] 或 [[PERSPECTIVE_SUMMARY]] 标记]` },
+                    ];
+                    data = await safeFetchJson(`${baseUrl}/chat/completions`, {
+                        method: 'POST', headers,
+                        body: JSON.stringify({ model: effectiveApi.model, messages: perspMessages, temperature: 0.8, max_tokens: 8000, stream: false })
+                    }, 2, 0, { ...apiLogMeta, purpose: '透视窗' });
+                    updateTokenUsage(data, historyMsgCount, 'perspective');
+                    aiContent = data.choices?.[0]?.message?.content || '';
+                    aiContent = normalizeAiContent(aiContent);
+
+                    // LLM 总结落库（只在做「总结」这条路、且非缓存命中时）：下次 perspective_summary 直接命中缓存。
+                    if (isSummary && 'fromCache' in pr && !pr.fromCache && pr.summaryText) {
+                        try {
+                            const win = perspectiveWindow(pr.windowDays);
+                            await savePerspectiveSummary(realtimeConfig, {
+                                windowStart: win.since,
+                                windowEnd: win.until,
+                                eventCount: pr.eventCount,
+                                summary: aiContent.slice(0, 2000),
+                                model: effectiveApi.model,
+                            });
+                        } catch { /* 落库失败不影响本轮回复 */ }
+                    }
+
+                    await persistMessage({
+                        charId: char.id,
+                        role: 'system',
+                        type: 'text',
+                        content: `🔍 ${char.name}透过透视窗看了${userProfile.name}近 ${pr.windowDays} 天的设备动态`,
+                    });
+                    addToast(`🔍 ${char.name}用了透视窗`, 'info');
+                } else {
+                    // not_configured / rate_limited / unreachable / no_data：把原因作为系统提示回喂，让 char 得体收场。
+                    const reasonText: Record<string, string> = {
+                        not_configured: '透视窗未配置或该角色未开启',
+                        rate_limited: `查询太频繁，需要等 ${pr.waitSec ?? '若干'} 秒`,
+                        unreachable: '记录服务暂时连不上',
+                        no_data: '窗口内没有记录',
+                        empty: '窗口内没有记录',
+                        not_enabled: '透视窗未开启',
+                    };
+                    const cleaned = aiContent.replace(/\[\[PERSPECTIVE_(?:QUERY|SUMMARY)(?::.*?)?\]\]/g, '').trim();
+                    const perspRetry = [
+                        ...fullMessages,
+                        { role: 'assistant', content: cleaned || '……' },
+                        { role: 'user', content: `[系统: 透视窗这次没能用成：${reasonText[pr.reason] || pr.reason}。${pr.message ?? ''}
+请你自然地把刚才的话圆回来，不要装作已经看到了记录；不要解释系统细节；严禁再输出透视窗标记]` },
+                    ];
+                    data = await safeFetchJson(`${baseUrl}/chat/completions`, {
+                        method: 'POST', headers,
+                        body: JSON.stringify({ model: effectiveApi.model, messages: perspRetry, temperature: 0.8, max_tokens: 2000, stream: false })
+                    }, 2, 0, { ...apiLogMeta, purpose: '透视窗-圆场' });
+                    aiContent = data.choices?.[0]?.message?.content || cleaned;
+                    aiContent = normalizeAiContent(aiContent);
+                }
+            } catch (e) {
+                console.error('🔍 [透视窗] 异常:', e);
+                aiContent = aiContent.replace(/\[\[PERSPECTIVE_(?:QUERY|SUMMARY)(?::.*?)?\]\]/g, '').trim();
+            }
+        } else if (perspMatch) {
+            aiContent = aiContent.replace(/\[\[PERSPECTIVE_(?:QUERY|SUMMARY)(?::.*?)?\]\]/g, '').trim();
+        }
+        aiContent = aiContent.replace(/\[\[PERSPECTIVE_(?:QUERY|SUMMARY)(?::.*?)?\]\]/g, '').trim();
+    }
 
     // Search/browse can replace aiContent with a second-pass LLM response, so scan that result too.
     const secondPassMimickedXhsShares = extractMimickedXhsShares(aiContent);

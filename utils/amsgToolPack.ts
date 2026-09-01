@@ -29,6 +29,8 @@ export interface AmsgToolPack {
   v: 1;
   charName: string;
   xhsEnabled: boolean;
+  /** 透视窗开关（只在开启时携带，老 pack/老测试零影响）。 */
+  perspectiveEnabled?: boolean;
   activeMemoryMonths: string[];
   memories: AgenticToolMemory[];
   /**
@@ -117,6 +119,8 @@ export const buildToolPack = (char: CharacterProfile): AmsgToolPack => ({
   v: 1,
   charName: char.name,
   xhsEnabled: !!char.xhsEnabled,
+  // pack 布尔量：worker 端 buildToolCtx 要无条件读这个字段（AgenticToolChar 类型要求）。
+  perspectiveEnabled: !!char.perspectiveEnabled,
   activeMemoryMonths: char.activeMemoryMonths || [],
   // id 等工具用不到的字段不上云；runRecall 只读 date / mood / summary。
   memories: (char.memories || []).map((mem) => ({
@@ -152,6 +156,18 @@ export const buildToolConfig = (
     ...(rc?.weatherCity ? { weatherCity: rc.weatherCity } : {}),
     ...(charCity?.trim() ? { charCity: charCity.trim() } : {}),
     ...(rc?.weatherApiKey ? { weatherApiKey: rc.weatherApiKey } : {}),
+    // 透视窗端点：Supabase 公网可达，worker 端能直连（与本地 XHS 服务器不同）。
+    ...(rc?.perspectiveEnabled && rc?.perspectiveSupabaseUrl && rc?.perspectiveSupabaseAnonKey
+      ? {
+          perspectiveEnabled: true,
+          perspectiveSupabaseUrl: rc.perspectiveSupabaseUrl,
+          perspectiveSupabaseAnonKey: rc.perspectiveSupabaseAnonKey,
+          ...(rc.perspectiveDays != null ? { perspectiveDays: rc.perspectiveDays } : {}),
+          ...(rc.perspectiveMinIntervalSec != null ? { perspectiveMinIntervalSec: rc.perspectiveMinIntervalSec } : {}),
+          ...(rc.perspectiveSummaryEnabled != null ? { perspectiveSummaryEnabled: rc.perspectiveSummaryEnabled } : {}),
+          ...(rc.perspectiveSummaryThreshold != null ? { perspectiveSummaryThreshold: rc.perspectiveSummaryThreshold } : {}),
+        }
+      : {}),
     newsEnabled: !!rc?.newsEnabled,
     ...(rc?.newsApiKey ? { newsApiKey: rc.newsApiKey } : {}),
     ...(rc?.newsPlatforms?.length ? { newsPlatforms: rc.newsPlatforms } : {}),
