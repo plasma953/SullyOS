@@ -30,7 +30,7 @@ export const buildPerspectiveFireTools = (): PerspectiveFireToolDef[] => [
       name: PERSPECTIVE_QUERY_FIRE_TOOL,
       description: [
         '查看用户（机主）最近在 SullyOS 里的操作记录：打开过哪些 App、发消息、切换角色等行为流水。',
-        '只有行为与时间，没有聊天内容。两次查询之间有冷却间隔，别连着刷。',
+        '只有行为与时间，没有聊天内容。仅在当下对话有真实需要时才调用（机主问起、聊到作息等）；不要定期例行查看，两次调用之间也有冷却间隔。',
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -47,7 +47,7 @@ export const buildPerspectiveFireTools = (): PerspectiveFireToolDef[] => [
       name: PERSPECTIVE_SUMMARY_FIRE_TOOL,
       description: [
         '看用户近几天的行为总结：使用频率、深夜活跃、单日峰值等统计要点。',
-        '数据量大时比 perspective_query 更合适（返回的是提炼过的总结而不是原始流水）。',
+        '数据量大时比 perspective_query 更合适（返回的是提炼过的总结而不是原始流水）。同样只在有真实理由时调用，不要例行查看。',
       ].join('\n'),
       parameters: {
         type: 'object',
