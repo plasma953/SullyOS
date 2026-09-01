@@ -3173,24 +3173,28 @@ const Settings: React.FC = () => {
             }
         >
             <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-                让AI角色感知真实世界：天气、新闻热点、当前时间。角色可以根据天气关心你、聊聊最近的热点话题。
+                让AI角色感知真实世界：天气、新闻热点、当前位置与时间，以及透视窗（角色查看你的真实操作轨迹）。角色会据此关心你、聊近期热点。
             </p>
 
-            <div className="grid grid-cols-5 gap-2 text-center">
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtWeatherEnabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
+            <div className="grid grid-cols-6 gap-2 text-center">
+                <div title="天气" className={`py-3 rounded-xl text-xs font-bold ${rtWeatherEnabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
                     天气
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtNewsEnabled ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                <div title="新闻热点" className={`py-3 rounded-xl text-xs font-bold ${rtNewsEnabled ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
                     新闻
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtNotionEnabled ? 'bg-orange-50 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
+                <div title="Notion 日记" className={`py-3 rounded-xl text-xs font-bold ${rtNotionEnabled ? 'bg-orange-50 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
                     Notion
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtFeishuEnabled ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
+                <div title="飞书多维表格" className={`py-3 rounded-xl text-xs font-bold ${rtFeishuEnabled ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
                     飞书
                 </div>
-                <div className={`py-3 rounded-xl text-xs font-bold ${rtXhsEnabled ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400'}`}>
+                <div title="小红书" className={`py-3 rounded-xl text-xs font-bold ${rtXhsEnabled ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400'}`}>
                     小红书
+                </div>
+                <div title="透视窗：char 查看你的真实操作轨迹（Supabase）" className={`py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 ${rtPerspectiveEnabled ? 'bg-cyan-50 text-cyan-600' : 'bg-cyan-50/40 text-cyan-400/70'}`}>
+                    <Binoculars size={12} weight="fill" />
+                    透视窗
                 </div>
             </div>
         </SettingsSection>
