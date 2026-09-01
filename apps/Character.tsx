@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
-import { AppID, CharacterProfile, CharacterExportData, UserImpression, MemoryFragment } from '../types';
-import { SlidersHorizontal, SpeakerHigh, Books, BookOpen } from '@phosphor-icons/react';
+import { AppID, CharacterProfile, CharacterExportData, UserImpression, MemoryFragment, RelationshipProfile } from '../types';
+import { SlidersHorizontal, SpeakerHigh, Books, BookOpen, Users, Plus, Trash, Sparkle, X } from '@phosphor-icons/react';
 import Modal from '../components/os/Modal';
 import { processImage } from '../utils/file';
 import { DB } from '../utils/db';
@@ -18,6 +18,7 @@ import { characterLaunch } from '../utils/characterLaunch';
 import { safeFetchJson, extractContent } from '../utils/safeApi';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
+import { generateRelationshipProfiles, REL_PERSONA_MAX_CHARS } from '../utils/relationshipGen';
 import { normalizeElevenLabsVoiceId, synthesizeSpeechElevenLabsDetailed } from '../utils/elevenLabsTts';
 import { normalizeUserImpression } from '../utils/impression';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -378,6 +379,58 @@ const Character: React.FC = () => {
           if (!prev) return null;
           return { ...prev, [field]: value };
       });
+  };
+
+  // ── 人物关系（神经连接 · 生成 NPC 群像注入人设）──
+  const [showRelGenModal, setShowRelGenModal] = useState(false);
+  const [relRequirement, setRelRequirement] = useState('');
+  const [relCount, setRelCount] = useState(2);
+  const [isGeneratingRels, setIsGeneratingRels] = useState(false);
+  const [editingRelId, setEditingRelId] = useState<string | null>(null);
+  const [relDraft, setRelDraft] = useState<{ name: string; persona: string; relation: string }>({ name: '', persona: '', relation: '' });
+
+  /** 生成人物关系：要求留空 = 自然发散；单次 LLM 调用批量产出，落库自动保存 */
+  const handleGenerateRelationships = async () => {
+      if (!formData || isGeneratingRels) return;
+      if (!apiConfig.apiKey) { addToast('请先配置 API Key', 'error'); return; }
+      setIsGeneratingRels(true);
+      trackEvent('生成人物关系');
+      try {
+          const { created, mode } = await generateRelationshipProfiles({
+              char: formData,
+              user: userProfile,
+              api: { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model },
+              requirement: relRequirement,
+              count: relCount,
+          });
+          const next = [...(formData.relationshipProfiles || []), ...created];
+          handleChange('relationshipProfiles', next);
+          setShowRelGenModal(false);
+          setRelRequirement('');
+          addToast(`已生成 ${created.length} 位人物（${mode === 'directed' ? '定向' : '发散'}），已注入人设`, 'success');
+      } catch (e: any) {
+          addToast(e?.message || '生成失败，请重试', 'error');
+      } finally {
+          setIsGeneratingRels(false);
+      }
+  };
+
+  const handleDeleteRelationship = (relId: string) => {
+      if (!formData) return;
+      handleChange('relationshipProfiles', (formData.relationshipProfiles || []).filter(r => r.id !== relId));
+  };
+
+  const startEditRelationship = (rel: RelationshipProfile) => {
+      setEditingRelId(rel.id);
+      setRelDraft({ name: rel.name, persona: rel.persona, relation: rel.relation });
+  };
+
+  const commitEditRelationship = () => {
+      if (!formData || !editingRelId) return;
+      handleChange('relationshipProfiles', (formData.relationshipProfiles || []).map(r => r.id === editingRelId
+          ? { ...r, name: relDraft.name.trim() || r.name, persona: relDraft.persona.slice(0, REL_PERSONA_MAX_CHARS), relation: relDraft.relation.trim() }
+          : r));
+      setEditingRelId(null);
   };
 
   // ── 地理位置（省市）：Open-Meteo geocoding 城市联想（免 key，支持中文）──
@@ -1868,6 +1921,91 @@ ${isInitialGeneration ? `
                            </div>
                        </div>
                    )}
+
+                   {/* 人物关系（生成 NPC 群像注入人设）*/}
+                   {detailTab === 'identity' && (
+                       <div className="mt-6 pt-4 border-t border-slate-100">
+                           <div className="flex items-center justify-between mb-3">
+                               <div className="flex items-center gap-2">
+                                   <Users size={16} weight="bold" className="text-slate-500" />
+                                   <h3 className="text-sm font-bold text-slate-700">人物关系</h3>
+                                   <span className="text-[10px] text-slate-400">{(formData?.relationshipProfiles || []).length} 位</span>
+                               </div>
+                               <button
+                                   onClick={() => { setRelRequirement(''); setShowRelGenModal(true); trackEvent('打开人物关系生成弹窗'); }}
+                                   className="flex items-center gap-1 px-3 py-1.5 bg-violet-500 text-white rounded-full text-[11px] font-bold shadow-sm active:scale-95 transition-transform"
+                               >
+                                   <Plus size={12} weight="bold" /> 生成
+                               </button>
+                           </div>
+                           <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
+                               为 ta 生成生命中确定认识的人，生成后自动注入人设。可直接点「生成」让 AI 自然发散，也可以在弹窗里写下定向要求（如「加两个大学室友」）。
+                           </p>
+                           {(formData?.relationshipProfiles || []).length === 0 ? (
+                               <div className="py-6 text-center text-xs text-slate-300 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200">
+                                   还没有人物关系
+                               </div>
+                           ) : (
+                               <div className="space-y-2">
+                                   {(formData?.relationshipProfiles || []).map(rel => (
+                                       <div key={rel.id} className="bg-white/80 rounded-2xl p-3 border border-slate-100">
+                                           {editingRelId === rel.id ? (
+                                               <div className="space-y-2">
+                                                   <input
+                                                       value={relDraft.name}
+                                                       onChange={e => setRelDraft(d => ({ ...d, name: e.target.value }))}
+                                                       placeholder="名字"
+                                                       className="w-full bg-slate-100 rounded-xl px-3 py-1.5 text-[13px] font-bold text-slate-700 outline-none focus:ring-2 ring-violet-300"
+                                                   />
+                                                   <input
+                                                       value={relDraft.relation}
+                                                       onChange={e => setRelDraft(d => ({ ...d, relation: e.target.value }))}
+                                                       placeholder="关系（如：大学室友，共患难过）"
+                                                       className="w-full bg-slate-100 rounded-xl px-3 py-1.5 text-xs text-slate-600 outline-none focus:ring-2 ring-violet-300"
+                                                   />
+                                                   <textarea
+                                                       value={relDraft.persona}
+                                                       onChange={e => setRelDraft(d => ({ ...d, persona: e.target.value }))}
+                                                       rows={4}
+                                                       maxLength={REL_PERSONA_MAX_CHARS}
+                                                       placeholder="对方人设词（200 字内）"
+                                                       className="w-full bg-slate-100 rounded-xl px-3 py-2 text-xs leading-relaxed text-slate-600 outline-none focus:ring-2 ring-violet-300 resize-none"
+                                                   />
+                                                   <div className="flex justify-end gap-2">
+                                                       <button onClick={() => setEditingRelId(null)} className="px-3 py-1.5 rounded-xl bg-slate-200/80 text-slate-600 text-xs font-bold active:scale-95 transition-transform"><X size={13} weight="bold" className="inline -mt-0.5" /> 取消</button>
+                                                       <button onClick={commitEditRelationship} className="px-3 py-1.5 rounded-xl bg-violet-500 text-white text-xs font-bold active:scale-95 transition-transform">保存</button>
+                                                   </div>
+                                               </div>
+                                           ) : (
+                                               <div>
+                                                   <div className="flex items-start justify-between gap-2">
+                                                       <div className="min-w-0">
+                                                           <p className="text-[13px] font-bold text-slate-700 truncate">
+                                                               {rel.name}
+                                                               <span className="ml-1.5 text-[10px] font-medium text-violet-400">
+                                                                   {rel.generatedFrom === 'directed' ? '定向' : '发散'}
+                                                               </span>
+                                                           </p>
+                                                           <p className="text-[11px] text-slate-500 mt-0.5">{rel.relation}</p>
+                                                       </div>
+                                                       <div className="flex gap-1 shrink-0">
+                                                           <button onClick={() => startEditRelationship(rel)} className="p-1.5 rounded-full hover:bg-slate-100 active:scale-90 transition-transform" title="编辑">
+                                                               <Sparkle size={13} className="text-slate-400" />
+                                                           </button>
+                                                           <button onClick={() => handleDeleteRelationship(rel.id)} className="p-1.5 rounded-full hover:bg-red-50 active:scale-90 transition-transform" title="删除">
+                                                               <Trash size={13} className="text-red-400" />
+                                                           </button>
+                                                       </div>
+                                                   </div>
+                                                   <p className="text-[11px] leading-relaxed text-slate-500 mt-1.5 whitespace-pre-wrap">{rel.persona}</p>
+                                               </div>
+                                           )}
+                                       </div>
+                                   ))}
+                               </div>
+                           )}
+                       </div>
+                   )}
                    
                    {detailTab === 'memory' && (
                        <div className="space-y-4 animate-fade-in">
@@ -1949,6 +2087,33 @@ ${isInitialGeneration ? `
                )}
                <div className={`text-right text-[10px] ${importLengthInfo.overLimit ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
                    {importLengthInfo.count.toLocaleString()} / {EXTERNAL_MEMORY_MAX_CHARS.toLocaleString()} 字（本地统计）
+               </div>
+           </div>
+       </Modal>
+
+       {/* 人物关系生成弹窗 */}
+       <Modal isOpen={showRelGenModal} title="生成人物关系" onClose={() => { if (!isGeneratingRels) setShowRelGenModal(false); }} footer={<><button onClick={() => setShowRelGenModal(false)} disabled={isGeneratingRels} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button><button onClick={handleGenerateRelationships} disabled={isGeneratingRels} className="flex-1 py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg shadow-violet-500/30 flex items-center justify-center gap-2">{isGeneratingRels && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}{isGeneratingRels ? '生成中...' : '生成'}</button></>}>
+           <div className="space-y-3">
+               <div className="text-xs text-slate-400 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                   生成的人物会自动注入 {formData?.name || '角色'} 的人设（稳定背景，ta 会自然记得这些人）。人设词留空即可让 AI 自由发散；写下要求则按你的要求定向生成。
+               </div>
+               <textarea
+                   value={relRequirement}
+                   onChange={e => setRelRequirement(e.target.value)}
+                   placeholder="定向要求（可选）。如：加两个大学时期的朋友，一个洒脱一个内敛…"
+                   className="w-full h-20 bg-slate-100 border-none rounded-2xl px-4 py-3 text-sm text-slate-700 resize-none focus:ring-2 focus:ring-violet-300 transition-all"
+               />
+               <div className="flex items-center justify-between px-1">
+                   <span className="text-xs font-semibold text-slate-500">生成人数</span>
+                   <div className="flex items-center gap-1.5">
+                       {[1, 2, 3, 4, 5, 6].map(n => (
+                           <button
+                               key={n}
+                               onClick={() => setRelCount(n)}
+                               className={`w-7 h-7 rounded-full text-xs font-bold transition-all ${relCount === n ? 'bg-violet-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500 active:scale-90'}`}
+                           >{n}</button>
+                       ))}
+                   </div>
                </div>
            </div>
        </Modal>

@@ -1,4 +1,3 @@
-
 import { CharacterProfile, UserProfile, DailySchedule } from '../types';
 import { normalizeUserImpression } from './impression';
 import { isScheduleFeatureOn } from './scheduleFeature';
@@ -182,6 +181,16 @@ export const ContextBuilder = {
         context += formatWorldbookSection(worldbookSections.afterCharacter, '扩展设定集 (Worldbooks)');
         context += formatWorldbookSection(worldbookSections.beforeExamples, '世界书 · 示例消息前');
         context += formatWorldbookSection(worldbookSections.afterExamples, '世界书 · 示例消息后');
+
+        // 2b. 人物关系档案 (Relationships) —— 稳定人设背景，不进 deferVolatile（每轮不变，前缀缓存友好）。
+        // 神经连接「人物关系」生成产物：char 生命中确定认识的人 + 对方人设 + 彼此关系。
+        // 放在角色设定区末尾、互动对象之前——是「ta 自己的社交史」，与用户无关。
+        if (char.relationshipProfiles && char.relationshipProfiles.length > 0) {
+            context += `### 人际关系与羁绊 (Relationships)\n以下是你生命中确定认识的人，这段经历真实发生在你的过去，请自然记得并据此回应：\n\n`;
+            for (const rel of char.relationshipProfiles) {
+                context += `◆ ${rel.name}（${rel.relation}）\n${rel.persona}\n\n`;
+            }
+        }
 
         // 3. 用户画像 (User Profile)
         // 群聊场景下：用户画像已在共享场景块顶部，这里跳过避免重复

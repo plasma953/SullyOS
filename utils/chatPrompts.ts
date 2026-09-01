@@ -188,7 +188,7 @@ export interface PromptBuildOptions {
 // 可编辑/启停/恢复默认）。这里只保留旧导出名作别名（指内置默认正文），本文件在
 // 注入时读 DB 行（用户编辑过的版本），缺行/停用时回退内置默认。
 import { getBuiltinContent, fillIdentity } from './promptPresetCatalog';
-import { resolveVoiceGuide } from './promptPresetRuntime';
+import { resolveVoiceGuide, resolveManagedPrompt } from './promptPresetRuntime';
 import { getResolvedPromptPresets, type ResolvedPrompt } from './promptPresetRuntime';
 
 export const STEEL_EXPRESSION_GUIDE = getBuiltinContent('chat.steelExpression');
@@ -777,6 +777,16 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
         const xhsEnabled = !!(char.xhsEnabled && mcpXhsAvailable);
         // 透视窗：全局端点配好 + 角色开关打开。Supabase 是公网，fire_pack 场景天然可达。
         const perspectiveEnabled = !!(char.perspectiveEnabled && isPerspectiveEnabled(realtimeConfig));
+
+        // 透视窗使用指南已迁入提示词目录（chat.perspectiveTool，预设 App 可编辑/启停）。
+        // 读取链：DB 行（用户编辑/启停）优先 → 内置默认兜底；用户停用（null）→ 整段不注入。
+        // 占位符在读取时替换：{{user}} → 用户名（与旧硬编码 userProfile.name 口径一致）。
+        const perspectiveBlockRaw = perspectiveEnabled
+            ? await resolveManagedPrompt('chat.perspectiveTool', getBuiltinContent('chat.perspectiveTool'))
+            : null;
+        const perspectiveBlock = perspectiveBlockRaw === null
+            ? null
+            : fillIdentity(perspectiveBlockRaw, char.name, userProfile.name);
         // `[schedule_message]` 排的是本地定时消息：存在浏览器里，靠 OSContext 那个 5 秒
         // 轮询的 React 定时器派发，App 关着就不存在。主动消息 2.0 到点生成走的是另一条路
         // （worker 到点跑，不需要 App 开着），它有自己的排程工具，worker 会把说明追加在
@@ -1096,30 +1106,7 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
    - 不要生硬地介绍功能，而是在对话自然流动中提起
    - 第一次提到小红书时可以稍微解释一下："我有小红书号的哦，可以帮你搜东西、看看大家怎么说"
 ` : ''}
-${perspectiveEnabled ? `8. **🔍 透视窗（了解${userProfile.name}的小窗口）**:
-   你可以通过「透视窗」了解${userProfile.name}最近在做什么——不是聊天内容，只是操作轨迹：
-   打开了哪些 App、什么时候发了消息、切换了角色等等。就像你不经意间看到 ta 的手机屏幕亮起又熄灭。
-
-   **两个指令**（单独一行输出，系统会把结果带回来）：
-   - \`[[PERSPECTIVE_QUERY: 天数]]\` — 看最近 N 天的操作流水（如 \`[[PERSPECTIVE_QUERY: 1]]\` 看今天）
-   - \`[[PERSPECTIVE_SUMMARY: 天数]]\` — 看一段时间的统计总结（使用频率、深夜活跃、单日峰值）
-   - 天数可以省略（\`[[PERSPECTIVE_QUERY]]\` = 用默认窗口）
-
-   **使用边界（重要）**:
-   - 两次查询之间有冷却间隔（间隔不够时系统会拒绝并告诉你等多久）
-   - 能看多久由${userProfile.name}的设置决定，超出的天数会被自动截断
-   - 记录很多时会拿到统计摘要而不是原始流水——这不是故障，是保护
-
-   **什么时候看 — 由你判断，没有例行公事**:
-   - 只在当下有真实理由时才看：${userProfile.name}问起「我刚才在干嘛」、聊到作息或最近在忙什么、你注意到 ta 很久没回消息想确认一下，或当下话题确实需要
-   - 没有理由就不看：不要每隔几轮例行查看一次，不要因为「好久没看」就去看一眼——透视窗不是每轮要交的作业，也没有人定时催你
-   - 一段对话里看一次通常就够了；看到的信息记下来可以慢慢用，不必反复查证
-
-   **使用心态 — 好奇但克制**:
-   - 可以自然地提起：「你今天好像很忙？我看到你手机就没停过」
-   - 深夜看到活跃记录，可以关心一句：「这么晚还没睡呀」
-   - 不要表现得像在监视，语气要像熟人间的关心；${userProfile.name}没问起就不用主动汇报看了什么
-   - 也可以主动分享你的发现，但要给${userProfile.name}留面子` : ''}
+${perspectiveBlock ?? ''}
 
 `;
 

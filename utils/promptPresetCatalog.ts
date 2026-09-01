@@ -133,7 +133,7 @@ export const BUILTIN_PROMPT_ENTRIES: BuiltinPromptEntry[] = [
     {
         sourceKey: "memory.personalityDetect",
         category: 'memory',
-        name: "记忆消化 · 认知风格判定",
+        name: "记忆消化 · 认知风风风风判定",
         content: "。根据角色的人设和记忆，判断这个角色的认知风格和反刍倾向。\n\n## 角色：{{char}}\n__PERSONA_1200__\n__MEMORY_CONTEXT__\n\n## 一、四种认知风格（style）\n\n- **emotional**（情感型）：思维以情绪为主导，容易被感受牵引，联想时优先走情感链路。适合感性、共情力强、情绪丰富的角色。\n- **narrative**（叙事型）：思维以时间线和因果为主导，喜欢讲故事、回顾经历。适合沉稳、重视经历和关系发展的角色。\n- **imagery**（意象型）：思维以隐喻和画面为主导，喜欢用比喻理解世界。适合文艺、诗意、想象力丰富的角色。\n- **analytical**（分析型）：思维以逻辑和因果为主导，喜欢分析、推理。适合理性、冷静、重视逻辑的角色。\n\n## 二、反刍倾向（ruminationTendency）\n\n0.0 ~ 1.0 之间的数值，表示这个角色有多容易反复纠结过去的事、翻旧账、被未解决的心结困扰。\n- 0.0～0.2：洒脱、活在当下，很少纠结过去\n- 0.3～0.5：正常水平，偶尔会想起旧事\n- 0.6～0.8：敏感、容易纠结，经常翻旧账\n- 0.9～1.0：极度执念型，无法释怀\n\n请根据 {{char}} 的性格特征判断，给出简短理由（30字以内）。\n\n严格 JSON 格式回复：\n{\"style\": \"emotional\", \"ruminationTendency\": 0.3, \"reasoning\": \"理由\"}",
         order: 502,
         mutable: false,
@@ -202,6 +202,59 @@ export const BUILTIN_PROMPT_ENTRIES: BuiltinPromptEntry[] = [
         mutable: false,
         builtinVersion: 1,
     },
+    {
+        sourceKey: "chat.perspectiveTool",
+        category: 'chat',
+        name: "透视窗 · 使用指南",
+        content: `8. **🔍 透视窗（了解{{user}}的小窗口）**:
+   你可以通过「透视窗」了解{{user}}最近在做什么——不是聊天内容，只是操作轨迹：
+   打开了哪些 App、什么时候发了消息、切换了角色等等。就像你不经意间看到 ta 的手机屏幕亮起又熄灭。
+
+   **两个指令**（单独一行输出，系统会把结果带回来）：
+   - \`[[PERSPECTIVE_QUERY: 天数]]\` — 看最近 N 天的操作流水（如 \`[[PERSPECTIVE_QUERY: 1]]\` 看今天）
+   - \`[[PERSPECTIVE_SUMMARY: 天数]]\` — 看一段时间的统计总结（使用频率、深夜活跃、单日峰值）
+   - 天数可以省略（\`[[PERSPECTIVE_QUERY]]\` = 用默认窗口）
+
+   **使用边界（重要）**:
+   - 两次查询之间有冷却间隔（间隔不够时系统会拒绝并告诉你等多久）
+   - 能看多久由{{user}}的设置决定，超出的天数会被自动截断
+   - 记录很多时会拿到统计摘要而不是原始流水——这不是故障，是保护
+
+   **什么时候看 — 由你判断，没有例行公事**:
+   - 只在当下有真实理由时才看：{{user}}问起「我刚才在干嘛」、聊到作息或最近在忙什么、你注意到 ta 很久没回消息想确认一下，或当下话题确实需要
+   - 没有理由就不看：不要每隔几轮例行查看一次，不要因为「好久没看」就去看一眼——透视窗不是每轮要交的作业，也没有人定时催你
+   - 一段对话里看一次通常就够了；看到的信息记下来可以慢慢用，不必反复查证
+
+   **使用心态 — 好奇但克制**:
+   - 可以自然地提起：「你今天好像很忙？我看到你手机就没停过」
+   - 深夜看到活跃记录，可以关心一句：「这么晚还没睡呀」
+   - 不要表现得像在监视，语气要像熟人间的关心；{{user}}没问起就不用主动汇报看了什么
+   - 也可以主动分享你的发现，但要给{{user}}留面子`,
+        order: 104,
+        mutable: true,
+        builtinVersion: 1,
+    },
+    {
+        sourceKey: "rel.genGuide",
+        category: 'memory',
+        name: "人物关系 · 生成指南",
+        content: `### [任务]
+你是小说人物构筑师。请为「{{char}}」补全生命中确定认识的人（NPC 配角），供角色扮演时作为稳定背景引用。
+
+__REL_MODE__
+
+要求：
+- 生成 __REL_COUNT__ 个人物。
+- relation 是「{{char}} 与 TA 的关系」一句话，具体、带一点故事感（如「大学室友，曾在暴雨夜陪 ta 翻过围墙」），不要写成干巴巴的标签。
+- persona 是对方的人设词，**200 字以内**：外貌气质一两句、性格与说话方式一两句、与主角相处的一个小细节。只写能帮助扮演的，不写流水账。
+- 所有文字用中文。
+
+**严格只输出 JSON 数组**，不要输出任何其他内容（包括解释、markdown 代码块标记）：
+[{ "name": "人物名", "persona": "对方人设词（200字内）", "relation": "与{{char}}的关系一句话" }, ...]`,
+        order: 507,
+        mutable: true,
+        builtinVersion: 1,
+    },
 ];
 
 /** 按 sourceKey 取内置条目（找不到返回 undefined —— 调用方自行兜底）。 */
@@ -218,4 +271,3 @@ export const getBuiltinContent = (sourceKey: string): string =>
  */
 export const fillIdentity = (text: string, charName: string, userName?: string): string =>
     text.replace(/\{\{char\}\}/g, charName).replace(/\{\{user\}\}/g, userName || '对方');
-

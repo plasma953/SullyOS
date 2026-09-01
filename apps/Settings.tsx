@@ -43,6 +43,7 @@ import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
 import StatusBadge from '../components/StatusBadge';
 import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers, probePerspective } from '../utils/statusPanel';
+import { PERCEPTION_CAPABILITIES, perceptionRenderState } from '../utils/perceptionRegistry';
 import type { APIConfig, BridgeConfig, TtsProvider } from '../types';
 import { getEffectiveBridges, normalizeBridges, makeBridgeId } from '../utils/bridgeRegistry';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
@@ -3173,29 +3174,24 @@ const Settings: React.FC = () => {
             }
         >
             <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-                让AI角色感知真实世界：天气、新闻热点、当前位置与时间，以及透视窗（角色查看你的真实操作轨迹）。角色会据此关心你、聊近期热点。
+                让AI角色感知真实世界：{PERCEPTION_CAPABILITIES.map((c) => c.label).join('、')}。角色会据此关心你、聊近期热点；新增能力在 perceptionRegistry 登记后自动显示，已启用但未配置完成的会灰态提示。
             </p>
 
             <div className="grid grid-cols-6 gap-2 text-center">
-                <div title="天气" className={`py-3 rounded-xl text-xs font-bold ${rtWeatherEnabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
-                    天气
-                </div>
-                <div title="新闻热点" className={`py-3 rounded-xl text-xs font-bold ${rtNewsEnabled ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
-                    新闻
-                </div>
-                <div title="Notion 日记" className={`py-3 rounded-xl text-xs font-bold ${rtNotionEnabled ? 'bg-orange-50 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
-                    Notion
-                </div>
-                <div title="飞书多维表格" className={`py-3 rounded-xl text-xs font-bold ${rtFeishuEnabled ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
-                    飞书
-                </div>
-                <div title="小红书" className={`py-3 rounded-xl text-xs font-bold ${rtXhsEnabled ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-400'}`}>
-                    小红书
-                </div>
-                <div title="透视窗：char 查看你的真实操作轨迹（Supabase）" className={`py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 ${rtPerspectiveEnabled ? 'bg-cyan-50 text-cyan-600' : 'bg-cyan-50/40 text-cyan-400/70'}`}>
-                    <Binoculars size={12} weight="fill" />
-                    透视窗
-                </div>
+                {PERCEPTION_CAPABILITIES.map((cap) => {
+                    const st = perceptionRenderState(cap, realtimeConfig);
+                    return (
+                        <div
+                            key={cap.id}
+                            title={`${cap.label}：${cap.description}${st === 'pending' ? '（已启用但未配置完成）' : ''}`}
+                            className={`py-3 rounded-xl text-xs font-bold flex flex-col items-center justify-center gap-0.5 ${st === 'on' ? cap.tint : cap.tintIdle}`}
+                        >
+                            {cap.iconKey === 'binoculars' && <Binoculars size={12} weight='fill' />}
+                            <span>{cap.label}</span>
+                            {st === 'pending' && <span className="text-[9px] font-medium opacity-80">未配置</span>}
+                        </div>
+                    );
+                })}
             </div>
         </SettingsSection>
 

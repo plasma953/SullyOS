@@ -993,6 +993,26 @@ export interface ConvTopic {
     span?: number;
 }
 
+/**
+ * 人物关系档案（神经连接 · 人物关系生成）。
+ *
+ * 为单个 char 生成的「ta 生命中确定认识的人」：对方人设 + 彼此关系。
+ * 与查手机 phoneState.contacts 完全解耦——那边是「机主通讯录视角」，这边是
+ * 「char 自身人设的一部分」，注入 char 的 system prompt 作为稳定背景。
+ * 不设数值字段：关系强度由 relation 与 persona 的文字自然承载。
+ */
+export interface RelationshipProfile {
+    id: string;
+    name: string;
+    /** 对方人设词，几百字以内（生成时硬限 200 字） */
+    persona: string;
+    /** 彼此关系一句话，如「大学室友，共患难过」 */
+    relation: string;
+    /** 来源：directed=用户给了定向要求；divergent=自然发散 */
+    generatedFrom: 'directed' | 'divergent';
+    createdAt: number;
+}
+
 export interface PhoneContact {
     id: string;
     name: string;
@@ -2862,6 +2882,12 @@ export interface CharacterProfile {
   description: string;
   systemPrompt: string;
   worldview?: string;
+  /**
+   * 人物关系档案（神经连接 · 人物关系生成）：ta 生命中确定认识的人，
+   * 由用户触发生成（定向要求 / 自然发散），注入 system prompt 作为稳定人设背景。
+   * 与 phoneState.contacts（机主通讯录）解耦。
+   */
+  relationshipProfiles?: RelationshipProfile[];
   /** 角色分组：指向 CharacterGroup.id；空或指向已删分组 = 未分组。仅本地组织用，不随角色卡导出 */
   groupId?: string;
   memories: MemoryFragment[];
@@ -2956,6 +2982,9 @@ export interface CharacterProfile {
       simLogs?: PhoneSimLog[]; // 「生活记录」：人格模拟演出留存
       chatReadAt?: number;     // 上次打开 Messages 的时间戳，用于计算未读
       sendToChat?: boolean;    // 查手机生成的内容是否同步到私聊（默认 true）
+      autoRefresh?: boolean;            // 定时自动刷新：到间隔自动重生成聊天记录，无需手动点（默认关）
+      autoRefreshIntervalMin?: number;  // 自动刷新间隔（分钟，默认 30）
+      lastAutoRefreshAt?: number;       // 上次自动刷新时间戳（打开 App 时据此判断是否立即补刷）
       contacts?: PhoneContact[]; // 人际关系系统：机主的通讯录
       allowFictionalContacts?: boolean; // 是否允许生成虚构 NPC 联系人；false=只与神经链接里的真实角色来往（默认 true）
       aiAgent?: {                 // 智能体 App：偷看到的「AI 也在玩 AI」记录

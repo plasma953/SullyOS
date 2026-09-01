@@ -39,6 +39,7 @@ import { isAnalyticsRequestUrl, trackEvent, trackDataScaleOnce, trackCurrentAppe
 import { collectAppearance, collectCharSettings, collectDataScale, collectFeatureFlagsAsync } from '../utils/analyticsSnapshot';
 import { normalizeApiConfig, normalizeApiPreset } from '../utils/apiConfigNormalize';
 import { getCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
+import { isPhoneAutoRefreshDue, maybeAutoRefreshPhone, type PhoneAutoApiConfig } from '../utils/phoneAutoRefresh';
 import { PERSPECTIVE_DEFAULTS } from '../types';
 import { setPerspectiveTelemetryRuntime, installPerspectiveLifecycle, emitPerspectiveEvent } from '../utils/perspectiveTelemetry';
 import { markBackupDone } from '../utils/backupReminder';
@@ -3251,6 +3252,51 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       return updated;
     });
   };
+
+  // ── 查手机定时自动刷新（全局调度器，每分钟 tick）──
+  // 开启 phoneState.autoRefresh 的角色，到间隔就自动重生成一批聊天记录，
+  // 用户不必每次点进 App 手动刷新。单写入者防抖（inFlight + staleness）都在
+  // maybeAutoRefreshPhone 内部；这里只负责「每分钟摇一次铃 + 到点触发」。
+  // 失败静默——下一轮 staleness 检查自然会再触发，不弹 toast 打扰用户。
+  const phoneAutoRef = useRef(false);
+  useEffect(() => {
+      if (!isDataLoaded) return;
+      const tick = async () => {
+          if (phoneAutoRef.current) return; // 上一轮还没跑完，跳过本 tick
+          const due = characters.filter(c => isPhoneAutoRefreshDue(c));
+          if (due.length === 0) return;
+          phoneAutoRef.current = true;
+          try {
+              const cfg: PhoneAutoApiConfig = (() => {
+                  const independent = getCheckPhoneApi();
+                  const base = independent?.baseUrl ? independent : apiConfigRef.current;
+                  return { baseUrl: base.baseUrl, apiKey: base.apiKey, model: base.model };
+              })();
+              for (const char of due) {
+                  try {
+                      await maybeAutoRefreshPhone(char.id, {
+                          char,
+                          user: userProfileRef.current,
+                          roster: charactersRef.current.filter(c => c.id !== char.id),
+                          api: cfg,
+                      }, updateCharacter);
+                  } catch (e) {
+                      console.warn(`[PhoneAuto] ${char.name} 自动刷新失败（下轮重试）:`, e);
+                  }
+              }
+          } finally {
+              phoneAutoRef.current = false;
+          }
+      };
+      const timer = setInterval(tick, 60_000);
+      void tick();
+      return () => clearInterval(timer);
+      // 刻意只依赖 isDataLoaded / characters：userProfile / apiConfig 经 ref 读最新值，
+      // 避免每轮重建 interval。updateCharacter 是组件内函数，经闭包捕获即可（其内部
+      // 用 setCharacters 函数式更新，无 stale closure 问题）。
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded, characters]);
+
   const deleteCharacter = async (id: string, options?: { force?: boolean }): Promise<DeleteCharacterResult> => {
     const target = characters.find(c => c.id === id);
     // 主动消息 2.0 的任务活在用户自己的 worker 上，不随本地角色删除消失：留着的话

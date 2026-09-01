@@ -649,6 +649,12 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
             throw new Error('模型返回的章节格式无法解析，请重试');
         }
 
+        // 借鉴 AI-reads-books-page-by-page 的「导入期一次预处理、后续零重复计算」：
+        // 大纲生成后立刻为每章算好 rawContentRange（均匀等分 + 尾章吃余量 + 少量 overlap）
+        // 并持久化。之后备课/总结/测验直接精准切片，不再每次按比例盲切 rawText。
+        // 章节标题是 LLM 拟的，与原文措辞对不上，故不做 indexOf 定位（对扫描件也不可靠）。
+        const chapterCount = Math.max(json.chapters.length, 1);
+        const unit = Math.floor(text.length / chapterCount);
         return {
             id: `course-${Date.now()}`,
             title: title,
@@ -658,7 +664,11 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
                 title: c.title,
                 summary: c.summary,
                 difficulty: c.difficulty || 'normal',
-                isCompleted: false
+                isCompleted: false,
+                rawContentRange: {
+                    start: i * unit,
+                    end: Math.min((i + 1) * unit + 400, text.length),
+                },
             })),
             currentChapterIndex: 0,
             createdAt: Date.now(),
@@ -666,6 +676,24 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
             totalProgress: 0,
             preference: preference // Save preference
         };
+    };
+
+    /**
+     * 取章节源文本（备课 / 总结 / 测验共用，省 LLM 调用的底座）:
+     * 1) EPUB 章节：直接用已解析的 plainText 全文；
+     * 2) PDF 章节：用导入时算好并持久化的 rawContentRange 精准切片（0 token）；
+     * 3) 旧课程无 range：按比例盲切兜底（与旧行为一致），切片判空再退 summary。
+     */
+    const getChapterSourceText = (course: StudyCourse, chapterIdx: number): string => {
+        const chapter = course.chapters[chapterIdx];
+        if (!chapter) return '';
+        if (chapter.plainText && chapter.plainText.trim()) return chapter.plainText;
+        const totalLen = course.rawText.length;
+        const n = Math.max(course.chapters.length, 1);
+        const unit = Math.floor(totalLen / n);
+        const range = chapter.rawContentRange || { start: chapterIdx * unit, end: Math.min((chapterIdx + 1) * unit + 2000, totalLen) };
+        const text = course.rawText.substring(range.start, range.end).trim();
+        return text || chapter.summary || '';
     };
 
     // --- Classroom Logic ---
@@ -730,11 +758,9 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         setClassroomState('teaching');
         setCurrentText("正在准备教案...");
         
-        // Simple chunking strategy
-        const totalLen = course.rawText.length;
-        const chunkSize = Math.floor(totalLen / course.chapters.length);
-        const start = chapterIdx * chunkSize;
-        const chunkText = course.rawText.substring(start, start + chunkSize + 2000); // Overlap
+        // 章节取文：rawContentRange 精准切片（导入时算好持久化，见 generateCurriculum），
+        // 旧课程缺 range 时按比例盲切兜底。
+        const chunkText = getChapterSourceText(course, chapterIdx);
 
         const callApi = async (personaContext: string, isFallback: boolean = false) => {
             const prompt = `${personaContext}
@@ -897,7 +923,7 @@ You are a study assistant. Summarize the following book chapter for a student.
 **Chapter**: "${chapter.title}"
 
 **Source Material**:
-${(chapter.plainText || chapter.summary || '').substring(0, 12000)}
+${getChapterSourceText(activeCourse, idx).substring(0, 12000)}
 
 ### Requirements
 - Use the SAME LANGUAGE as the source material.
@@ -1115,10 +1141,8 @@ Note: Use "我" (I) to refer to yourself.
         setQuizUserAnswers({});
 
         const chapter = activeCourse.chapters[activeCourse.currentChapterIndex];
-        const totalLen = activeCourse.rawText.length;
-        const chunkSize = Math.floor(totalLen / activeCourse.chapters.length);
-        const start = activeCourse.currentChapterIndex * chunkSize;
-        const chunkText = activeCourse.rawText.substring(start, start + chunkSize + 2000);
+        // 章节取文统一走 helper（精准切片，省去盲切造成的题不对文）。
+        const chunkText = getChapterSourceText(activeCourse, activeCourse.currentChapterIndex);
 
         const typeLabels: Record<string, string> = {
             choice: '选择题 (4个选项，单选)',
