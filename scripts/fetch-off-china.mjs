@@ -40,11 +40,11 @@ while (products.length < LIMIT) {
     }
     console.log('page ' + page + ': got ' + ps.length + ', kept ' + kept + ', total ' + products.length);
     page++;
-    await sleep(3000);
+    await sleep(4000);
   } catch (e) {
-    console.log('page ' + page + ' error: ' + e.message + ', retry in 30s');
-    await sleep(30000);
-    if (++fails >= 12) { console.log('too many fails, stop'); break; }
+    console.log('page ' + page + ' error: ' + e.message + ', retry in 45s');
+    await sleep(45000);
+    if (++fails >= 25) { console.log('too many fails, stop'); break; }
   }
 }
 

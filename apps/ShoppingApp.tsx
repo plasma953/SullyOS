@@ -59,6 +59,7 @@ export default function ShoppingApp() {
   const [view, setView] = useState<View>('list');
   const [ds, setDs] = useState<{ shops: ShoppingShop[]; dishes: ShoppingDish[] } | null>(null);
   const [loadErr, setLoadErr] = useState(false);
+  const [query, setQuery] = useState('');
   const [activeCat, setActiveCat] = useState<ShopCategory | 'all'>('all');
   const [activeShop, setActiveShop] = useState<ShoppingShop | null>(null);
   const [carts, setCarts] = useState<Record<string, ShoppingCart>>({});
@@ -147,13 +148,37 @@ export default function ShoppingApp() {
     setEditAddr(false);
   };
 
+  // ── 搜索：店名/品牌 + 跨店商品名（确定性前 60 条，防大列表卡顿）──
+  const q = query.trim().toLowerCase();
+  const dishHits = useMemo(() => {
+    if (!ds || q.length < 1) return [];
+    const out: { dish: ShoppingDish; shop: ShoppingShop }[] = [];
+    for (const d of ds.dishes) {
+      if (d.name.toLowerCase().includes(q) || (d.brand || '').toLowerCase().includes(q)) {
+        const shop = ds.shops.find(s => s.id === d.shopId);
+        if (shop) out.push({ dish: d, shop });
+        if (out.length >= 60) break;
+      }
+    }
+    return out;
+  }, [ds, q]);
+
+  // 商品命中的店铺 id 集合：这些店在店铺列表里置顶
+  const dishHitShopIds = useMemo(() => new Set(dishHits.map(h => h.shop.id)), [dishHits]);
+
   // ── 店铺列表：全量展示，城市标签匹配者优先 ──
   const visibleShops = useMemo(() => {
     if (!ds) return [];
     let list = ds.shops;
     if (activeCat !== 'all') list = list.filter(s => s.cat === activeCat);
-    return sortShopsForAddress(list, target?.cityTag || undefined);
-  }, [ds, activeCat, target]);
+    let sorted = sortShopsForAddress(list, target?.cityTag || undefined);
+    if (q) {
+      const nameHit = sorted.filter(s => s.name.toLowerCase().includes(q) || (s.brand || '').toLowerCase().includes(q));
+      const dishShopHit = sorted.filter(s => dishHitShopIds.has(s.id) && !nameHit.includes(s));
+      return [...nameHit, ...dishShopHit];
+    }
+    return sorted;
+  }, [ds, activeCat, target, q, dishHitShopIds]);
 
   const shopMenu = useMemo(() => {
     if (!ds || !activeShop) return [];
@@ -328,6 +353,21 @@ export default function ShoppingApp() {
 
       {view === 'list' && (
         <>
+          {/* 搜索框 */}
+          <div className="shrink-0 px-3 pt-2 pb-2 bg-white">
+            <div className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-2">
+              <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" /></svg>
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="搜店铺 / 商品，如：蜜雪冰城、柠檬水、布洛芬"
+                className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
+              />
+              {query && (
+                <button onClick={() => setQuery('')} className="w-5 h-5 rounded-full bg-slate-300 text-white flex items-center justify-center text-[11px] shrink-0">×</button>
+              )}
+            </div>
+          </div>
           {/* 品类宫格 */}
           <div className="shrink-0 grid grid-cols-4 gap-y-2 px-2 pt-3 pb-2 bg-white">
             <button onClick={() => setActiveCat('all')} className={`flex flex-col items-center gap-1 ${activeCat === 'all' ? 'opacity-100' : 'opacity-70'}`}>
@@ -343,6 +383,32 @@ export default function ShoppingApp() {
           </div>
           {/* 店铺列表 */}
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+            {q && dishHits.length > 0 && (
+              <div className="bg-white rounded-2xl p-3">
+                <div className="text-[12px] font-bold text-slate-700 mb-2">🛒 找到 {dishHits.length} 件商品（含全城其它店）</div>
+                <div className="space-y-1.5">
+                  {dishHits.map(({ dish, shop }) => (
+                    <div key={dish.id} onClick={() => { setActiveShop(shop); setView('shop'); }}
+                      className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                      {dish.img ? (
+                        <img src={dishImgUrl(dish.img)} alt="" loading="lazy" className="w-9 h-9 rounded-lg object-cover shrink-0"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      ) : (
+                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-sm shrink-0">{EMOJI_FALLBACK[shop.cat] || '🛍️'}</div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-bold truncate">{dish.name}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{shop.name}{dish.qty ? ` · ${dish.qty}` : ''}</div>
+                      </div>
+                      <span className="text-[12px] font-bold text-orange-500 shrink-0">¥{fmtMoney(dish.price)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {q && visibleShops.length === 0 && dishHits.length === 0 && (
+              <div className="text-center text-[12px] text-slate-400 py-10">没找到「{query}」相关的店铺或商品</div>
+            )}
             {visibleShops.map(s => (
               <div key={s.id} onClick={() => { setActiveShop(s); setView('shop'); }}
                 className="flex gap-3 bg-white rounded-2xl p-3 shadow-sm active:scale-[0.99] transition-transform cursor-pointer">
@@ -354,6 +420,9 @@ export default function ShoppingApp() {
                     <span className="text-[14px] font-bold truncate">{s.name}</span>
                     {s.city && target.cityTag && s.city.includes(target.cityTag) && (
                       <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">附近</span>
+                    )}
+                    {q && dishHitShopIds.has(s.id) && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">有你要的货</span>
                     )}
                   </div>
                   <div className="text-[11px] text-amber-500 font-bold mt-0.5">★ {s.rating?.toFixed(1) || '4.5'} <span className="text-slate-400 font-normal">月售{s.monthlySales || 0}</span></div>
