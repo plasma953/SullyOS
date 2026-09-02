@@ -84,6 +84,7 @@ const BankApp: React.FC = () => {
     
     // Forms
     const [txAmount, setTxAmount] = useState('');
+    const [txType, setTxType] = useState<'expense' | 'income'>('expense');
     const [txNote, setTxNote] = useState('');
     const [goalName, setGoalName] = useState('');
     const [goalTarget, setGoalTarget] = useState('');
@@ -318,7 +319,8 @@ const BankApp: React.FC = () => {
         }
 
         const todayTx = txs.filter(t => t.dateStr === today);
-        const spent = sumMoney(todayTx.map(t => t.amount));
+        // 支出合计（签名兼容）：负值流水=支出取 abs；正值流水里 category==='income' 是收入不计，其余按老语义支出计
+        const spent = sumMoney(todayTx.map(t => t.amount < 0 ? -t.amount : (t.category === 'income' ? 0 : t.amount)));
         const appeal = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
 
         const finalState = { ...currentState, todaySpent: spent, shop: { ...currentState.shop, appeal } };
@@ -349,10 +351,11 @@ const BankApp: React.FC = () => {
         const amount = parseFloat(txAmount);
         const today = getLocalDateKey();
         
+        const signedAmount = txType === 'income' ? amount : -amount;
         const newTx: BankTransaction = {
             id: `tx-${Date.now()}`,
-            amount,
-            category: 'general',
+            amount: signedAmount,
+            category: txType === 'income' ? 'income' : 'general',
             note: txNote,
             timestamp: Date.now(),
             dateStr: today
@@ -362,7 +365,7 @@ const BankApp: React.FC = () => {
         trackEvent('记一笔账');
 
         const cur = stateRef.current;
-        const newSpent = roundMoney(cur.todaySpent + amount);
+        const newSpent = txType === 'income' ? cur.todaySpent : roundMoney(cur.todaySpent + amount);
         const newState = { ...cur, todaySpent: newSpent };
         stateRef.current = newState;
         setState(newState);
@@ -391,7 +394,7 @@ const BankApp: React.FC = () => {
         let newSpent = cur.todaySpent;
         const today = getLocalDateKey();
         if (tx.dateStr === today) {
-            newSpent = Math.max(0, roundMoney(cur.todaySpent - tx.amount));
+            newSpent = Math.max(0, roundMoney(cur.todaySpent - Math.abs(tx.amount)));
         }
 
         const newState = { ...cur, todaySpent: newSpent };
@@ -1179,6 +1182,10 @@ ${previousGuestbook}
                 </button>
             }>
                 <div className="space-y-5">
+                    <div className="flex gap-2">
+                        <button onClick={() => setTxType('expense')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${txType === 'expense' ? 'bg-[#FF7043] text-white shadow-md' : 'bg-[#FDF6E3] text-[#A1887F] border border-[#E8DCC8]'}`}>− 支出</button>
+                        <button onClick={() => setTxType('income')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${txType === 'income' ? 'bg-[#66BB6A] text-white shadow-md' : 'bg-[#FDF6E3] text-[#A1887F] border border-[#E8DCC8]'}`}>+ 收入</button>
+                    </div>
                     <div>
                         <label className="text-xs font-bold text-[#A1887F] uppercase tracking-wider mb-2 block">金额</label>
                         <div className="relative">

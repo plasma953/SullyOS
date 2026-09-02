@@ -218,7 +218,7 @@ describe('executeLifeDirectives 代记指令', () => {
         const rec = records[0];
         expect(rec.bankTxId).toBeTruthy();
         let txs = await DB.getAllTransactions();
-        expect(txs.some(t => t.id === rec.bankTxId && t.amount === 38)).toBe(true);
+        expect(txs.some(t => t.id === rec.bankTxId && t.amount === -38)).toBe(true);
 
         // 否决：记录 rejected + 欠反馈 + 银行流水回滚
         const msgs = await DB.getMessagesByCharId(char.id, true);
@@ -338,7 +338,7 @@ describe('EXPENSE 去重窗口（同金额可以是两笔不同消费）', () =>
         const char = mkChar();
         await executeLifeDirectives('[[LIFE:EXPENSE|25.5|奶茶测试]]', char, noToast);
         await executeLifeDirectives('[[LIFE:EXPENSE|25.5|奶茶测试]]', char, noToast);
-        const txs = (await DB.getAllTransactions()).filter(t => t.amount === 25.5);
+        const txs = (await DB.getAllTransactions()).filter(t => t.amount === -25.5);
         expect(txs).toHaveLength(1);
     });
 
@@ -346,11 +346,11 @@ describe('EXPENSE 去重窗口（同金额可以是两笔不同消费）', () =>
         const char = mkChar();
         await DB.saveTransaction({
             id: `tx-test-${Math.random().toString(36).slice(2, 8)}`,
-            amount: 66.6, category: 'general', note: '奶茶隔久了',
+            amount: -66.6, category: 'general', note: '奶茶隔久了',
             timestamp: Date.now() - 16 * 60 * 1000, dateStr: lifeToday(),
         } as any);
         await executeLifeDirectives('[[LIFE:EXPENSE|66.6|奶茶隔久了]]', char, noToast);
-        const txs = (await DB.getAllTransactions()).filter(t => t.amount === 66.6);
+        const txs = (await DB.getAllTransactions()).filter(t => t.amount === -66.6);
         expect(txs).toHaveLength(2);
     });
 
@@ -358,11 +358,11 @@ describe('EXPENSE 去重窗口（同金额可以是两笔不同消费）', () =>
         const char = mkChar();
         await DB.saveTransaction({
             id: `tx-test-old-${Math.random().toString(36).slice(2, 8)}`,
-            amount: 77.7, category: 'general', note: '老数据',
+            amount: -77.7, category: 'general', note: '老数据',
             dateStr: lifeToday(),
         } as any);
         await executeLifeDirectives('[[LIFE:EXPENSE|77.7|老数据]]', char, noToast);
-        const txs = (await DB.getAllTransactions()).filter(t => t.amount === 77.7);
+        const txs = (await DB.getAllTransactions()).filter(t => t.amount === -77.7);
         expect(txs).toHaveLength(1);
     });
 });
