@@ -37,7 +37,7 @@ function corsPreflight() {
     status: 204,
     headers: {
       'access-control-allow-origin': '*',
-      'access-control-allow-headers': 'Content-Type, Authorization, X-Client-Token, Depth',
+      'access-control-allow-headers': 'Content-Type, Authorization, X-Client-Token, Accept, Mcp-Session-Id, Last-Event-Id',
       'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS, PROPFIND, MKCOL',
       'access-control-max-age': '86400',
     },
@@ -551,6 +551,77 @@ async function handleToolsList(env) {
 }
 
 // ─────────────────────── 路由 ───────────────────────
+// ────────────────────── MCP 中转（服务 token 服务端注入） ──────────────────────────
+/**
+ * /v1/mcp-relay?target=<公网MCP路径> —— MCP 服务统一转发端点。
+ * 前端只带主代理 X-Client-Token；各 MCP 服务的 Bearer token 由服务端
+ * 按前缀映射自动注入（来自 MCP_SERVERS），服务凭据绝不下发浏览器。
+ * 只放行本机 MCP 前缀（防 SSRF）；Mcp-Session-Id 双向透传，响应流式回传。
+ */
+const MCP_RELAY_MAP = [
+  { prefix: '/xhs-mcp-http', port: 8810, name: 'xhs-mcp' },
+  { prefix: '/xhs-mcp', port: 8809, name: 'xhs-mcp-legacy' },
+  { prefix: '/theseus-brain', port: 8787, name: 'theseus-brain' },
+  { prefix: '/kaleidoscope', port: 8788, name: 'kaleidoscope-rp' },
+  { prefix: '/ruota', port: 8790, name: 'ruota-della-fortuna' },
+];
+
+function resolveMcpRelayTarget(rawTarget, env) {
+  let t = (rawTarget || '').trim();
+  if (!t) return null;
+  if (/^https?:\/\//i.test(t)) {
+    try { const u = new URL(t); t = u.pathname + (u.search || ''); } catch { return null; }
+  }
+  if (t.charAt(0) !== '/') return null;
+  const servers = mcpServersOf(env);
+  for (const m of MCP_RELAY_MAP) {
+    if (t === m.prefix || t.indexOf(m.prefix + '/') === 0 || t.indexOf(m.prefix + '?') === 0) {
+      const suffix = t.slice(m.prefix.length) || '/mcp';
+      const known = servers.find((s) => s.name === m.name);
+      return { url: 'http://127.0.0.1:' + m.port + suffix, token: (known && known.token) || '' };
+    }
+  }
+  // 兼容 localhost 形态（如 http://127.0.0.1:8787/mcp）：按端口回退匹配
+  if (/^https?:\/\//i.test(rawTarget || '')) {
+    try {
+      const u = new URL(rawTarget);
+      const byPort = MCP_RELAY_MAP.find((m) => String(m.port) === u.port);
+      if (byPort) {
+        const known = servers.find((s) => s.name === byPort.name);
+        return { url: 'http://127.0.0.1:' + byPort.port + (u.pathname || '/mcp') + (u.search || ''), token: (known && known.token) || '' };
+      }
+    } catch { /* fallthrough */ }
+  }
+  return null;
+}
+
+async function mcpRelayProxy(req, env, url) {
+  const resolved = resolveMcpRelayTarget(url.searchParams.get('target'), env);
+  if (!resolved) {
+    return json({ error: 'bad_target', hint: 'target 必须是本机 MCP 路径，如 /theseus-brain/mcp' }, 400);
+  }
+  const headers = new Headers();
+  for (const [k, v] of req.headers) {
+    if (['host', 'authorization', 'content-length', 'transfer-encoding', 'connection', 'x-client-token', 'origin'].includes(k.toLowerCase())) continue;
+    headers.set(k, v);
+  }
+  if (resolved.token) headers.set('authorization', 'Bearer ' + resolved.token);
+  let res;
+  try {
+    res = await fetch(resolved.url, {
+      method: req.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(req.method) ? undefined : await req.arrayBuffer(),
+    });
+  } catch (err) {
+    return json({ error: 'MCP 服务不可达: ' + err.message }, 502);
+  }
+  const out = new Headers(res.headers);
+  out.set('access-control-allow-origin', '*');
+  out.set('access-control-expose-headers', 'Mcp-Session-Id');
+  return new Response(res.body, { status: res.status, headers: out });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -580,6 +651,7 @@ export default {
     if (plain === '/v1/chat/completions') return handleChat(request, env);
     if (plain === '/v1/tools') return handleToolsList(env);
     if (plain === '/v1/llm-credentials') return llmCredentialsProxy(request, env, url);
+    if (plain === '/v1/mcp-relay') return mcpRelayProxy(request, env, url);
 
     if (plain.startsWith('/webdav')) {
       const suffix = plain.replace(/^\/webdav\/?/, '');
