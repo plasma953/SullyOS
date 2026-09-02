@@ -56,7 +56,8 @@ export interface ShoppingDish {
   desc?: string;
   qty?: string;            // 规格 e.g. 550ml
   brand?: string;
-  img?: string;            // OFF 实拍图直链或本地 webp
+  img?: string;            // (已弃用 v2)历史字段，保留兼容
+  imgKey?: string;         // 品类 SVG 键（GoodsSvg 渲染）
   monthlySales?: number;
   specGroups?: DishSpecGroup[];
 }
@@ -68,6 +69,7 @@ export interface CartItem {
   qty: number;
   specs?: string[];        // 已选规格 label
   img?: string;
+  imgKey?: string;         // 品类 SVG 键
   lineTotal: number;
 }
 
@@ -119,3 +121,41 @@ export interface ShoppingOrder {
   createdAt: number;
   deliveredAt?: number;
 }
+
+// ============================================================
+// 购物 App（淘宝式）类型 —— 与外卖类型完全分离
+// ============================================================
+export type MallCategory = '服饰鞋包' | '运动户外' | '数码家电' | '美妆个护' | '珠宝腕表' | '家居家具' | '图书文具' | '商超百货';
+
+export const MALL_CATEGORIES: MallCategory[] = ['服饰鞋包', '运动户外', '数码家电', '美妆个护', '珠宝腕表', '家居家具', '图书文具', '商超百货'];
+
+export const MALL_CATEGORY_EMOJI: Record<MallCategory, string> = {
+  '服饰鞋包': '👗', '运动户外': '⚽', '数码家电': '📱', '美妆个护': '💄',
+  '珠宝腕表': '💎', '家居家具': '🛋️', '图书文具': '📚', '商超百货': '🛒',
+};
+
+/** 购物店铺（OSM 真实商家） */
+export interface MallShop {
+  id: string;
+  name: string;
+  cat: MallCategory | string;
+  city: string;
+  rating: string;
+  monthlySales: number;
+  returnDays: number;
+  fanCount: number;
+}
+
+/** 购物商品（品牌真实 SKU 或品类池） */
+export interface MallGood {
+  id: string;
+  shopId: string;
+  name: string;
+  price: number;
+  cat: string;
+  brand: string;
+  imgKey: string; // 品类 SVG 键
+}
+
+/** 购物订单 = 外卖订单结构（复用标签/支付/转发全链路），仅物流周期不同 */
+export type MallOrder = ShoppingOrder;

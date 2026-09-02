@@ -1,52 +1,39 @@
 // ============================================================
-// 购物 App 主组件 —— 美团外卖式 UI（真实店面 × 真实商品 · 模拟点单）
-// 数据: OSM 真实店铺 (ODbL) + OFF 真实商品 (ODbL/CC-BY-SA) + 品牌 SKU 名录
+// 购物 App 主组件 —— 淘宝式电商 UI（真实店铺 × 品牌 SKU · 虚拟下单）
+// 数据: mall-shops.json / mall-goods.json（OSM 真实购物店铺 + 品牌真实 SKU，与外卖数据完全分离）
+// 商品图统一本地 SVG（GoodsSvg imgKey）；下单/支付/订单/转发复用外卖链路（ShoppingOrder 类型）
 // ============================================================
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import {
-  ShoppingShop, ShoppingDish, ShoppingCart, ShoppingOrder, CartItem,
-  ShopCategory, SHOP_CATEGORIES, CATEGORY_EMOJI, ORDER_STATUS_LABEL,
+  ShoppingCart, ShoppingOrder, CartItem,
+  MallCategory, MALL_CATEGORIES, MALL_CATEGORY_EMOJI,
+  MallShop, MallGood, MallOrder, ORDER_STATUS_LABEL,
 } from '../utils/shoppingTypes';
-import { loadShoppingData, sortShopsForAddress, dishImgUrl } from '../utils/shoppingData';
-import { buildShoppingOrderTag, sanitizeOrderField } from '../utils/shoppingFormat';
+import { loadMallData, searchMallGoods, MallDataset } from '../utils/shoppingData';
+import GoodsSvg from '../components/GoodsSvg';
+import { buildShoppingOrderTag } from '../utils/shoppingFormat';
 import { roundMoney, sumMoney } from '../utils/format';
 import { trackEvent } from '../utils/analytics';
 import { CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
 
-// ── 视图状态 ──
-type View = 'list' | 'shop' | 'orders' | 'orderDetail' | 'checkout';
+// ── 视图状态：首页 / 店铺 / 商品详情 / 购物车 / 结算 / 订单 ──
+type View = 'home' | 'shop' | 'good' | 'cart' | 'checkout' | 'orders' | 'orderDetail';
 
-/** 当前点单目标（右上角地点 pill 切换） */
+/** 收货人（地址 pill 切换：我 / char） */
 interface TargetInfo {
   type: 'user' | 'char';
   charId?: string;
   name: string;
-  addressText: string; // 收货地址（char 未填时为空 → 置灰）
+  addressText: string;
   cityTag?: string;
 }
-
-const EMOJI_FALLBACK: Record<string, string> = {
-  '美食外卖': '🍜', '奶茶饮品': '🧋', '甜品蛋糕': '🍰', '超市便利': '🏪',
-  '生鲜果蔬': '🥬', '医药健康': '💊', '鲜花绿植': '💐',
-};
 
 const fmtMoney = (n: number) => {
   const v = Math.round(n * 100) / 100;
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 };
-
-const STATUS_FLOW: ShoppingOrder['status'][] = ['pending_pay', 'paid', 'accepted', 'delivering', 'delivered'];
-
-/** 按下单时间推进状态：接单 8 分钟、配送 32 分钟后送达（纯时间驱动） */
-function computeStatus(o: ShoppingOrder, now = Date.now()): ShoppingOrder['status'] {
-  if (o.status === 'cancelled' || o.status === 'delivered') return o.status;
-  const t = now - o.createdAt;
-  if (t > 40 * 60_000) return 'delivered';
-  if (t > 8 * 60_000) return 'delivering';
-  return o.status === 'pending_pay' ? 'pending_pay' : o.status === 'paid' ? 'paid' : 'accepted';
-}
 
 const genOrderId = () => {
   const d = new Date();
@@ -54,28 +41,38 @@ const genOrderId = () => {
   return 'ORD' + ymd + Math.random().toString(36).slice(2, 8).toUpperCase();
 };
 
+/** 购物物流周期：付款后 2 分钟发货(delivering)，5 分钟送达(delivered)（模拟 2-3 天，可手动「确认收货」） */
+function computeStatus(o: MallOrder, now = Date.now()): MallOrder['status'] {
+  if (o.status === 'cancelled' || o.status === 'delivered') return o.status;
+  const t = now - o.createdAt;
+  if (t > 5 * 60_000) return 'delivered';
+  if (t > 2 * 60_000) return 'delivering';
+  return o.status === 'pending_pay' ? 'pending_pay' : o.status === 'paid' ? 'paid' : o.status;
+}
+
 export default function ShoppingApp() {
-  const { userProfile, characters, openApp, updateCharacter, updateUserProfile } = useOS();
-  const [view, setView] = useState<View>('list');
-  const [ds, setDs] = useState<{ shops: ShoppingShop[]; dishes: ShoppingDish[] } | null>(null);
+  const { userProfile, characters, openApp, closeApp, updateCharacter, updateUserProfile } = useOS();
+  const [view, setView] = useState<View>('home');
+  const [ds, setDs] = useState<MallDataset | null>(null);
   const [loadErr, setLoadErr] = useState(false);
   const [query, setQuery] = useState('');
-  const [activeCat, setActiveCat] = useState<ShopCategory | 'all'>('all');
-  const [activeShop, setActiveShop] = useState<ShoppingShop | null>(null);
+  const [activeCat, setActiveCat] = useState<MallCategory | 'all'>('all');
+  const [activeShop, setActiveShop] = useState<MallShop | null>(null);
+  const [activeGood, setActiveGood] = useState<MallGood | null>(null);
   const [carts, setCarts] = useState<Record<string, ShoppingCart>>({});
-  const [orders, setOrders] = useState<ShoppingOrder[]>([]);
+  const [orders, setOrders] = useState<MallOrder[]>([]);
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [targetSel, setTargetSel] = useState(false);
   const [target, setTarget] = useState<TargetInfo | null>(null);
   const [editAddr, setEditAddr] = useState(false);
   const [addrDraft, setAddrDraft] = useState('');
   const [payErr, setPayErr] = useState('');
-  const [lastOrder, setLastOrder] = useState<ShoppingOrder | null>(null);
+  const [lastOrder, setLastOrder] = useState<MallOrder | null>(null);
 
   // ── 数据加载 ──
-  useEffect(() => { loadShoppingData().then(setDs).catch(() => setLoadErr(true)); }, []);
+  useEffect(() => { loadMallData().then(setDs).catch(() => setLoadErr(true)); }, []);
 
-  // ── 订单加载 + 时间驱动状态刷新 ──
+  // ── 订单加载 + 物流时间驱动刷新 ──
   useEffect(() => {
     DB.getAllShoppingOrders().then(list => {
       const fixed = list.map(o => {
@@ -98,21 +95,19 @@ export default function ShoppingApp() {
     return () => clearInterval(iv);
   }, []);
 
-  // ── 购物车持久化（按「被点单人」隔离，key = type:charId|user）──
-  useEffect(() => { refreshCarts(); }, []);
-  const refreshCarts = () => {
-    // 购物车暂存 BankFullState 之外的 localStorage 快路径（大 JSON 不进 IDB 也无妨）
-    try { setCarts(JSON.parse(localStorage.getItem('sullyos_shopping_carts') || '{}')); } catch { setCarts({}); }
-  };
+  // ── 购物车持久化（按收货人隔离） ──
+  useEffect(() => {
+    try { setCarts(JSON.parse(localStorage.getItem('sullyos_mall_carts') || '{}')); } catch { setCarts({}); }
+  }, []);
   const persistCarts = (next: Record<string, ShoppingCart>) => {
     setCarts(next);
-    try { localStorage.setItem('sullyos_shopping_carts', JSON.stringify(next)); } catch { /* ignore */ }
+    try { localStorage.setItem('sullyos_mall_carts', JSON.stringify(next)); } catch { /* ignore */ }
   };
 
   const cartKeyOf = (t: TargetInfo) => (t.type === 'user' ? 'user' : `char:${t.charId || t.name}`);
   const cart = target ? carts[cartKeyOf(target)] : undefined;
 
-  // ── 点单目标：默认 user，可切到有地址的 char ──
+  // ── 收货人：默认 user，可切到有地址的 char ──
   const targets: TargetInfo[] = useMemo(() => {
     const me: TargetInfo = {
       type: 'user', name: userProfile.name || '我',
@@ -148,59 +143,53 @@ export default function ShoppingApp() {
     setEditAddr(false);
   };
 
-  // ── 搜索：店名/品牌 + 跨店商品名（确定性前 60 条，防大列表卡顿）──
+  // ── 搜索：商品名/品牌全城搜（确定性前 80 条） ──
   const q = query.trim().toLowerCase();
-  const dishHits = useMemo(() => {
+  const goodHits = useMemo(() => {
     if (!ds || q.length < 1) return [];
-    const out: { dish: ShoppingDish; shop: ShoppingShop }[] = [];
-    for (const d of ds.dishes) {
-      if (d.name.toLowerCase().includes(q) || (d.brand || '').toLowerCase().includes(q)) {
-        const shop = ds.shops.find(s => s.id === d.shopId);
-        if (shop) out.push({ dish: d, shop });
-        if (out.length >= 60) break;
-      }
-    }
-    return out;
+    return searchMallGoods(ds, q);
   }, [ds, q]);
+  const goodHitShopIds = useMemo(() => new Set(goodHits.map(g => g.shopId)), [goodHits]);
 
-  // 商品命中的店铺 id 集合：这些店在店铺列表里置顶
-  const dishHitShopIds = useMemo(() => new Set(dishHits.map(h => h.shop.id)), [dishHits]);
-
-  // ── 店铺列表：全量展示，城市标签匹配者优先 ──
+  // ── 店铺列表：全量展示，城市标签匹配者优先，品类过滤 ──
   const visibleShops = useMemo(() => {
     if (!ds) return [];
     let list = ds.shops;
     if (activeCat !== 'all') list = list.filter(s => s.cat === activeCat);
-    let sorted = sortShopsForAddress(list, target?.cityTag || undefined);
+    // 城市标签匹配优先排序
+    const city = target?.cityTag || '';
+    const sorted = [...list].sort((a, b) => {
+      const am = city && a.city && a.city.includes(city) ? 1 : 0;
+      const bm = city && b.city && b.city.includes(city) ? 1 : 0;
+      if (am !== bm) return bm - am;
+      return (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0);
+    });
     if (q) {
-      const nameHit = sorted.filter(s => s.name.toLowerCase().includes(q) || (s.brand || '').toLowerCase().includes(q));
-      const dishShopHit = sorted.filter(s => dishHitShopIds.has(s.id) && !nameHit.includes(s));
-      return [...nameHit, ...dishShopHit];
+      const nameHit = sorted.filter(s => s.name.toLowerCase().includes(q) || (s as any).brand?.toLowerCase?.().includes(q));
+      const goodShopHit = sorted.filter(s => goodHitShopIds.has(s.id) && !nameHit.includes(s));
+      return [...nameHit, ...goodShopHit];
     }
     return sorted;
-  }, [ds, activeCat, target, q, dishHitShopIds]);
+  }, [ds, activeCat, target, q, goodHitShopIds]);
 
-  const shopMenu = useMemo(() => {
+  const shopGoods = useMemo(() => {
     if (!ds || !activeShop) return [];
-    return ds.dishes.filter(d => d.shopId === activeShop.id);
+    return ds.goods.filter(g => g.shopId === activeShop.id);
   }, [ds, activeShop]);
 
-  // ── 购物车操作 ──
-  const addToCart = (dish: ShoppingDish, qty = 1) => {
-    if (!target || !activeShop) return;
+  // ── 购物车操作（淘宝式：跨店合并，不设单一店铺限制） ──
+  const addToCart = (good: MallGood, qty = 1) => {
+    if (!target) return;
     const key = cartKeyOf(target);
     const cur: ShoppingCart = carts[key] || {
       key, recipientType: target.type, charId: target.charId, recipientName: target.name,
-      addressText: target.addressText, cityTag: target.cityTag, shopId: activeShop.id, shopName: activeShop.name, items: [], updatedAt: Date.now(),
+      addressText: target.addressText, cityTag: target.cityTag, items: [], updatedAt: Date.now(),
     };
-    if (cur.shopId && cur.shopId !== activeShop.id) {
-      if (!confirm(`购物车里还有「${cur.shopName}」的商品，换店将清空，继续？`)) return;
-    }
-    const items = [...((cur.shopId === activeShop.id ? cur.items : []))];
-    const idx = items.findIndex(i => i.dishId === dish.id);
+    const items = [...cur.items];
+    const idx = items.findIndex(i => i.dishId === good.id);
     if (idx >= 0) items[idx] = { ...items[idx], qty: items[idx].qty + qty, lineTotal: roundMoney((items[idx].qty + qty) * items[idx].unitPrice) };
-    else items.push({ dishId: dish.id, name: dish.name, unitPrice: dish.price, qty, img: dish.img, lineTotal: roundMoney(dish.price * qty) });
-    persistCarts({ ...carts, [key]: { ...cur, shopId: activeShop.id, shopName: activeShop.name, items, addressText: target.addressText, updatedAt: Date.now() } });
+    else items.push({ dishId: good.id, name: good.name, unitPrice: good.price, qty, imgKey: good.imgKey, lineTotal: roundMoney(good.price * qty) });
+    persistCarts({ ...carts, [key]: { ...cur, items, addressText: target.addressText, updatedAt: Date.now() } });
   };
   const changeQty = (dishId: string, delta: number) => {
     if (!target) return;
@@ -212,21 +201,16 @@ export default function ShoppingApp() {
       .filter(i => i.qty > 0);
     persistCarts({ ...carts, [key]: { ...cur, items, updatedAt: Date.now() } });
   };
-  const cartShop = useMemo(() => {
-    if (!ds || !cart?.shopId) return null;
-    return ds.shops.find(s => s.id === cart.shopId) || null;
-  }, [ds, cart?.shopId]);
   const cartCount = cart?.items.reduce((a, i) => a + i.qty, 0) || 0;
   const cartTotal = cart ? sumMoney(cart.items.map(i => i.lineTotal)) : 0;
 
-  // ── 下单：银行卡扣款（存钱罐 BankFullState.cards，默认卡优先）──
+  // ── 下单：银行卡扣款（虚拟支付，存钱罐 BankFullState.cards 默认卡优先） ──
   const placeOrder = async () => {
     if (!target || !cart || cart.items.length === 0) return;
     setPayErr('');
     const bank = await DB.getBankState();
     let cards = bank?.cards || [];
     if (cards.length === 0) {
-      // 初始卡：余额 520（拟真），用户可在存钱罐里改
       cards = [{ id: 'card_' + Date.now(), name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true }];
     }
     const payCard = cards.find(c => c.isDefault) || cards[0];
@@ -239,11 +223,11 @@ export default function ShoppingApp() {
       charId: target.type === 'char' ? target.charId : undefined,
       placedBy: 'user', recipientType: target.type, recipientName: target.name,
       addressText: target.addressText || '（未填地址）',
-      shopId: cart.shopId!, shopName: cart.shopName!,
-      shopCat: cartShop?.cat || '美食外卖',
+      shopId: 'multi', shopName: itemsToShopLabel(cart.items),
+      shopCat: '购物',
       items: cart.items, itemCount: cart.items.reduce((a, i) => a + i.qty, 0),
-      subtotal: cartTotal, deliveryFee: cartShop?.deliveryFee ?? 0,
-      total: roundMoney(cartTotal + (cartShop?.deliveryFee ?? 0)),
+      subtotal: cartTotal, deliveryFee: 0,
+      total: cartTotal,
       payMethod: 'bank_card', cardLabel: `${payCard.name}·${payCard.tailNo}`,
       status: 'paid',
       statusHistory: [{ status: 'paid', at: Date.now() }],
@@ -255,18 +239,17 @@ export default function ShoppingApp() {
     await DB.saveBankState(nextBank as any);
     await DB.saveTransaction({
       id: 'tx_' + Date.now(), amount: -order.total, category: '购物',
-      note: `${order.shopName} × ${order.itemCount} 件（${target.type === 'char' ? '给' + target.name + '点的' : '自购'}）`,
+      note: `购物订单 × ${order.itemCount} 件（${target.type === 'char' ? '给' + target.name + '买的' : '自购'}）`,
       timestamp: order.createdAt, dateStr: new Date(order.createdAt).toISOString().slice(0, 10),
     });
     await DB.saveShoppingOrder(order);
 
-    // 给 char 点单 → 落一条带标签的 user 消息（聊天界面正则替换为订单卡）
+    // 给 char 买 → 落一条带标签的消息（聊天界面渲染订单卡）
     if (target.type === 'char' && target.charId) {
       await DB.saveMessage({
         charId: target.charId, role: 'user', type: 'shopping_order', metadata: { orderId: order.id, status: order.status, shop: order.shopName, total: order.total, recipient: order.recipientName },
-        content: `我给你点了${order.shopName}的外卖～\n${buildShoppingOrderTag(order)}`,
+        content: `我给你买了${order.shopName}的东西～\n${buildShoppingOrderTag(order)}`,
       } as any);
-      // bump lastMsgTimestamp：当前开着该聊天就实时刷新（user 消息不补未读/toast）
       window.dispatchEvent(new CustomEvent(CHAT_GEN_EVENTS.replyEnd, { detail: { charId: target.charId, charName: target.name } }));
     }
     // 清购物车
@@ -279,22 +262,19 @@ export default function ShoppingApp() {
     setView('orderDetail'); setDetailOrderId(order.id);
   };
 
-  // ── 深链回跳（?openApp=shopping&orderId=xxx / 聊天卡 CustomEvent）──
+  // 购物车 items → 「华为Mate70×iPhone16」店铺名标签（多店合并展示）
+  function itemsToShopLabel(items: CartItem[]): string {
+    const names = items.map(i => i.name.replace(/[（(].*?[)）]/g, '').slice(0, 8));
+    return names.slice(0, 2).join('、') + (names.length > 2 ? ' 等' : '');
+  }
+
+  // ── 深链回跳（聊天订单卡 CustomEvent + sessionStorage 兜底） ──
   useEffect(() => {
     const openOrder = (e: Event) => {
       const id = (e as CustomEvent).detail?.orderId;
       if (id) { setDetailOrderId(id); setView('orderDetail'); }
     };
     window.addEventListener('sullyos:open-shopping-order', openOrder);
-    const url = new URL(window.location.href);
-    const orderId = url.searchParams.get('orderId');
-    if (url.searchParams.get('openApp') === 'shopping' && orderId) {
-      setDetailOrderId(orderId); setView('orderDetail');
-      url.searchParams.delete('openApp'); url.searchParams.delete('orderId');
-      window.history.replaceState({}, '', url.toString());
-    }
-    // 深链兜底：事件可能在 App 挂载前派发（activeMsgRuntime 先清了 URL），
-    // 那条路径会把 orderId 冻进 sessionStorage，这里补读一次。
     try {
       const pending = sessionStorage.getItem('sullyos_shopping_open_order');
       if (pending) {
@@ -306,11 +286,11 @@ export default function ShoppingApp() {
     return () => window.removeEventListener('sullyos:open-shopping-order', openOrder);
   }, []);
 
-  // ── 订单转发到聊天（任意会话）──
-  const forwardOrder = async (o: ShoppingOrder, charId: string) => {
+  // ── 订单转发到聊天 ──
+  const forwardOrder = async (o: MallOrder, charId: string) => {
     await DB.saveMessage({
       charId, role: 'user', type: 'shopping_order', metadata: { orderId: o.id, status: o.status, shop: o.shopName, total: o.total, recipient: o.recipientName },
-      content: `（转发订单）${o.shopName} 的点单～\n${buildShoppingOrderTag(o)}`,
+      content: `（转发订单）${o.shopName} 的订单～\n${buildShoppingOrderTag(o)}`,
     } as any);
     const ch = characters.find(c => c.id === charId);
     window.dispatchEvent(new CustomEvent(CHAT_GEN_EVENTS.replyEnd, { detail: { charId, charName: ch?.name || '' } }));
@@ -333,15 +313,31 @@ export default function ShoppingApp() {
 
   return (
     <div className="h-full flex flex-col bg-[#f5f6f7] text-slate-800">
-      {/* 顶栏：返回 + 地点 pill（右上角切换 点给谁）*/}
-      <div className="shrink-0 px-3 pt-2 pb-1 bg-gradient-to-r from-amber-400 to-orange-400">
+      {/* 顶栏：返回 + 退出 + 收货地址 pill */}
+      <div className="shrink-0 px-3 pt-2 pb-1 bg-gradient-to-r from-orange-400 to-red-400">
         <div className="flex items-center justify-between">
-          {view === 'list' ? <span className="text-[15px] font-bold text-white">外卖购物</span>
-            : backBtn(view === 'shop' ? '返回店铺列表' : view === 'orders' ? '返回首页' : '返回', () => {
-              if (view === 'shop') setView('list');
-              else if (view === 'orders' || view === 'checkout') setView('list');
-              else setView('orders');
-            })}
+          {view === 'home' ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[15px] font-bold text-white">购物</span>
+              <button onClick={closeApp} title="退出购物" className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/25 text-white text-[11px] font-bold hover:bg-white/40">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                退出
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              {backBtn(view === 'shop' ? '返回首页' : view === 'orders' ? '返回首页' : view === 'cart' ? '返回首页' : '返回', () => {
+                if (view === 'shop' || view === 'good') setView('home');
+                else if (view === 'checkout') setView('cart');
+                else if (view === 'orderDetail') setView('orders');
+                else setView('home');
+              })}
+              <button onClick={closeApp} title="退出购物" className="flex items-center gap-0.5 px-2 py-1 rounded-full bg-white/25 text-white text-[11px] font-bold hover:bg-white/40">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                退出
+              </button>
+            </div>
+          )}
           <button onClick={() => setTargetSel(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/25 backdrop-blur text-white text-[12px] font-bold max-w-[62%]">
             <span>📍</span>
             <span className="truncate">{target.type === 'user' ? '我的地址' : `给 ${target.name}`}</span>
@@ -351,97 +347,98 @@ export default function ShoppingApp() {
         </div>
       </div>
 
-      {view === 'list' && (
+      {view === 'home' && (
         <>
-          {/* 搜索框 */}
-          <div className="shrink-0 px-3 pt-2 pb-2 bg-white">
-            <div className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-2">
-              <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" /></svg>
+          {/* 搜索框（淘宝式：橙红圆角） */}
+          <div className="shrink-0 px-3 pt-2 pb-2 bg-gradient-to-r from-orange-400 to-red-400">
+            <div className="flex items-center gap-2 bg-white rounded-full px-3 py-2 shadow-sm">
+              <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" /></svg>
               <input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder="搜店铺 / 商品，如：蜜雪冰城、柠檬水、布洛芬"
-                className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
+                placeholder="搜商品/品牌/店铺，如：iPhone、优衣库、周大福"
+                className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-slate-300"
               />
               {query && (
                 <button onClick={() => setQuery('')} className="w-5 h-5 rounded-full bg-slate-300 text-white flex items-center justify-center text-[11px] shrink-0">×</button>
               )}
+              <button onClick={() => setView('cart')} className="relative shrink-0 text-slate-500">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 4h14M9 21a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm8 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" /></svg>
+                {cartCount > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">{cartCount}</span>}
+              </button>
             </div>
           </div>
-          {/* 品类宫格 */}
-          <div className="shrink-0 grid grid-cols-4 gap-y-2 px-2 pt-3 pb-2 bg-white">
+          {/* 品类宫格（8 品类 + 全部） */}
+          <div className="shrink-0 grid grid-cols-5 gap-y-2 px-2 pt-3 pb-2 bg-white">
             <button onClick={() => setActiveCat('all')} className={`flex flex-col items-center gap-1 ${activeCat === 'all' ? 'opacity-100' : 'opacity-70'}`}>
-              <span className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl ${activeCat === 'all' ? 'bg-amber-100 ring-2 ring-amber-300' : 'bg-slate-50'}`}>🧭</span>
+              <span className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl ${activeCat === 'all' ? 'bg-orange-100 ring-2 ring-orange-300' : 'bg-slate-50'}`}>🧭</span>
               <span className="text-[10px]">全部</span>
             </button>
-            {SHOP_CATEGORIES.map(c => (
-              <button key={c} onClick={() => setActiveCat(c)} className="flex flex-col items-center gap-1">
-                <span className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl ${activeCat === c ? 'bg-amber-100 ring-2 ring-amber-300' : 'bg-slate-50'}`}>{EMOJI_FALLBACK[c]}</span>
+            {MALL_CATEGORIES.map(c => (
+              <button key={c} onClick={() => setActiveCat(c)} className={`flex flex-col items-center gap-1 ${activeCat === c ? 'opacity-100' : 'opacity-70'}`}>
+                <span className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl ${activeCat === c ? 'bg-orange-100 ring-2 ring-orange-300' : 'bg-slate-50'}`}>{MALL_CATEGORY_EMOJI[c]}</span>
                 <span className="text-[10px]">{c}</span>
               </button>
             ))}
           </div>
           {/* 店铺列表 */}
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
-            {q && dishHits.length > 0 && (
+            {q && goodHits.length > 0 && (
               <div className="bg-white rounded-2xl p-3">
-                <div className="text-[12px] font-bold text-slate-700 mb-2">🛒 找到 {dishHits.length} 件商品（含全城其它店）</div>
+                <div className="text-[12px] font-bold text-slate-700 mb-2">🎁 找到 {goodHits.length} 件商品（全城）</div>
                 <div className="space-y-1.5">
-                  {dishHits.map(({ dish, shop }) => (
-                    <div key={dish.id} onClick={() => { setActiveShop(shop); setView('shop'); }}
-                      className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-50 cursor-pointer">
-                      {dish.img ? (
-                        <img src={dishImgUrl(dish.img)} alt="" loading="lazy" className="w-9 h-9 rounded-lg object-cover shrink-0"
-                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      ) : (
-                        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-sm shrink-0">{EMOJI_FALLBACK[shop.cat] || '🛍️'}</div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[12px] font-bold truncate">{dish.name}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{shop.name}{dish.qty ? ` · ${dish.qty}` : ''}</div>
+                  {goodHits.map(g => {
+                    const shop = ds.shops.find(s => s.id === g.shopId);
+                    return (
+                      <div key={g.id} onClick={() => { setActiveGood(g); if (shop) setActiveShop(shop); setView('good'); }}
+                        className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                        <GoodsSvg imgKey={g.imgKey} name={g.name} className="w-10 h-10 rounded-lg" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[12px] font-bold truncate">{g.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{g.brand} · {shop?.name}</div>
+                        </div>
+                        <span className="text-[13px] font-bold text-red-500 shrink-0">¥{fmtMoney(g.price)}</span>
                       </div>
-                      <span className="text-[12px] font-bold text-orange-500 shrink-0">¥{fmtMoney(dish.price)}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
-            {q && visibleShops.length === 0 && dishHits.length === 0 && (
-              <div className="text-center text-[12px] text-slate-400 py-10">没找到「{query}」相关的店铺或商品</div>
+            {q && visibleShops.length === 0 && goodHits.length === 0 && (
+              <div className="text-center text-[12px] text-slate-400 py-10">没找到「{query}」相关的商品或店铺</div>
             )}
             {visibleShops.map(s => (
               <div key={s.id} onClick={() => { setActiveShop(s); setView('shop'); }}
                 className="flex gap-3 bg-white rounded-2xl p-3 shadow-sm active:scale-[0.99] transition-transform cursor-pointer">
-                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-2xl shrink-0">
-                  {EMOJI_FALLBACK[s.cat] || '🏪'}
+                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-orange-100 to-red-100 flex items-center justify-center text-2xl shrink-0">
+                  {(MALL_CATEGORY_EMOJI[s.cat as MallCategory] || '🛍')}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[14px] font-bold truncate">{s.name}</span>
-                    {s.city && target.cityTag && s.city.includes(target.cityTag) && (
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">附近</span>
+                    {target.cityTag && s.city?.includes(target.cityTag) && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-orange-100 text-orange-700 shrink-0">同城</span>
                     )}
-                    {q && dishHitShopIds.has(s.id) && (
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">有你要的货</span>
+                    {q && goodHitShopIds.has(s.id) && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-red-100 text-red-600 shrink-0">有你要的货</span>
                     )}
                   </div>
-                  <div className="text-[11px] text-amber-500 font-bold mt-0.5">★ {s.rating?.toFixed(1) || '4.5'} <span className="text-slate-400 font-normal">月售{s.monthlySales || 0}</span></div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">起送¥{fmtMoney(s.minOrder || 0)} · 配送¥{fmtMoney(s.deliveryFee || 0)} · {s.deliveryTime || '30分钟'} · {s.cat}</div>
+                  <div className="text-[11px] text-orange-500 font-bold mt-0.5">★ {s.rating} <span className="text-slate-400 font-normal">月销{s.monthlySales} · {s.fanCount}粉丝</span></div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{s.cat} · 7天无理由退货 · {s.returnDays}天价保 · {s.city}</div>
                 </div>
                 <div className="self-center text-slate-300 shrink-0">›</div>
               </div>
             ))}
-            {visibleShops.length === 0 && <div className="text-center text-[12px] text-slate-400 py-10">该品类暂无店铺</div>}
+            {visibleShops.length === 0 && !q && <div className="text-center text-[12px] text-slate-400 py-10">该品类暂无店铺</div>}
           </div>
-          {/* 底部：购物车条 + 订单入口 */}
+          {/* 底部：购物车 + 订单入口 */}
           <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">
-            <button onClick={() => setView('orders')} className="text-[12px] text-slate-500 shrink-0">📋 订单</button>
+            <button onClick={() => setView('cart')} className="relative text-[12px] text-slate-500 shrink-0">
+              🛒 购物车
+              {cartCount > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">{cartCount}</span>}
+            </button>
             <div className="flex-1" />
-            {cart && cart.items.length > 0 && (
-              <button onClick={() => setView('checkout')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-400 text-white text-[13px] font-bold">
-                🛒 {cartCount} 件 · ¥{fmtMoney(cartTotal)} 去结算
-              </button>
-            )}
+            <button onClick={() => setView('orders')} className="text-[12px] text-slate-500 shrink-0">📋 订单</button>
           </div>
         </>
       )}
@@ -449,46 +446,31 @@ export default function ShoppingApp() {
       {view === 'shop' && activeShop && (
         <>
           <div className="flex-1 overflow-y-auto">
-            <div className="px-4 pt-3 pb-3 bg-gradient-to-br from-amber-50 to-orange-50">
+            <div className="px-4 pt-3 pb-3 bg-gradient-to-br from-orange-50 to-red-50">
               <div className="text-[16px] font-bold">{activeShop.name}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating?.toFixed(1)} · 月售{activeShop.monthlySales} · {activeShop.deliveryTime} · {activeShop.city || ''}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating} · 月销{activeShop.monthlySales} · {activeShop.fanCount}粉丝 · {activeShop.city}</div>
             </div>
-            <div className="px-3 pb-24 space-y-2">
-              {shopMenu.map(d => (
-                <div key={d.id} className="flex gap-3 bg-white rounded-xl p-2.5">
-                  {d.img ? (
-                    <img src={dishImgUrl(d.img)} alt="" loading="lazy" className="w-14 h-14 rounded-lg object-cover shrink-0"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  ) : (
-                    <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-xl shrink-0">{EMOJI_FALLBACK[activeShop.cat] || '🛍️'}</div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold truncate">{d.name}</div>
-                    <div className="text-[10px] text-slate-400 truncate">{d.qty || d.desc || d.cat}</div>
+            {/* 商品两列瀑布流（淘宝式） */}
+            <div className="px-3 pb-24 grid grid-cols-2 gap-2">
+              {shopGoods.map(g => (
+                <div key={g.id} onClick={() => { setActiveGood(g); setView('good'); }} className="bg-white rounded-xl overflow-hidden shadow-sm active:scale-[0.98] transition-transform cursor-pointer">
+                  <GoodsSvg imgKey={g.imgKey} name={g.name} className="w-full aspect-square" />
+                  <div className="p-2">
+                    <div className="text-[12px] font-bold leading-snug line-clamp-2">{g.name}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{g.brand}</div>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-[14px] font-bold text-orange-500">¥{fmtMoney(d.price)}</span>
-                      <div className="flex items-center gap-1.5">
-                        {(() => {
-                          const inCart = cart?.items.find(i => i.dishId === d.id);
-                          return inCart ? (
-                            <div className="flex items-center gap-1.5">
-                              <button onClick={e => { e.stopPropagation(); changeQty(d.id, -1); }} className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold">−</button>
-                              <span className="text-[12px] font-bold w-4 text-center">{inCart.qty}</span>
-                            </div>
-                          ) : null;
-                        })()}
-                        <button onClick={e => { e.stopPropagation(); addToCart(d); }} className="w-6 h-6 rounded-full bg-amber-400 text-white flex items-center justify-center font-bold">+</button>
-                      </div>
+                      <span className="text-[14px] font-bold text-red-500">¥{fmtMoney(g.price)}</span>
+                      <span className="text-[9px] text-slate-400">月销{hashSales(g.id)}</span>
                     </div>
                   </div>
                 </div>
               ))}
-              {shopMenu.length === 0 && <div className="text-center text-[12px] text-slate-400 py-10">菜单整理中…</div>}
+              {shopGoods.length === 0 && <div className="col-span-2 text-center text-[12px] text-slate-400 py-10">店铺上新中…</div>}
             </div>
           </div>
           {cart && cart.items.length > 0 && (
             <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">
-              <button onClick={() => setView('checkout')} className="flex-1 flex items-center gap-2 px-4 py-2 rounded-full bg-amber-400 text-white text-[13px] font-bold justify-center">
+              <button onClick={() => setView('cart')} className="flex-1 flex items-center gap-2 px-4 py-2 rounded-full bg-red-500 text-white text-[13px] font-bold justify-center">
                 🛒 {cartCount} 件 · ¥{fmtMoney(cartTotal)} 去结算
               </button>
             </div>
@@ -496,7 +478,60 @@ export default function ShoppingApp() {
         </>
       )}
 
-      {view === 'checkout' && cart && (
+      {view === 'good' && activeGood && (() => {
+        const shop = ds.shops.find(s => s.id === activeGood.shopId) || activeShop;
+        return (
+          <div className="flex-1 overflow-y-auto">
+            <GoodsSvg imgKey={activeGood.imgKey} name={activeGood.name} className="w-full aspect-[1.5] rounded-none" />
+            <div className="px-4 py-3 space-y-2">
+              <div className="text-[17px] font-bold leading-snug">{activeGood.name}</div>
+              <div className="text-[20px] font-bold text-red-500">¥{fmtMoney(activeGood.price)} <span className="text-[11px] text-slate-400 font-normal">{activeGood.brand}官方正品</span></div>
+              <div className="text-[11px] text-slate-400">{shop?.name} · {shop?.city} · 7天无理由退货 · 顺丰包邮</div>
+              <div className="text-[11px] text-slate-500 bg-white rounded-xl p-2.5">📍 送货至：{target.type === 'user' ? '我的地址' : `${target.name} 的地址`} · {target.addressText || '（未填地址）'}</div>
+            </div>
+            {/* 加入购物车条 */}
+            <div className="shrink-0 sticky bottom-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">
+              <button onClick={() => { addToCart(activeGood); setView('shop'); }} className="flex-1 py-2.5 rounded-full bg-orange-100 text-orange-600 text-[13px] font-bold">加入购物车</button>
+              <button onClick={() => { addToCart(activeGood); setView('cart'); }} className="flex-1 py-2.5 rounded-full bg-red-500 text-white text-[13px] font-bold">立即购买</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {view === 'cart' && (
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+          {cart && cart.items.length > 0 ? (
+            <>
+              <div className="text-[11px] text-slate-400 px-1">送至：{target.type === 'user' ? '我' : target.name} · {target.addressText || '（未填地址）'}</div>
+              {cart.items.map(i => (
+                <div key={i.dishId} className="flex gap-3 bg-white rounded-2xl p-3">
+                  <GoodsSvg imgKey={i.imgKey} name={i.name} className="w-14 h-14 rounded-lg shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold leading-snug line-clamp-2">{i.name}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">¥{fmtMoney(i.unitPrice)}/件</div>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className="text-[15px] font-bold text-red-500">¥{fmtMoney(i.lineTotal)}</span>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => changeQty(i.dishId, -1)} className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold">−</button>
+                        <span className="text-[12px] font-bold w-4 text-center">{i.qty}</span>
+                        <button onClick={() => changeQty(i.dishId, 1)} className="w-6 h-6 rounded-full bg-orange-400 text-white flex items-center justify-center font-bold">+</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="text-[11px] text-slate-400 text-center">合计 ¥{fmtMoney(cartTotal)} · 免运费（虚拟物流 2-3 天送达）</div>
+            </>
+          ) : (
+            <div className="text-center text-[12px] text-slate-400 py-10">购物车是空的，去逛逛吧～</div>
+          )}
+          {cart && cart.items.length > 0 && (
+            <button onClick={() => setView('checkout')} className="w-full py-3 rounded-full bg-red-500 text-white text-[14px] font-bold">去结算（¥{fmtMoney(cartTotal)}）</button>
+          )}
+        </div>
+      )}
+
+      {view === 'checkout' && cart && cart.items.length > 0 && (
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
           <div className="bg-white rounded-2xl p-4">
             <div className="text-[13px] font-bold mb-1">收货信息</div>
@@ -504,23 +539,23 @@ export default function ShoppingApp() {
             <div className="text-[12px] text-slate-500">📍 {target.addressText || '（未填地址）'}</div>
           </div>
           <div className="bg-white rounded-2xl p-4 space-y-2">
-            <div className="text-[13px] font-bold">{cart.shopName}</div>
+            <div className="text-[13px] font-bold">购物清单（{cart.items.length} 件商品）</div>
             {cart.items.map(i => (
               <div key={i.dishId} className="flex justify-between text-[12px]">
-                <span className="truncate">{i.name} × {i.qty}</span>
-                <span className="shrink-0 ml-2">¥{fmtMoney(i.lineTotal)}</span>
+                <span className="truncate mr-2">{i.name} × {i.qty}</span>
+                <span className="shrink-0">¥{fmtMoney(i.lineTotal)}</span>
               </div>
             ))}
             <div className="border-t border-slate-100 pt-2 flex justify-between text-[13px] font-bold">
-              <span>合计{cartShop ? `（含配送费¥${fmtMoney(cartShop.deliveryFee || 0)}）` : ''}</span>
-              <span className="text-orange-500">¥{fmtMoney(cartTotal + (activeShop?.deliveryFee || 0))}</span>
+              <span>合计（免运费）</span>
+              <span className="text-red-500">¥{fmtMoney(cartTotal)}</span>
             </div>
           </div>
           {payErr && <div className="text-[12px] text-red-500 bg-red-50 rounded-xl px-3 py-2">{payErr}</div>}
-          <button onClick={placeOrder} className="w-full py-3 rounded-full bg-amber-400 text-white text-[14px] font-bold">
-            银行卡支付 ¥{fmtMoney(cartTotal + (cartShop?.deliveryFee || 0))}
+          <button onClick={placeOrder} className="w-full py-3 rounded-full bg-red-500 text-white text-[14px] font-bold">
+            银行卡支付 ¥{fmtMoney(cartTotal)}
           </button>
-          <div className="text-[10px] text-slate-300 text-center">模拟支付 · 扣款走存钱罐银行卡</div>
+          <div className="text-[10px] text-slate-300 text-center">模拟支付 · 扣款走存钱罐银行卡 · 不真实付款</div>
         </div>
       )}
 
@@ -530,11 +565,11 @@ export default function ShoppingApp() {
             <div key={o.id} onClick={() => { setDetailOrderId(o.id); setView('orderDetail'); }} className="bg-white rounded-2xl p-3 cursor-pointer">
               <div className="flex justify-between items-center">
                 <span className="text-[13px] font-bold truncate">{o.shopName}</span>
-                <span className="text-[11px] text-amber-500 shrink-0">{ORDER_STATUS_LABEL[o.status]}</span>
+                <span className="text-[11px] text-orange-500 shrink-0">{ORDER_STATUS_LABEL[o.status]}</span>
               </div>
               <div className="text-[11px] text-slate-400 truncate mt-0.5">{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
               <div className="flex justify-between mt-1">
-                <span className="text-[10px] text-slate-400">{o.recipientType === 'char' ? `给${o.recipientName}点的` : '自购'} · {o.cardLabel}</span>
+                <span className="text-[10px] text-slate-400">{o.recipientType === 'char' ? `给${o.recipientName}买的` : '自购'} · {o.cardLabel}</span>
                 <span className="text-[13px] font-bold">¥{fmtMoney(o.total)}</span>
               </div>
             </div>
@@ -551,23 +586,26 @@ export default function ShoppingApp() {
             <div className="bg-white rounded-2xl p-4">
               <div className="flex justify-between items-center">
                 <span className="text-[15px] font-bold">{ORDER_STATUS_LABEL[o.status]}</span>
-                <span className="text-[13px] font-bold text-orange-500">¥{fmtMoney(o.total)}</span>
+                <span className="text-[13px] font-bold text-red-500">¥{fmtMoney(o.total)}</span>
               </div>
               <div className="text-[11px] text-slate-400 mt-1">订单号 {o.id} · {o.cardLabel}</div>
               {o.status !== 'delivered' && o.status !== 'cancelled' && (
-                <button
-                  onClick={() => {
-                    const next: ShoppingOrder = { ...o, status: 'delivered', statusHistory: [...o.statusHistory, { status: 'delivered', at: Date.now() }], deliveredAt: Date.now() };
-                    DB.saveShoppingOrder(next); setOrders(prev => prev.map(x => x.id === o.id ? next : x));
-                  }}
-                  className="mt-3 w-full py-2.5 rounded-full bg-emerald-400 text-white text-[13px] font-bold">立即送达</button>
+                <>
+                  <button
+                    onClick={() => {
+                      const next: MallOrder = { ...o, status: 'delivered', statusHistory: [...o.statusHistory, { status: 'delivered', at: Date.now() }], deliveredAt: Date.now() };
+                      DB.saveShoppingOrder(next); setOrders(prev => prev.map(x => x.id === o.id ? next : x));
+                    }}
+                    className="mt-3 w-full py-2.5 rounded-full bg-emerald-400 text-white text-[13px] font-bold">确认收货</button>
+                  <div className="text-[10px] text-slate-300 text-center mt-1">虚拟物流 2-3 天送达，也可立即确认收货</div>
+                </>
               )}
             </div>
             <div className="bg-white rounded-2xl p-4 space-y-1">
-              <div className="text-[13px] font-bold">{o.shopName}</div>
+              <div className="text-[13px] font-bold">商品清单</div>
               {o.items.map(i => (
                 <div key={i.dishId} className="flex justify-between text-[12px]">
-                  <span className="truncate">{i.name} × {i.qty}</span><span>¥{fmtMoney(i.lineTotal)}</span>
+                  <span className="truncate mr-2">{i.name} × {i.qty}</span><span>¥{fmtMoney(i.lineTotal)}</span>
                 </div>
               ))}
             </div>
@@ -576,24 +614,38 @@ export default function ShoppingApp() {
               <div>{o.recipientType === 'char' ? `送给 ${o.recipientName}` : '送给我自己'}</div>
               <div>下单时间 {new Date(o.createdAt).toLocaleString()}</div>
             </div>
+            {/* 转发订单到聊天 */}
+            <div className="bg-white rounded-2xl p-4">
+              <div className="text-[13px] font-bold mb-2">转发订单</div>
+              <div className="space-y-1.5">
+                {characters.filter(c => c.id !== o.charId || o.recipientType === 'user').map(c => (
+                  <button key={c.id} onClick={() => forwardOrder(o, c.id)}
+                    className="w-full text-left px-3 py-2 rounded-xl bg-slate-50 hover:bg-orange-50 flex items-center gap-2">
+                    <span>💬</span>
+                    <span className="text-[12px] font-bold">发给 {c.name}</span>
+                    <span className="ml-auto text-[10px] text-slate-400">发送订单卡，对方可一键复制购物车</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         );
       })()}
 
-      {/* 地点切换弹层（我的地址 / char 的地址）*/}
+      {/* 收货人切换弹层 */}
       {targetSel && (
         <div className="absolute inset-0 z-50 bg-black/40 flex items-end" onClick={() => setTargetSel(false)}>
           <div className="w-full bg-white rounded-t-3xl p-4 space-y-2" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-2">
               <div className="text-[14px] font-bold">选择收货地址</div>
-              <button onClick={() => { setAddrDraft(target?.addressText || ''); setEditAddr(true); }} className="text-[11px] text-amber-500 font-bold">编辑当前地址</button>
+              <button onClick={() => { setAddrDraft(target?.addressText || ''); setEditAddr(true); }} className="text-[11px] text-orange-500 font-bold">编辑当前地址</button>
             </div>
             {editAddr && (
               <div className="flex gap-2 mb-2">
                 <input value={addrDraft} onChange={e => setAddrDraft(e.target.value)}
                   placeholder="如：北京市朝阳区望京SOHO T1 2501（城市标签可写开头）"
-                  className="flex-1 text-[12px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-amber-300" />
-                <button onClick={() => updateTargetAddress(addrDraft.trim())} className="px-3 py-2 rounded-xl bg-amber-400 text-white text-[12px] font-bold shrink-0">保存</button>
+                  className="flex-1 text-[12px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-orange-300" />
+                <button onClick={() => updateTargetAddress(addrDraft.trim())} className="px-3 py-2 rounded-xl bg-orange-400 text-white text-[12px] font-bold shrink-0">保存</button>
               </div>
             )}
             {targets.map(t => {
@@ -601,7 +653,7 @@ export default function ShoppingApp() {
               return (
                 <button key={cartKeyOf(t)} disabled={disabled}
                   onClick={() => { setTarget(t); setTargetSel(false); }}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2 ${disabled ? 'opacity-40' : 'hover:bg-slate-50'} ${target && cartKeyOf(t) === cartKeyOf(target) ? 'bg-amber-50 ring-1 ring-amber-300' : 'bg-slate-50'}`}>
+                  className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2 ${disabled ? 'opacity-40' : 'hover:bg-slate-50'} ${target && cartKeyOf(t) === cartKeyOf(target) ? 'bg-orange-50 ring-1 ring-orange-300' : 'bg-slate-50'}`}>
                   <span>{t.type === 'user' ? '🏠' : '💌'}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[13px] font-bold">{t.type === 'user' ? '我的地址' : `${t.name} 的地址`}</div>
@@ -616,4 +668,11 @@ export default function ShoppingApp() {
       )}
     </div>
   );
+}
+
+/** 商品月销数（hash32 确定性，展示用） */
+function hashSales(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) { h = ((h << 5) - h + id.charCodeAt(i)) | 0; }
+  return 50 + Math.abs(h) % 2000;
 }

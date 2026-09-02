@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
 import StatusBar from './os/StatusBar';
@@ -56,6 +53,7 @@ const VRWorldApp = lazyApp(() => import('../apps/VRWorldApp'));
 const WorldHomeApp = lazyApp(() => import('../apps/WorldHomeApp'));
 const PresetApp = lazyApp(() => import('../apps/PresetApp'));
 const ShoppingApp = lazyApp(() => import('../apps/ShoppingApp'));
+const TakeoutApp = lazyApp(() => import('../apps/TakeoutApp'));
 const CharCreatorDevApp = lazyApp(() => import('../apps/CharCreatorDevApp'));
 const SpecialMomentsApp = lazyApp(() => import('./ValentineEvent').then(m => ({ default: m.SpecialMomentsApp })));
 
@@ -91,6 +89,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.VRWorld]: VRWorldApp, [AppID.CharCreatorDev]: CharCreatorDevApp, [AppID.SpecialMoments]: SpecialMomentsApp,
   [AppID.WorldHome]: WorldHomeApp,
   [AppID.Shopping]: ShoppingApp,
+  [AppID.Takeout]: TakeoutApp,
 };
 // AppIcon 的 pointerdown 只预取用户正在点的 App；失败时由 preloadableLazy 清缓存，点击可正常重试。
 setAppPayloadWarmer((id: AppID) => APP_BY_ID[id]?.preload());
@@ -627,7 +626,7 @@ const PhoneShell: React.FC = () => {
   }, [showDisclaimer, showImportRecoveryPrompt, showAuthorLetter, showUpdateNotification, isDataLoaded, isLocked]);
 
   // 七夕特别活动推送：严格按北京时间 2026-08-19 判断，用户处理后永久不再弹。
-  // 排在版本更新之后、日常维护提醒之前；按钮只带到「特别时光」，不替用户选择角色。
+  // 排在版本更新之后、日常维护提醒之前；按钮只带到「特别时光」，不���用户选择角色。
   const [showQixiLaunchPopup, setShowQixiLaunchPopup] = useState(false);
   const qixiLaunchAsked = useRef(false);
   useEffect(() => {
@@ -932,6 +931,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Novel: return <NovelApp />; 
       case AppID.Bank: return <BankApp />;
       case AppID.Shopping: return <ShoppingApp />;
+      case AppID.Takeout: return <TakeoutApp />;
       case AppID.XhsStock: return <XhsStockApp />;
       case AppID.XhsFreeRoam: return <XhsFreeRoamApp />;
       case AppID.Browser: return <BrowserApp />;
@@ -954,7 +954,7 @@ const PhoneShell: React.FC = () => {
     }
   };
 
-  // 安全区策略（方案 B）：自理名单里的 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
+  // 安全区策略（方案 B）：自理名单里的 App 已全屏铺底、自己给控件让位，外壳不再加 padding��
   // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
   // 自理名单见 utils/safeAreaApps.ts（迁移一个 App = 把它加进名单 + 顶栏用 --chrome-top 自己让位）。
   // TODO(safe-area-A): 把剩余「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
@@ -1009,7 +1009,7 @@ const PhoneShell: React.FC = () => {
           </div>
 
           {/* Overlays: Status Bar (Top) —— 常驻渲染：时钟/电量条由开关+平台默认决定显隐（StatusBar 内部 isStatusBarHidden），
-              错误指示器、系统调试终端与开关无关、始终在。 */}
+              错误指示器、系统调试终端与开关无关���始终在。 */}
           <StatusBar />
           
           {/* Overlays: Suspended Call Bar */}

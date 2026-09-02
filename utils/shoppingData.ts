@@ -95,3 +95,61 @@ export function dishImgUrl(img?: string): string {
 }
 
 export type { ShoppingShop, ShoppingDish, ShopCategory };
+
+// ============================================================
+// 购物 App（淘宝式）数据 —— mall-shops.json / mall-goods.json
+// 与外卖数据集完全分离；商品图统一 imgKey SVG。
+// ============================================================
+import type { MallShop, MallGood } from './shoppingTypes';
+
+export interface MallDataset {
+  shops: MallShop[];
+  goods: MallGood[];
+}
+
+let mallCache: MallDataset | null = null;
+let mallLoading: Promise<MallDataset> | null = null;
+
+export function invalidateMallDataCache() {
+  mallCache = null;
+  mallLoading = null;
+}
+
+/** 拉取购物数据集（scripts/gen-mall-data.mjs 离线生成） */
+export async function loadMallData(): Promise<MallDataset> {
+  if (mallCache) return mallCache;
+  if (mallLoading) return mallLoading;
+  mallLoading = (async () => {
+    const [shopsRes, goodsRes] = await Promise.all([
+      fetch(`${import.meta.env.BASE_URL}shopping/mall-shops.json`),
+      fetch(`${import.meta.env.BASE_URL}shopping/mall-goods.json`),
+    ]);
+    const shops: MallShop[] = shopsRes.ok ? await shopsRes.json() : [];
+    const goods: MallGood[] = goodsRes.ok ? await goodsRes.json() : [];
+    const ds: MallDataset = { shops, goods };
+    mallCache = ds;
+    return ds;
+  })();
+  try {
+    return await mallLoading;
+  } catch (e) {
+    mallLoading = null;
+    throw e;
+  }
+}
+
+/** 全城搜商品（确定性前 80 条） */
+export function searchMallGoods(ds: MallDataset, q: string, cat?: string): MallGood[] {
+  const key = q.trim().toLowerCase();
+  if (!key && !cat) return [];
+  const out: MallGood[] = [];
+  for (const g of ds.goods) {
+    const nameHit = !key || g.name.toLowerCase().includes(key) || (g.brand || '').toLowerCase().includes(key);
+    const catHit = !cat || true; // 店铺品类过滤由调用方在店铺层做
+    if (nameHit && catHit) {
+      out.push(g);
+      if (out.length >= 80) break;
+    }
+  }
+  return out;
+}

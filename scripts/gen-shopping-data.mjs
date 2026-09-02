@@ -67,6 +67,19 @@ const BRAND_ALIAS = {
   '李先生': ['李先生'], '杨国福': ['杨国福'], '海底捞': ['海底捞'],
 };
 
+// ── 外卖品类 → SVG imgKey（GoodsSvg 渲染，无外链图）──
+const FOOD_IMGKEY = {
+  '美食外卖': 'food', '奶茶饮品': 'drink', '甜品蛋糕': 'dessert',
+  '超市便利': 'snack', '生鲜果蔬': 'fresh', '医药健康': 'health', '鲜花绿植': 'flower',
+  '休闲零食': 'snack', '粮油米面': 'snack', '饮料冲调': 'drink', '方便速食': 'food',
+  '乳制品烘焙': 'dessert', '调味品': 'snack', '糖果巧克力': 'snack',
+};
+const shopCatImgKeyMap = new Map();
+function shopCatImgKey(shopId) {
+  const c = shopCatImgKeyMap.get(shopId) || '';
+  return FOOD_IMGKEY[c] || 'food';
+}
+
 // ── 品类级菜单词库（独立小店，按 cuisine/店名关键词选池）──
 const CAT_POOLS = {
   '美食外卖': [
@@ -152,13 +165,14 @@ const dishes = [];
 let dishSeq = 0;
 function pushDish(shopId, name, price, cat) {
   dishSeq++;
-  dishes.push({ id: 'd' + dishSeq, shopId, name, price: Math.round(price * 10) / 10, cat });
+  dishes.push({ id: 'd' + dishSeq, shopId, name, price: Math.round(price * 10) / 10, cat, imgKey: shopCatImgKey(shopId) });
 }
 
 const shopsOut = [];
 for (const s of raw) {
   const shop = enrichShop(s);
   shopsOut.push(shop);
+  shopCatImgKeyMap.set(s.id, s.cat);
   const h = hash32(s.id);
   const brand = brandOf(s);
 
@@ -175,8 +189,8 @@ for (const s of raw) {
       const base = 3.5 + (hash32(p.code) % 2200) / 100; // 3.5-25.5 元锚点
       const d = { id: 'd' + (++dishSeq), shopId: shop.id, name: p.name, price: Math.round(base * 10) / 10, cat: p.cat || '休闲零食' };
       // OFF 图存短路径（前缀在 dishImgUrl 里重建），省 ~1.3MB
-      const imgShort = (p.img || '').replace('https://images.openfoodfacts.org/images/products/', '');
-      if (imgShort) d.img = imgShort;
+      // v2: 弃 OFF 实拍图，改用品类 SVG imgKey（GoodsSvg 渲染）
+      d.imgKey = FOOD_IMGKEY[p.cat] || 'snack';
       if (p.qty) d.qty = p.qty;
       if (p.brand) d.brand = p.brand;
       dishes.push(d);
@@ -202,5 +216,5 @@ fs.writeFileSync(OUT_DISHES, JSON.stringify(dishes));
 const mb = n => (n / 1024 / 1024).toFixed(2) + 'MB';
 console.log('shops:', shopsOut.length, '->', OUT_SHOPS, mb(fs.statSync(OUT_SHOPS).size));
 console.log('dishes:', dishes.length, '->', OUT_DISHES, mb(fs.statSync(OUT_DISHES).size));
-const realGoods = dishes.filter(d => d.img).length;
-console.log('dishes with OFF real-product images:', realGoods);
+const realGoods = dishes.filter(d => d.imgKey).length;
+console.log('dishes with imgKey (SVG):', realGoods);

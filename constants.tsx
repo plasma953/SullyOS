@@ -38,6 +38,7 @@ import {
   HouseLine,
   ListChecks,
   ToteSimple,
+  Hamburger,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -63,6 +64,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Novel: ({ className }) => <PenNib className={className} weight="regular" />,
   Bank: ({ className }) => <PiggyBank className={className} weight="regular" />,
   Shopping: ({ className }) => <ToteSimple className={className} weight="regular" />,
+  Takeout: ({ className }) => <Hamburger className={className} weight="regular" />,
   XhsFreeRoam: ({ className }) => <Compass className={className} weight="regular" />,
   XhsStock: ({ className }) => <Camera className={className} weight="regular" />,
   SpecialMoments: ({ className }) => <Sparkle className={className} weight="regular" />,
@@ -97,7 +99,8 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
   { id: AppID.User, name: '档案', icon: 'User', color: 'blue' },
   { id: AppID.Bank, name: '存钱罐', icon: 'Bank', color: 'lime' }, // Hidden
-  { id: AppID.Shopping, name: '外卖购物', icon: 'Shopping', color: 'amber' },
+  { id: AppID.Shopping, name: '购物', icon: 'Shopping', color: 'orange' },
+  { id: AppID.Takeout, name: '外卖', icon: 'Takeout', color: 'amber' },
   { id: AppID.Journal, name: '交换日记', icon: 'Journal', color: 'amber' },
   // { id: AppID.Handbook, name: '手账', icon: 'Handbook', color: 'fuchsia' }, // Hidden temporarily, pending update
   { id: AppID.Social, name: 'Spark', icon: 'Social', color: 'red' },

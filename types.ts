@@ -38,7 +38,8 @@ export enum AppID {
   CharCreatorDev = 'char_creator_dev', // 捏脸系统开发模式 — 仅开发模式可见，向捏人器指定类目追加自定义部件
   WorldHome = 'world_home', // 家园 — 同世界观多角色共同生活的大世界（观测驱动演绎，每角色独立 LLM 调用 + NPC 世界引擎）
   Preset = 'preset', // 预设 — 提示词段落预设管理（内容/顺序/启停，注入聊天 system prompt）
-  Shopping = 'shopping', // 购物 — 真实店面模拟点单（OSM 店面 + OFF 真实商品，模拟下单不真实支付）
+  Shopping = 'shopping', // 购物 — 淘宝式电商（OSM 真实商家 + 品牌真实商品，模拟下单不真实支付）
+  Takeout = 'takeout',   // 外卖 — 美团式点单（OSM 真实店面 + 品牌 SKU，模拟下单不真实支付）
 }
 
 export interface SystemLog {
@@ -171,7 +172,7 @@ export interface OSTheme {
   chatBubbleIndent?: number;
   /** 隐藏头像的一侧是否贴边（收回头像空位） */
   chatSnapToEdge?: boolean;
-  /** HTML 卡片 / 心象卡片 / 音乐卡片的出现位置：缺省/'center' = 水平居中（默认），'anchor' = 贴气泡列
+  /** HTML 卡片 / 心象卡片 / 音乐卡片的出���位置：缺省/'center' = 水平居中（默认），'anchor' = 贴气泡列
    *  （头像位，不随贴边/缩进挪动，即旧版观感）。经 MessageItem 布局属性生效（不走注入 CSS），
    *  同属聊天细节微调字段、可按角色覆盖 */
   chatModuleAlign?: 'anchor' | 'center';
@@ -345,7 +346,7 @@ export interface InstantPushConfig {
   // VAPID 公私钥已迁移到 utils/pushVapid.ts (push_vapid_v1)，与 Proactive Push
   // 共享同一份，避免两边互相 unsubscribe 抢同一个 pushManager 订阅。
   clientToken?: string;     // 对应 Worker 的 AMSG_CLIENT_TOKEN
-  // 发送文本后是否自动触发 AI 回复 (worker 端跑 + push 回写). 仅控制"自动触发"这件事,
+  // 发送文本后是否���动触发 AI 回复 (worker 端跑 + push 回写). 仅控制"自动触发"这件事,
   // 不改变 instant push 本身的开关含义. 关闭时 instant 模式也保留手动 ⚡, 跟本地模式一致.
   // 缺省 (undefined) 视为关闭 — 避免"启用 instant = 自动回复"的反直觉强绑定.
   autoTriggerOnSend?: boolean;
@@ -420,7 +421,7 @@ export interface ActiveMsg2GlobalConfig {
    * （含角色自己排的）下次触发自动跟上；不达标就把凭据照旧冻结进任务体。
    *
    * undefined / false 都按「不达标」处理：老路在哪台 Worker 上都跑得通，宁可多冻结
-   * 一份凭据，也不要拿新写法去撞一台还不认识它的 Worker。握手时会探一次。
+   * 一份凭据，也不要拿新写法去撞一台还不认识它的 Worker。握手时���探一次。
    */
   llmCredentialsSupported?: boolean;
   updatedAt?: number;
@@ -520,7 +521,7 @@ export interface ActiveMsg2InboxMessage {
    */
   taskUuid?: string | null;
   recurrenceType?: string | null;
-  /** 本次触发的名义时刻（epoch 毫秒）。 */
+  /** 本��触发的名义时刻（epoch 毫秒）。 */
   occurrenceMs?: number | null;
   metadata?: Record<string, any>;
   sentAt?: number;
@@ -620,7 +621,7 @@ export interface RealtimeConfig {
   notionDatabaseId: string; // 日记数据库ID
   notionNotesDatabaseId?: string; // 用户笔记数据库ID（可选，让角色读取用户的日常笔记）
 
-  // 飞书配置 (中国区 Notion 替代)
+  // 飞书��置 (中国区 Notion 替代)
   feishuEnabled: boolean;
   feishuAppId: string;      // 飞书应用 App ID
   feishuAppSecret: string;  // 飞书应用 App Secret
@@ -849,7 +850,7 @@ export interface PromptPreset {
      * 「恢复默认」。undefined = 用户手建的自定义段落。
      */
     sourceKey?: string;
-    /** 分类 id（chat/date/song/voice/memory/amsg），内置行随目录登记写入。 */
+    /** 分类 id（chat/date/song/voice/memory/amsg）���内置行随目录登记写入。 */
     category?: string;
     /** 该行内容对应的内置版本号；目录升级内容时可据此提示用户文案有更新。 */
     builtinVersion?: number;
@@ -1076,7 +1077,7 @@ export interface AiSession {
     cardId?: string;
     /** 长会话自动总结出的「前情提要」（参考 TRPG：超 100 条触发，把旧剧情压成小说梗概） */
     summaries?: { id: string; content: string; createdAt: number }[];
-    /** 被折叠归档的旧原文（不删除，UI 可展开回看；总结后从 transcript 移到这里） */
+    /** 被折叠归档的旧原��（不删除，UI 可展开回看；总结后从 transcript 移到这里） */
     archived?: string;
     updatedAt: number;
 }
@@ -1390,7 +1391,7 @@ export interface VRWorldCharState {
     };
 }
 
-/** 注入聊天的 vr_card 消息的 metadata 结构。 */
+/** 注入聊天的 vr_card 消息的 metadata ��构。 */
 export interface VRCardMeta {
     vrCard: true;
     room: VRRoomId;
@@ -1588,7 +1589,7 @@ export type WorldNarrativeStyle = 'warm' | 'inner' | 'drama' | 'breezy' | 'sitco
 /**
  * 伏笔：角色这半天瞒下的事（timeline 里 shared=false 对应的内幕）。
  * 躺在世界的伏笔栏里，用户可点击"引爆"——下一轮演绎时注入给被瞒者
- * （你发现了…）与当事人（你瞒的事败露了…），生成冲突。
+ * （你发现了…）与��事人（你瞒的事败露了…），生成冲突。
  */
 export interface WorldSeed {
     id: string;
@@ -3033,7 +3034,7 @@ export interface CharacterProfile {
 
   // 时间感知强化：开启（默认）时会向上下文注入「距离上次聊天已过去多久」的强化提示，
   // 让角色强化时间观念、主动匹配现实世界时间。关掉后不再注入这组提示词
-  // （注意：历史消息本身仍带时间戳，关掉后弱化程度取决于模型自身理解）。
+  // （注意��历史消息本身仍带时间戳，关掉后弱化程度取决于模型自身理解）。
   timeAwarenessEnabled?: boolean;
 
   // 自定义时区（异国恋 / 角色身处异国等场景）。与「时间感知强化」完全独立、可任意组合：
