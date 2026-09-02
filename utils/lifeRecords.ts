@@ -6,6 +6,8 @@ import {
 } from '../types';
 import { addLocalDays, getLocalDateKey } from './localDate';
 import { formatMoney, sumMoney } from './format';
+import type { ShoppingOrder } from './shoppingTypes';
+import { buildShoppingOrderTag } from './shoppingFormat';
 
 /**
  * 生活记录（档案 App：生理期 / 药盒 / 记账 / 锻炼）
@@ -34,6 +36,7 @@ export const isLifeModuleOn = (char: CharacterProfile, module: LifeRecordModule)
         case 'med': return char.lifeRecordMedEnabled !== false;
         case 'expense': return char.lifeRecordExpenseEnabled !== false;
         case 'exercise': return char.lifeRecordExerciseEnabled !== false;
+        case 'order': return char.charOrderEnabled === true;
     }
 };
 
@@ -179,11 +182,12 @@ export const summarizeLifeRecord = (module: LifeRecordModule, kind: string, payl
         case 'med': return `吃药 · ${payload.name || '药'}`;
         case 'expense': return kind === 'income' ? `收入 ${formatMoney(payload.amount)}${payload.note ? `（${payload.note}）` : ''}` : `支出 ${formatMoney(payload.amount)}${payload.note ? `（${payload.note}）` : ''}`;
         case 'exercise': return `锻炼 · ${payload.activity || '运动'}${payload.duration ? ` ${payload.duration}` : ''}`;
+        case 'order': return `点外卖 · ${payload.shop || '外卖'}${payload.note ? `（${payload.note}）` : ''}`;
     }
 };
 
 export const LIFE_MODULE_LABELS: Record<LifeRecordModule, string> = {
-    period: '生理期', med: '药盒', expense: '记账', exercise: '锻炼',
+    period: '生理期', med: '药盒', expense: '记账', exercise: '锻炼', order: '点单',
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -391,7 +395,7 @@ export const buildLifeRecordInjection = async (
     const settings = await DB.getLifeRecordSettings().catch(() => null);
     const hidden = getHiddenLifeModules(settings);
     const moduleActive = (m: LifeRecordModule) => isLifeModuleOn(char, m) && !hidden.has(m);
-    if (!(['period', 'med', 'expense', 'exercise'] as LifeRecordModule[]).some(moduleActive)) return '';
+    if (!(['period', 'med', 'expense', 'exercise', 'order'] as LifeRecordModule[]).some(moduleActive)) return '';
 
     const [records, plans, txs] = await Promise.all([
         DB.getAllLifeRecords().catch(() => [] as LifeRecord[]),
@@ -428,6 +432,10 @@ export const buildLifeRecordInjection = async (
     if (moduleActive('expense')) tools.push(`- TA 明确说花了多少钱买什么 → \`[[LIFE:EXPENSE|金额|用途]]\`（金额是纯数字）`);
     if (moduleActive('expense')) tools.push(`- TA 明确说收到 / 赚了多少钱（工资、红包、退款到账等收入）→ \`[[LIFE:INCOME|金额|来源]]\`（金额是纯数字）`);
     if (moduleActive('exercise')) tools.push(`- TA 明确说做了什么运动 → \`[[LIFE:EXERCISE|运动|时长]]\`（时长可省略）`);
+    // char 主动点单（独立于记账模块；总开关 + char.charOrderEnabled 双闸门，默认关）
+    if (moduleActive('order') && !forFirePack) {
+        tools.push(`- 你想主动给 ${userName} 点外卖（只限 TA 提过想吃 / 你们正在聊的食物） → \`[[LIFE:ORDER|店名|商品×数量;商品×数量|金额|备注]]\`（金额纯数字，从 ${userName} 的默认卡代扣；一天最多一单）`);
+    }
     if (tools.length > 0 && !forFirePack) {
         s += `**代记工具**：只有当 ${userName} 在对话中**明确说出**以下事实时，才单独起一行输出对应指令、帮 TA 顺手记一笔（一次一条）：\n${tools.join('\n')}\n`;
         s += `TA 只是暗示、开玩笑、或在说过去 / 别人的事时，一律不要记录。记录成功后系统会插入一张卡片，TA 可以确认或否决；被否决说明你理解错了。平时不要把这些指令挂在嘴边，也不要替 TA 补记你只是猜测的事。\n`;
@@ -481,6 +489,20 @@ const parseLifeDirective = (verb: string, args: string[]): LifeDirective | null 
             const note = (args[1] || '').trim();
             if (isNaN(amount) || amount <= 0) return null;
             return { module: 'expense', kind: 'income', payload: { amount, note } };
+        }
+        case 'ORDER': {
+            const shop = (args[0] || '').trim();
+            const rawItems = (args[1] || '').trim();
+            const amount = parseFloat((args[2] || '').replace(/[^\d.]/g, ''));
+            const note = (args[3] || '').trim();
+            if (!shop || isNaN(amount) || amount <= 0) return null;
+            const items = rawItems
+                ? rawItems.split(/[;,，；]/).map(s => s.trim()).filter(Boolean).map(s => {
+                    const mm = s.match(/^(.*?)[×xX*](\d+)$/);
+                    return mm ? { name: mm[1].trim(), qty: Math.min(99, Math.max(1, parseInt(mm[2], 10) || 1)) } : { name: s, qty: 1 };
+                })
+                : [];
+            return { module: 'order', kind: 'order', payload: { shop, items, amount, note } };
         }
         case 'EXERCISE': {
             const activity = (args[0] || '').trim();
@@ -538,6 +560,11 @@ const findDuplicate = async (
             if (!hit) return null;
             const rec = eff.filter(r => r.module === 'expense' && r.bankTxId === hit.id).pop();
             return rec ? byName(rec) : { byName: '你自己' };
+        }
+        case 'order': {
+            // 同日同店即重（防 LLM 复读连点）；真想再点一家走 App 手动下单
+            const rec = eff.filter(r => r.module === 'order' && r.date === today && r.payload.shop === d.payload.shop).pop();
+            return rec ? byName(rec) : null;
         }
         case 'exercise': {
             // 只按「同日 + 同活动」判重，不再要求时长逐字一致——模型下一轮把「30分钟」
@@ -641,8 +668,9 @@ export const executeLifeDirectives = async (
                 continue;
             }
 
-            // expense：先落真实银行流水（BankApp 打开时会从流水重算 todaySpent）
+            // expense：先落真实银行流水（BankApp 打开时会从流水重算 todaySpent）；order 在下面落订单（同需流水）
             let bankTxId: string | undefined;
+            let order: ShoppingOrder | undefined;
             if (d.module === 'expense') {
                 const isIncome = d.kind === 'income';
                 const tx: BankTransaction = {
@@ -657,6 +685,58 @@ export const executeLifeDirectives = async (
                 bankTxId = tx.id;
             }
 
+            // order：char 主动给 user 点外卖 —— 扣 user 默认卡（虚拟支付）+ 落购物订单
+            if (d.module === 'order') {
+                const total = d.payload.amount as number;
+                const bank = await DB.getBankState();
+                let cards = (bank?.cards || []).filter(c => !(c.owner === 'char'));
+                if (cards.length === 0) {
+                    cards = [{ id: `card-life-${Date.now()}`, name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true, owner: 'user' }];
+                }
+                const payCard = cards.find(c => c.isDefault) || cards[0];
+                if (payCard.balance < total) {
+                    await noteSkipped(summary, `你的卡余额不足（余额 ${formatMoney(payCard.balance)}，这笔要 ${formatMoney(total)}）`);
+                    continue;
+                }
+                const up = await DB.getUserProfile().catch(() => null);
+                const recipientName = (up as any)?.name || '我';
+                const orderItems = (d.payload.items || []).map((it: any) => ({ dishId: 'life_' + it.name, name: it.name, unitPrice: 0, qty: it.qty || 1, lineTotal: 0 }));
+                const totalQty = orderItems.reduce((a: number, i: any) => a + i.qty, 0) || 1;
+                const unit = Math.round((total / totalQty) * 100) / 100;
+                orderItems.forEach((it: any, idx: number) => {
+                    it.unitPrice = unit;
+                    it.lineTotal = idx === orderItems.length - 1
+                        ? Math.round((total - unit * (totalQty - it.qty)) * 100) / 100
+                        : Math.round(unit * it.qty * 100) / 100;
+                });
+                order = {
+                    id: 'ORD' + today.replace(/-/g, '') + Math.random().toString(36).slice(2, 8).toUpperCase(),
+                    charId: char.id,
+                    placedBy: 'char', recipientType: 'user', recipientName,
+                    addressText: '（TA 帮你点的单）',
+                    shopId: 'life_' + d.payload.shop, shopName: d.payload.shop,
+                    shopCat: '美食外卖',
+                    items: orderItems, itemCount: totalQty,
+                    subtotal: total, deliveryFee: 0, total,
+                    payMethod: 'bank_card', cardLabel: `${payCard.name}·${payCard.tailNo}`,
+                    status: 'paid', statusHistory: [{ status: 'paid', at: Date.now() }], createdAt: Date.now(),
+                };
+                (d.payload as any).orderId = order.id;
+                const nextCards = cards.map(c => c.id === payCard.id ? { ...c, balance: Math.round((c.balance - total) * 100) / 100 } : c);
+                await DB.saveBankState({ ...(bank || { config: { dailyBudget: 100, currencySymbol: '¥' }, shop: {} as any, goals: [] }), cards: nextCards } as any);
+                const otx: BankTransaction = {
+                    id: `tx-order-${Date.now()}`,
+                    amount: -total,
+                    category: '购物',
+                    note: `${d.payload.shop}（${char.name}点的）`,
+                    timestamp: Date.now(),
+                    dateStr: today,
+                };
+                await DB.saveTransaction(otx);
+                bankTxId = otx.id;
+                await DB.saveShoppingOrder(order);
+            }
+
             const record: LifeRecord = {
                 id: `life-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
                 module: d.module, kind: d.kind, date: today, timestamp: Date.now(),
@@ -667,15 +747,29 @@ export const executeLifeDirectives = async (
             };
             await DB.saveLifeRecord(record);
 
-            await DB.saveMessage({
-                ...stamp,
-                charId: char.id, role: 'assistant', type: 'life_card',
-                content: `[生活记录：${summary}]`,
-                metadata: withInherited({
-                    recordId: record.id, module: d.module, kind: d.kind, summary,
-                    dateStr: today, recordedByName: char.name, reviewStatus: 'active',
-                }),
-            });
+            if (d.module === 'order' && order) {
+                await DB.saveMessage({
+                    ...stamp,
+                    charId: char.id, role: 'assistant', type: 'shopping_order',
+                    content: `${char.name}帮你点了外卖｜
+${buildShoppingOrderTag(order)}`,
+                    metadata: withInherited({
+                        orderId: order.id, status: order.status, shop: order.shopName,
+                        total: order.total, recipient: order.recipientName,
+                        recordId: record.id, reviewStatus: 'active',
+                    }),
+                } as any);
+            } else {
+                await DB.saveMessage({
+                    ...stamp,
+                    charId: char.id, role: 'assistant', type: 'life_card',
+                    content: `[生活记录：${summary}]`,
+                    metadata: withInherited({
+                        recordId: record.id, module: d.module, kind: d.kind, summary,
+                        dateStr: today, recordedByName: char.name, reviewStatus: 'active',
+                    }),
+                });
+            }
             addToast(`${char.name} 帮你记录了「${summary}」`, 'success');
         } catch (e) {
             console.error('[LifeRecord] directive failed:', verb, e);
@@ -705,6 +799,9 @@ export const resolveLifeRecordCard = async (
         if (record && record.reviewStatus !== action) {
             if (action === 'rejected' && record.bankTxId) {
                 await DB.deleteTransaction(record.bankTxId).catch(() => {});
+                if (record.module === 'order' && (record.payload as any)?.orderId) {
+                    await DB.deleteShoppingOrder((record.payload as any).orderId).catch(() => {});
+                }
             }
             await DB.saveLifeRecord({
                 ...record,

@@ -63,6 +63,12 @@ const THEMES: Record<LifeRecordModule, ModuleTheme> = {
         paper: 'linear-gradient(160deg,#f9fbf3 0%,#eef4e2 100%)',
         icon: <svg {...iconStroke('#5d7345')}><path d="M7 8v8M4.5 10v4M17 8v8M19.5 10v4M7 12h10" /></svg>,
     },
+    // 点单（ORDER）：仅供 Record<LifeRecordModule,...> 类型完整性；不进 MODULE_ORDER（无页签，订单在聊天卡+账本里看）
+    order: {
+        cn: '点单', en: 'TO-GO', accent: '#a05a2c', deep: '#7a421e', soft: '#e4c4a8',
+        paper: 'linear-gradient(160deg,#fdf9f4 0%,#f7ecdd 100%)',
+        icon: <svg {...iconStroke('#a05a2c')}><path d="M4 9h16l-1.5 10.5a1.5 1.5 0 0 1-1.5 1.3H7a1.5 1.5 0 0 1-1.5-1.3L4 9ZM9 9V7a3 3 0 0 1 6 0v2" /></svg>,
+    },
 };
 
 const MODULE_ORDER: LifeRecordModule[] = ['period', 'med', 'expense', 'exercise'];

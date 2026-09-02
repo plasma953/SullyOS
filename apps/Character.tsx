@@ -1711,6 +1711,19 @@ ${isInitialGeneration ? `
                                            </button>
                                        </div>
                                    ))}
+                                   {/* char 主动点单：默认关（独立于上面 undefined=开 的小开关数组） */}
+                                   <div className="flex items-center justify-between gap-3">
+                                       <div className="min-w-0">
+                                           <p className="text-xs font-bold text-slate-700">主动点单</p>
+                                           <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">TA 可以主动给你点外卖（扣你的默认卡，聊天里出订单卡）</p>
+                                       </div>
+                                       <button
+                                           onClick={() => handleChange('charOrderEnabled', !(formData.charOrderEnabled === true))}
+                                           className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${formData.charOrderEnabled === true ? 'bg-primary' : 'bg-slate-200'}`}
+                                       >
+                                           <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform ${formData.charOrderEnabled === true ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
+                                       </button>
+                                   </div>
                                </div>
                            </div>
 

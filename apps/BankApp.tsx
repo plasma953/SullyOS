@@ -125,7 +125,10 @@ const BankApp: React.FC = () => {
             if (cards.length >= 5) { addToast('银行卡最多 5 张'); return; }
             next = [...cards, card];
         }
-        if (card.isDefault) next = next.map(c => ({ ...c, isDefault: c.id === card.id }));
+        if (card.isDefault) {
+            const sameOwner = (c: BankCard) => (card.owner === 'char') ? (c.owner === 'char' && c.ownerId === card.ownerId) : !(c.owner === 'char');
+            next = next.map(c => sameOwner(c) ? { ...c, isDefault: c.id === card.id } : c);
+        }
         else if (next.every(c => !c.isDefault)) next = next.map((c, i) => ({ ...c, isDefault: i === 0 }));
         persistStateUpdate(prev => ({ ...prev, cards: next }));
         addToast(exists ? '卡片已更新' : '卡片已添加');
@@ -137,12 +140,39 @@ const BankApp: React.FC = () => {
         addToast('卡片已删除');
     };
     const setDefaultCard = (id: string) => {
-        const next = (state.cards || []).map(c => ({ ...c, isDefault: c.id === id }));
+        const target = (state.cards || []).find(c => c.id === id);
+        const sameOwner = (c: BankCard) => (target?.owner === 'char') ? (c.owner === 'char' && c.ownerId === target?.ownerId) : !(c.owner === 'char');
+        const next = (state.cards || []).map(c => sameOwner(c) ? { ...c, isDefault: c.id === id } : c);
         persistStateUpdate(prev => ({ ...prev, cards: next }));
         addToast('已设为默认支付卡');
     };
+    // char 视图（查手机银行卡入口 owner=charId 带入）：查看/管理 TA 名下卡 + TA 账本
+    const [actor, setActor] = useState<string>('user');
+    const actorIsChar = actor !== 'user';
+    const charMeta = actorIsChar ? characters.find(c => c.id === actor) : undefined;
+    const charName = charMeta?.name || 'TA';
+    useEffect(() => {
+        try {
+            const raw = sessionStorage.getItem('sullyos_app_context_bank');
+            if (raw) {
+                sessionStorage.removeItem('sullyos_app_context_bank');
+                const ctx = JSON.parse(raw);
+                if (ctx?.owner) setActor(String(ctx.owner));
+            }
+        } catch { /* ignore */ }
+    }, []);
+    useEffect(() => {
+        if (!actorIsChar) return;
+        let alive = true;
+        DB.getAllTransactions().then(txs => {
+            if (!alive) return;
+            setTransactions(txs.filter(t => (t as any).ownerId === actor).sort((a, b) => b.timestamp - a.timestamp));
+        }).catch(() => {});
+        return () => { alive = false; };
+    }, [actor, actorIsChar]);
+    const scopedCards = actorIsChar ? (state.cards || []).filter(c => c.owner === 'char' && c.ownerId === actor) : (state.cards || []);
     const [showCardModal, setShowCardModal] = useState(false);
-    const [cardDraft, setCardDraft] = useState({ name: '', tailNo: '', balance: '', brand: '' });
+    const [cardDraft, setCardDraft] = useState({ name: '', tailNo: '', balance: '', brand: '', owner: undefined as 'user' | 'char' | undefined, ownerId: undefined as string | undefined });
 
     const persistStateUpdate = async (updater: (prev: BankFullState) => BankFullState): Promise<BankFullState> => {
         const nextState = updater(stateRef.current);
@@ -326,7 +356,7 @@ const BankApp: React.FC = () => {
         const finalState = { ...currentState, todaySpent: spent, shop: { ...currentState.shop, appeal } };
         stateRef.current = finalState;
         setState(finalState);
-        setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
+        setTransactions(txs.filter(t => !(t as any).ownerId).sort((a,b) => b.timestamp - a.timestamp));
 
         // 银行卡迁移：老数据无 cards 字段 → 补一张默认零花钱卡（购物 App 可用）
         if (!finalState.cards || finalState.cards.length === 0) {
@@ -358,10 +388,19 @@ const BankApp: React.FC = () => {
             category: txType === 'income' ? 'income' : 'general',
             note: txNote,
             timestamp: Date.now(),
-            dateStr: today
+            dateStr: today,
+            ownerId: actorIsChar ? actor : undefined
         };
         
         await DB.saveTransaction(newTx);
+        if (actorIsChar) {
+            // char 流水：落库即可（带 ownerId），不进 user 记账/预算
+            setTxAmount('');
+            setTxNote('');
+            setShowAddTxModal(false);
+            addToast('已记入 ' + charName + ' 的账本');
+            return;
+        }
         trackEvent('记一笔账');
 
         const cur = stateRef.current;
@@ -389,6 +428,13 @@ const BankApp: React.FC = () => {
         if (!tx) return;
         await DB.deleteTransaction(id);
         trackEvent('删除一笔账');
+
+        if ((tx as any).ownerId) {
+            // char 账本流水：不影响 user 预算
+            setTransactions(prev => prev.filter(t => t.id !== id));
+            addToast('记录已删除', 'success');
+            return;
+        }
 
         const cur = stateRef.current;
         let newSpent = cur.todaySpent;
@@ -803,6 +849,9 @@ ${previousGuestbook}
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
                         <div className="flex flex-col">
+                            {actorIsChar && (
+                                <span className="px-2 py-0.5 rounded-full bg-[#5C6BC0] text-white text-[10px] font-bold w-fit">䝿 {charName} 的银行卡</span>
+                            )}
                             <span className="font-bold text-[10px] text-white/60 uppercase tracking-widest">☕ Coffee Tycoon</span>
                             <div className="flex items-center gap-2">
                                 <span className="font-black text-lg text-[#FFE0B2] leading-none">{state.shop.actionPoints}</span>
@@ -826,6 +875,16 @@ ${previousGuestbook}
                             <span className="text-base">+</span>
                             <span>记账</span>
                         </button>
+                        {actorIsChar && (
+                            <button
+                                onClick={() => { setTxType('income'); setTxAmount(''); setTxNote(charName + ' 的零花钱/进账'); setShowAddTxModal(true); }}
+                                className="flex items-center gap-1.5 bg-gradient-to-r from-[#66BB6A] to-[#43A047] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg hover:shadow-xl active:scale-95 transition-all"
+                                style={{ boxShadow: '0 4px 14px rgba(102, 187, 106, 0.4)' }}
+                            >
+                                <span className="text-base">↓</span>
+                                <span>给{charName}记收入</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -907,7 +966,7 @@ ${previousGuestbook}
                 {activeTab === 'cards' && (
                     isBankDataLoaded ? (
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-                        <div className="rounded-2xl p-4 text-white shadow-lg" style={{ background: bankCardGradient(((state.cards || []).find(c => c.isDefault))?.brand) }}>
+                        <div className="rounded-2xl p-4 text-white shadow-lg" style={{ background: bankCardGradient((scopedCards.find(c => c.isDefault))?.brand) }}>
                             <div className="flex items-center gap-2 text-[11px] opacity-80"><CreditCard size={14} weight="bold" /> 默认支付卡 · 购物 App 结算用</div>
                             {(() => {
                                 const cards = state.cards || [];
@@ -923,7 +982,7 @@ ${previousGuestbook}
                             })()}
                         </div>
 
-                        {(state.cards || []).map(card => (
+                        {scopedCards.map(card => (
                             <div key={card.id} className="bg-white/90 rounded-2xl p-4 border border-[#E8DCC8] shadow-sm">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
@@ -956,7 +1015,7 @@ ${previousGuestbook}
                         ))}
 
                         <button
-                            onClick={() => { setCardDraft({ name: '', tailNo: String(1000 + Math.floor(Math.random() * 9000)), balance: '', brand: '' }); setShowCardModal(true); }}
+                            onClick={() => { setCardDraft({ name: '', tailNo: String(1000 + Math.floor(Math.random() * 9000)), balance: '', brand: '', owner: actorIsChar ? 'char' as const : 'user' as const, ownerId: actorIsChar ? actor : undefined }); setShowCardModal(true); }}
                             className="w-full py-3.5 rounded-2xl border-2 border-dashed border-[#C5B39B] text-[#8D6E63] text-[13px] font-bold flex items-center justify-center gap-2">
                             <CreditCard size={16} weight="bold" /> 添加银行卡（最多 5 张）
                         </button>
@@ -1032,7 +1091,7 @@ ${previousGuestbook}
                                         <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                                         偷听中...
                                     </span>
-                                ) : '刷��情报 · 40 AP'}
+                                ) : '刷新情报 · 40 AP'}
                             </button>
                         </div>
 
@@ -1136,7 +1195,7 @@ ${previousGuestbook}
                         const tail = (cardDraft.tailNo.replace(/\D/g, '') || String(1000 + Math.floor(Math.random() * 9000))).slice(-4);
                         const bal = parseFloat(cardDraft.balance);
                         if (!Number.isFinite(bal) || bal < 0) { addToast('请输入有效余额'); return; }
-                        upsertCard({ id: 'card_' + Date.now(), name, tailNo: tail, balance: Math.round(bal * 100) / 100, brand: cardDraft.brand || undefined, isDefault: (state.cards || []).length === 0 });
+                        upsertCard({ id: 'card_' + Date.now(), name, tailNo: tail, balance: Math.round(bal * 100) / 100, brand: cardDraft.brand || undefined, owner: cardDraft.owner || 'user', ownerId: cardDraft.ownerId, isDefault: scopedCards.length === 0 });
                         setShowCardModal(false);
                     }}
                     className="w-full py-4 bg-gradient-to-r from-[#5C6BC0] to-[#3949AB] text-white font-bold rounded-2xl shadow-lg active:scale-[0.98] transition-all text-base">
@@ -1310,7 +1369,7 @@ ${previousGuestbook}
                     <div className="flex gap-4 p-4 bg-gradient-to-r from-[#E3F2FD] to-[#BBDEFB] rounded-2xl">
                         <div className="w-12 h-12 bg-gradient-to-br from-[#42A5F5] to-[#1E88E5] rounded-xl flex items-center justify-center text-2xl shadow-md shrink-0"><Lightning size={24} weight="fill" className="text-white" /></div>
                         <div>
-                            <div className="font-bold text-base mb-1">互动操��</div>
+                            <div className="font-bold text-base mb-1">互动操作</div>
                             <p className="text-xs text-[#5C6BC0] leading-relaxed">
                                 • 点击情报志可查看和刷新八卦<br/>
                                 • 点击地板可以让店长走过去<br/>

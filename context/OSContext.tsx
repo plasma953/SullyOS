@@ -292,7 +292,7 @@ export type DeleteCharacterResult = { status: 'deleted' } | { status: 'cloud-cle
 
 interface OSContextType {
   activeApp: AppID;
-  openApp: (appId: AppID) => void;
+  openApp: (appId: AppID, context?: Record<string, unknown>) => void;
   closeApp: () => void;
   theme: OSTheme;
   updateTheme: (updates: Partial<OSTheme>) => Promise<void>;
@@ -5385,7 +5385,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   const resetSystem = async () => { try { await DB.deleteDB(); localStorage.clear(); window.location.reload(); } catch (e) { console.error(e); addToast('重置失败，请手动清除浏览器数据', 'error'); } };
-  const openApp = (appId: AppID) => { emitPerspectiveEvent('app.open', appId); setActiveApp(appId); };
+  const openApp = (appId: AppID, context?: Record<string, unknown>) => {
+    emitPerspectiveEvent('app.open', appId);
+    // App 启动上下文（如查手机入口带 placedBy=charId / owner=charId）：
+    // 冻进 sessionStorage，目标 App 挂载时自取（mount-only effect），读完即清。
+    if (context && Object.keys(context).length > 0) {
+      try { sessionStorage.setItem('sullyos_app_context_' + appId, JSON.stringify(context)); } catch { /* ignore */ }
+    }
+    setActiveApp(appId);
+  };
   const closeApp = () => setActiveApp(AppID.Launcher);
   // 从聊天直接进入某角色的见面：切换当前角色 + 标记自动进入 + 打开见面 App
   const openDateWithChar = (charId: string) => {

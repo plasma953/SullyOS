@@ -424,3 +424,126 @@ describe('注入文本里的金额只到分位', () => {
         expect(text).not.toMatch(/\d+\.\d{3,}/);
     });
 });
+
+// ═══════════════════════════════════════════════════════════
+// ORDER 指令（char 主动点单）：扣 user 默认卡 + 落购物订单 + 出订单卡，双闸门 + 余额不足跳过 + 否决回滚
+// ═══════════════════════════════════════════════════════════
+describe('ORDER 指令（char 主动点单）', () => {
+    afterAll(async () => {
+        // 清理本 describe 落的 user 流水，避免污染后续/既有快照类断言
+        const txs = await DB.getAllTransactions();
+        for (const t of txs) {
+            if (t.note?.includes('unique-shop') || t.note?.includes('_unique_')) {
+                await DB.deleteTransaction(t.id);
+            }
+        }
+    });
+
+    it('总开关关 → 不记不成（moduleActive=false，走未启用跳过路径）', async () => {
+        const char = mkChar({ charOrderEnabled: false });
+        const out = await executeLifeDirectives('[[LIFE:ORDER|unique-shop-1|奶茶×2|20|睡前想喝]]', char, noToast);
+        expect(out).toBe('');
+        const records = (await DB.getAllLifeRecords()).filter(r => r.payload.shop === 'unique-shop-1');
+        expect(records).toHaveLength(0);
+    });
+
+    it('成功：扣款流水 + 购物订单 + shopping_order 消息卡', async () => {
+        const char = mkChar({ charOrderEnabled: true });
+        // 预置 user 默认卡（测试库可能还没有 bank 状态）
+        {
+            const bank = await DB.getBankState();
+            const cards = bank?.cards || [];
+            if (!cards.some(c => !(c.owner === 'char'))) {
+                await DB.saveBankState({ ...(bank || { config: { dailyBudget: 100, currencySymbol: '¥' }, shop: {} as any, goals: [], todaySpent: 0, lastLoginDate: '2026-01-01' }), cards: [...cards, { id: 'card_test_user_default', name: '测试零花钱卡', tailNo: '0001', balance: 1000, isDefault: true, owner: 'user' }] } as any);
+            }
+        }
+        const before = (await DB.getBankState())?.cards?.find(c => c.isDefault && !(c.owner === 'char'))?.balance ?? 0;
+        const out = await executeLifeDirectives('给你点了宵夜 [[LIFE:ORDER|unique-shop-2|烧烤×2|36|半夜饿了]]', char, noToast);
+        expect(out).toBe('给你点了宵夜');
+
+        // 订单落库，扣 user 默认卡
+        const orders = await DB.getAllShoppingOrders();
+        const order = orders.find(o => o.shopName === 'unique-shop-2');
+        expect(order).toBeTruthy();
+        expect(order!.total).toBe(36);
+        expect(order!.placedBy).toBe('char');
+        expect(order!.recipientType).toBe('user');
+
+        const cards = (await DB.getBankState())?.cards || [];
+        const after = cards.find(c => c.isDefault && !(c.owner === 'char'))?.balance ?? 0;
+        expect(Math.round((before - after) * 100) / 100).toBe(36);
+
+        // 流水 + LifeRecord 镜像（否决回滚用）
+        const txs = await DB.getAllTransactions();
+        const tx = txs.find(t => t.note === 'unique-shop-2（江屿点的）');
+        expect(tx).toBeTruthy();
+        expect(tx!.amount).toBe(-36);
+        const rec = (await DB.getAllLifeRecords()).find(r => r.payload.shop === 'unique-shop-2');
+        expect(rec?.bankTxId).toBe(tx!.id);
+        expect(rec?.reviewStatus).toBe('active');
+
+        // 订单卡消息（非 life_card）
+        const msgs = await DB.getMessagesByCharId(char.id, true);
+        const card = msgs.find((m: Message) => m.type === 'shopping_order' && m.metadata?.orderId === order!.id);
+        expect(card).toBeTruthy();
+        expect(card!.content).toContain('SHOPPING_ORDER');
+        expect(card!.metadata.recordId).toBe(rec!.id);
+
+        // 清理本条订单
+        await DB.deleteShoppingOrder(order!.id);
+    });
+
+    it('同日同店重复 → 卡片标 duplicate，不重复扣款', async () => {
+        const char = mkChar({ charOrderEnabled: true, name: '林深_unique_' + Math.random().toString(36).slice(2, 6) });
+        const out = await executeLifeDirectives('[[LIFE:ORDER|unique-shop-3|小龙虾×1|88|]]', char, noToast);
+        expect(out).toBe('');
+        const out2 = await executeLifeDirectives('[[LIFE:ORDER|unique-shop-3|小龙虾×1|88|]]', char, noToast);
+        expect(out2).toBe('');
+
+        const recs = (await DB.getAllLifeRecords()).filter(r => r.payload.shop === 'unique-shop-3' && r.reviewStatus !== 'rejected');
+        expect(recs).toHaveLength(1);
+        const msgs = await DB.getMessagesByCharId(char.id, true);
+        expect(msgs.some((m: Message) => m.type === 'life_card' && m.metadata?.duplicate === true)).toBe(true);
+        // 清理
+        const order = (await DB.getAllShoppingOrders()).find(o => o.shopName === 'unique-shop-3');
+        if (order) await DB.deleteShoppingOrder(order.id);
+        const tx = (await DB.getAllTransactions()).find(t => t.note === 'unique-shop-3（林深点的）' || t.note === 'unique-shop-3（TA点的）');
+        if (tx) await DB.deleteTransaction(tx.id);
+    });
+
+    it('余额不足 → noteSkipped 系统提示，不落订单不扣款', async () => {
+        const char = mkChar({ charOrderEnabled: true });
+        // 保证卡余额低于 999999
+        const bank = await DB.getBankState();
+        const cards = bank?.cards || [];
+        for (const c of cards) {
+            if (!(c.owner === 'char') && c.balance >= 999999) {
+                await DB.saveBankState({ ...bank!, cards: cards.map(x => x.id === c.id ? { ...x, balance: 100 } : x) });
+            }
+        }
+        const out = await executeLifeDirectives('[[LIFE:ORDER|unique-shop-4|豪宅×1|999999|]]', char, noToast);
+        expect(out).toBe('');
+        const order = (await DB.getAllShoppingOrders()).find(o => o.shopName === 'unique-shop-4');
+        expect(order).toBeFalsy();
+        const msgs = await DB.getMessagesByCharId(char.id, true);
+        expect(msgs.some((m: Message) => m.role === 'system' && m.content.includes('余额不足'))).toBe(true);
+    });
+
+    it('否决 → 流水回滚 + 订单删除 + 卡片确认', async () => {
+        const char = mkChar({ charOrderEnabled: true, name: '苏婉_unique_' + Math.random().toString(36).slice(2, 6) });
+        await executeLifeDirectives('[[LIFE:ORDER|unique-shop-5|蛋糕×1|52|]]', char, noToast);
+        const rec = (await DB.getAllLifeRecords()).find(r => r.payload.shop === 'unique-shop-5');
+        expect(rec).toBeTruthy();
+        const txBefore = (await DB.getAllTransactions()).find(t => t.id === rec!.bankTxId);
+        expect(txBefore).toBeTruthy();
+
+        const msgs = await DB.getMessagesByCharId(char.id, true);
+        const card = msgs.find((m: Message) => m.type === 'shopping_order' && m.metadata?.recordId === rec!.id);
+        expect(card).toBeTruthy();
+        await resolveLifeRecordCard(card!, 'rejected');
+
+        expect((await DB.getAllTransactions()).find(t => t.id === rec!.bankTxId)).toBeFalsy();
+        expect((await DB.getAllShoppingOrders()).find(o => o.shopName === 'unique-shop-5')).toBeFalsy();
+        expect((await DB.getAllLifeRecords()).find(r => r.id === rec!.id)?.reviewStatus).toBe('rejected');
+    });
+});

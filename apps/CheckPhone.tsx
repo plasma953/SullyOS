@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneContact, PhoneSimLog, ConvTopic, AiSession, AiServiceKind, TavernCard, APIConfig } from '../types';
+import { AppID } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import TokenImg from '../components/os/TokenImg';
@@ -21,8 +22,9 @@ import { normalizePhoneEvidence, phoneFieldToText } from '../utils/phoneEvidence
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { getCheckPhoneApi, resolveCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
 import { isPhoneAutoRefreshDue, maybeAutoRefreshPhone } from '../utils/phoneAutoRefresh';
+import { generateRelationshipContacts, type ContactGenApiConfig } from '../utils/relationshipContactGen';
 import {
-    User, Phone, ChatCircleDots, ChatCircle, ShoppingBag, Hamburger, Compass, GearSix,
+    User, Phone, ChatCircleDots, ChatCircle, ShoppingBag, Hamburger, Compass, GearSix, Wallet,
     Plus, SignOut, CaretLeft, CaretRight, Cloud, ImagesSquare, LockSimple, Package,
     Storefront, Heart, ArrowsClockwise, Tray, DotsThree, ClockCounterClockwise, Sparkle,
     UsersThree, UserPlus, Prohibit, LinkSimple, PaperPlaneTilt, PencilSimple, Trash,
@@ -258,7 +260,7 @@ const HomeCard: React.FC<{
 );
 
 const CheckPhone: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, apiPresets, addToast, userProfile, characterGroups } = useOS();
+    const { closeApp, openApp, characters, activeCharacterId, updateCharacter, apiConfig, apiPresets, addToast, userProfile, characterGroups } = useOS();
     const [view, setView] = useState<'select' | 'phone'>('select');
     // activeAppId: 'home' | 'chat_detail' | 'app_id'
     const [activeAppId, setActiveAppId] = useState<string>('home');
@@ -734,6 +736,39 @@ const CheckPhone: React.FC = () => {
     };
 
     // --- Core Generation Logic ---
+    // 联系人关系网发散：从神经链接 + char关系群像 + 所在世界NPC三层候选里挑人写进通讯录
+    const handleContactGen = async () => {
+        if (!targetChar || !effectiveApiConfig.apiKey) {
+            addToast('配置错误', 'error');
+            return;
+        }
+        setIsLoading(true);
+        trackEvent('联系人关系网发散');
+        try {
+            const result = await generateRelationshipContacts({
+                char: targetChar,
+                user: userProfile,
+                api: effectiveApiConfig as unknown as ContactGenApiConfig,
+                count: 3,
+            });
+            if (result.added === 0 && result.updated === 0) {
+                addToast('没有合逈的新联系人（候选都在名单里了，或已禁止虚构）', 'info');
+                return;
+            }
+            // 基于最新状态合并落库（防把异步期间其他字段覆盖掉）
+            updateCharacter(targetChar.id, (cur) => ({
+                phoneState: { ...cur.phoneState, records: cur.phoneState?.records || [], contacts: result.contacts },
+            }));
+            addToast(`关系网发散：新增 ${result.added} 人，更新 ${result.updated} 人`, 'success');
+            setActiveAppId('contacts');
+        } catch (e: any) {
+            console.error(e);
+            addToast('发散失败，请重试', 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleGenerate = async (type: string, customPrompt?: string, layout?: LayoutId) => {
         if (!targetChar || !effectiveApiConfig.apiKey) {
             addToast('配置错误', 'error');
@@ -2107,6 +2142,23 @@ ${olderText}
     const contactCount = contacts.filter(c => !isUserName(c.name)).length;
     const contactsSub = contactCount ? `${contactCount} 位联系人` : 'tap to scan';
     const aiSub = aiSessions.length ? `${aiSessions.length} 段对话 · TA 的小手机` : 'tap to peek';
+    // 「银行卡」主卡副标题：TA 名下默认卡余额（无卡时提示去办卡）。BankApp 数据在 IndexedDB，这里异步读 DB.getBankState() 汇总。
+    const [bankCardSub, setBankCardSub] = useState('tap to peek');
+    useEffect(() => {
+        let alive = true;
+        setBankCardSub('tap to peek');
+        const cid = targetChar?.id;
+        if (!cid) return;
+        DB.getBankState().then((st) => {
+            if (!alive) return;
+            const mine = (st?.cards || []).filter(c => c.owner === 'char' && c.ownerId === cid);
+            const def = mine.find(c => c.isDefault) || mine[0];
+            setBankCardSub(def
+                ? `¥${def.balance} ···· ${def.tailNo}`
+                : (mine.length ? `${mine.length} 张卡` : '还没办卡'));
+        }).catch(() => { if (alive) setBankCardSub('tap to peek'); });
+        return () => { alive = false; };
+    }, [targetChar?.id]);
 
     // pseudo screen-time + weather (decorative, deterministic per char)
     const seed = charName.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -2635,7 +2687,14 @@ ${olderText}
                         </button>
                     </div>
                 ) : (
-                    <RefreshFab onClick={() => handleGenerate('contacts')} label="扫描通讯录" accent={accent} loading={isLoading} />
+                    <div className="absolute bottom-7 w-full flex justify-center gap-3 pointer-events-none z-30">
+                        <RefreshFab onClick={() => handleGenerate('contacts')} label="扫描通讯录" accent={accent} loading={isLoading} />
+                        <button disabled={isLoading} onClick={handleContactGen}
+                            className="pointer-events-auto px-6 py-3 rounded-full font-semibold text-[12px] flex items-center gap-2 active:scale-95 transition shadow-[0_8px_30px_rgba(0,0,0,0.5)] text-white border border-white/10 bg-gradient-to-br from-indigo-500 to-violet-600 disabled:opacity-40">
+                            {isLoading ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <UsersThree size={15} weight="bold" />}
+                            {isLoading ? '同步中…' : '关系网发散'}
+                        </button>
+                    </div>
                 )}
             </SubAppShell>
         );
@@ -3402,10 +3461,12 @@ ${olderText}
                     onClick={() => { setActiveAppId('contacts'); trackEvent('打开查手机子应用', { subApp: 'contacts' }); }} />
                 <HomeCard icon={<ImagesSquare size={24} weight="light" />} label="Moments" sub={momentsSub} accent="#c084fc"
                     onClick={() => { setActiveAppId('social'); trackEvent('打开查手机子应用', { subApp: 'social' }); }} />
-                <HomeCard icon={<Hamburger size={24} weight="light" />} label="Food" sub={foodSub} accent="#fbbf24"
-                    onClick={() => { setActiveAppId('waimai'); trackEvent('打开查手机子应用', { subApp: 'waimai' }); }} />
-                <HomeCard icon={<ShoppingBag size={24} weight="light" />} label="Taobao" sub={taobaoSub} accent="#ff7a45"
-                    onClick={() => { setActiveAppId('taobao'); trackEvent('打开查手机子应用', { subApp: 'taobao' }); }} />
+                <HomeCard icon={<Hamburger size={24} weight="light" />} label="外卖" sub={foodSub} accent="#fbbf24"
+                    onClick={() => { openApp(AppID.Takeout, targetChar?.id ? { placedBy: targetChar.id } : undefined); trackEvent('打开查手机子应用', { subApp: 'takeout_app' }); }} />
+                <HomeCard icon={<ShoppingBag size={24} weight="light" />} label="购物" sub={taobaoSub} accent="#ff7a45"
+                    onClick={() => { openApp(AppID.Shopping, targetChar?.id ? { placedBy: targetChar.id } : undefined); trackEvent('打开查手机子应用', { subApp: 'shopping_app' }); }} />
+                <HomeCard icon={<Wallet size={24} weight="light" />} label="银行卡" sub={bankCardSub} accent="#5C6BC0"
+                    onClick={() => { openApp(AppID.Bank, targetChar?.id ? { owner: targetChar.id } : undefined); trackEvent('打开查手机子应用', { subApp: 'bank_app' }); }} />
             </div>
 
             {/* 智能体：偷看「TA 的小手机」 —— 给个抢眼的横条入口 */}

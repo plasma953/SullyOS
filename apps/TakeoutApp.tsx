@@ -72,6 +72,8 @@ export default function TakeoutApp() {
   const [editAddr, setEditAddr] = useState(false);
   const [addrDraft, setAddrDraft] = useState('');
   const [payErr, setPayErr] = useState('');
+  // 操作身份（'user' | charId）：查手机入口以 char 身份打开时，下单扣 char 名下卡
+  const [actor, setActor] = useState<string>('user');
   const [lastOrder, setLastOrder] = useState<ShoppingOrder | null>(null);
 
   // ── 数据加载 ──
@@ -130,7 +132,23 @@ export default function TakeoutApp() {
   }, [userProfile, characters]);
 
   useEffect(() => {
-    if (!target && targets.length > 0) setTarget(targets[0]);
+    if (!target && targets.length > 0) {
+      // 查手机入口带上下文（placedBy=charId）→ 默认收货人切到该 char（TA 给自己点单/买东西）
+      let ctxCharId: string | null = null;
+      try {
+        const raw = sessionStorage.getItem('sullyos_app_context_takeout');
+        if (raw) {
+          sessionStorage.removeItem('sullyos_app_context_takeout');
+          const ctx = JSON.parse(raw);
+          if (ctx?.placedBy) {
+            ctxCharId = String(ctx.placedBy);
+            setActor(String(ctx.placedBy));
+          }
+        }
+      } catch { /* ignore */ }
+      const fromCtx = ctxCharId ? targets.find(t => t.charId === ctxCharId) : undefined;
+      setTarget(fromCtx && fromCtx.addressText ? fromCtx : targets[0]);
+    }
   }, [targets]);
 
   const updateTargetAddress = async (text: string, cityTag?: string) => {
@@ -239,9 +257,20 @@ export default function TakeoutApp() {
     let cards = bank?.cards || [];
     if (cards.length === 0) {
       // 初始卡：余额 520（拟真），用户可在存钱罐里改
-      cards = [{ id: 'card_' + Date.now(), name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true }];
+      cards = [{ id: 'card_' + Date.now(), name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true, owner: 'user' }];
     }
-    const payCard = cards.find(c => c.isDefault) || cards[0];
+    // 按操作身份选卡：char 操作只用 char 名下卡；user 操作用非 char 卡
+    const actorIsChar = actor !== 'user';
+    const scoped = actorIsChar
+      ? cards.filter(c => c.owner === 'char' && c.ownerId === actor)
+      : cards.filter(c => !(c.owner === 'char'));
+    if (scoped.length === 0) {
+      setPayErr(actorIsChar
+        ? '还没给 TA 办银行卡，去查手机→银行卡先办一张'
+        : '还没有银行卡，去存钱罐添加一张吧');
+      return;
+    }
+    const payCard = scoped.find(c => c.isDefault) || scoped[0];
     if (payCard.balance < cartTotal) {
       setPayErr(`「${payCard.name}·${payCard.tailNo}」余额不足（¥${fmtMoney(payCard.balance)}），去存钱罐充值或换卡`);
       return;
@@ -249,7 +278,7 @@ export default function TakeoutApp() {
     const order: ShoppingOrder = {
       id: genOrderId(),
       charId: target.type === 'char' ? target.charId : undefined,
-      placedBy: 'user', recipientType: target.type, recipientName: target.name,
+      placedBy: actorIsChar ? 'char' : 'user', recipientType: target.type, recipientName: target.name,
       addressText: target.addressText || '（未填地址）',
       shopId: cart.shopId!, shopName: cart.shopName!,
       shopCat: cartShop?.cat || '美食外卖',
@@ -261,13 +290,13 @@ export default function TakeoutApp() {
       statusHistory: [{ status: 'paid', at: Date.now() }],
       createdAt: Date.now(),
     };
-    // ��款 + 流水
+    // 扣款 + 流水
     const nextCards = cards.map(c => c.id === payCard.id ? { ...c, balance: roundMoney(c.balance - order.total) } : c);
     const nextBank = { ...(bank || { config: { dailyBudget: 100, currencySymbol: '¥' }, shop: {} as any, goals: [] }), cards: nextCards };
     await DB.saveBankState(nextBank as any);
     await DB.saveTransaction({
-      id: 'tx_' + Date.now(), amount: -order.total, category: '购物',
-      note: `${order.shopName} × ${order.itemCount} 件（${target.type === 'char' ? '给' + target.name + '点的' : '自购'}）`,
+      id: 'tx_' + Date.now(), amount: -order.total, category: '购物', ownerId: actorIsChar ? actor : undefined,
+      note: `${order.shopName} × ${order.itemCount} 件（${actorIsChar ? target.name + '自己点单的' : target.type === 'char' ? '给' + target.name + '点的' : '自购'}）`,
       timestamp: order.createdAt, dateStr: new Date(order.createdAt).toISOString().slice(0, 10),
     });
     await DB.saveShoppingOrder(order);
@@ -537,7 +566,7 @@ export default function TakeoutApp() {
           <button onClick={placeOrder} className="w-full py-3 rounded-full bg-amber-400 text-white text-[14px] font-bold">
             银行卡支付 ¥{fmtMoney(cartTotal + (cartShop?.deliveryFee || 0))}
           </button>
-          <div className="text-[10px] text-slate-300 text-center">模拟支付 · 扣款走存���罐银��卡</div>
+          <div className="text-[10px] text-slate-300 text-center">模拟支付 · 扣款走存钱罐银行卡</div>
         </div>
       )}
 

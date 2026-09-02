@@ -2367,6 +2367,7 @@ export interface BankTransaction {
     note: string;
     timestamp: number;
     dateStr: string; // YYYY-MM-DD
+    ownerId?: string; // char 账本流水归属（不进 user 预算）
 }
 
 export interface SavingsGoal {
@@ -3069,6 +3070,7 @@ export interface CharacterProfile {
   lifeRecordPeriodEnabled?: boolean;    // 生理期
   lifeRecordMedEnabled?: boolean;       // 药盒
   lifeRecordExpenseEnabled?: boolean;   // 记账（打通银行 bank_transactions）
+  charOrderEnabled?: boolean;           // char 主动点单（默认关；ORDER 指令闸门）
   lifeRecordExerciseEnabled?: boolean;  // 锻炼
 
   // Chat & Date voice TTS settings
@@ -3643,7 +3645,7 @@ export interface TrackerEntry {
 // 记账模块不独立存储——直接读写 BankApp 的 bank_transactions；角色代记的支出
 // 会额外落一条 module='expense' 的 LifeRecord（带 bankTxId）以支撑卡片确认/否决回滚。
 
-export type LifeRecordModule = 'period' | 'med' | 'expense' | 'exercise';
+export type LifeRecordModule = 'period' | 'med' | 'expense' | 'exercise' | 'order';
 
 export interface LifeRecord {
     id: string;

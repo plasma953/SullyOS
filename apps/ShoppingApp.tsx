@@ -67,6 +67,8 @@ export default function ShoppingApp() {
   const [editAddr, setEditAddr] = useState(false);
   const [addrDraft, setAddrDraft] = useState('');
   const [payErr, setPayErr] = useState('');
+  // 操作身份（'user' | charId）：查手机入口以 char 身份打开时，下单扣 char 名下卡
+  const [actor, setActor] = useState<string>('user');
   const [lastOrder, setLastOrder] = useState<MallOrder | null>(null);
 
   // ── 数据加载 ──
@@ -123,7 +125,23 @@ export default function ShoppingApp() {
   }, [userProfile, characters]);
 
   useEffect(() => {
-    if (!target && targets.length > 0) setTarget(targets[0]);
+    if (!target && targets.length > 0) {
+      // 查手机入口带上下文（placedBy=charId）→ 默认收货人切到该 char（TA 给自己点单/买东西）
+      let ctxCharId: string | null = null;
+      try {
+        const raw = sessionStorage.getItem('sullyos_app_context_shopping');
+        if (raw) {
+          sessionStorage.removeItem('sullyos_app_context_shopping');
+          const ctx = JSON.parse(raw);
+          if (ctx?.placedBy) {
+            ctxCharId = String(ctx.placedBy);
+            setActor(String(ctx.placedBy));
+          }
+        }
+      } catch { /* ignore */ }
+      const fromCtx = ctxCharId ? targets.find(t => t.charId === ctxCharId) : undefined;
+      setTarget(fromCtx && fromCtx.addressText ? fromCtx : targets[0]);
+    }
   }, [targets]);
 
   const updateTargetAddress = async (text: string, cityTag?: string) => {
@@ -211,9 +229,20 @@ export default function ShoppingApp() {
     const bank = await DB.getBankState();
     let cards = bank?.cards || [];
     if (cards.length === 0) {
-      cards = [{ id: 'card_' + Date.now(), name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true }];
+      cards = [{ id: 'card_' + Date.now(), name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true, owner: 'user' }];
     }
-    const payCard = cards.find(c => c.isDefault) || cards[0];
+    // 按操作身份选卡：char 操作只用 char 名下卡；user 操作用非 char 卡
+    const actorIsChar = actor !== 'user';
+    const scoped = actorIsChar
+      ? cards.filter(c => c.owner === 'char' && c.ownerId === actor)
+      : cards.filter(c => !(c.owner === 'char'));
+    if (scoped.length === 0) {
+      setPayErr(actorIsChar
+        ? '还没给 TA 办银行卡，去查手机→银行卡先办一张'
+        : '还没有银行卡，去存钱罐添加一张吧');
+      return;
+    }
+    const payCard = scoped.find(c => c.isDefault) || scoped[0];
     if (payCard.balance < cartTotal) {
       setPayErr(`「${payCard.name}·${payCard.tailNo}」余额不足（¥${fmtMoney(payCard.balance)}），去存钱罐充值或换卡`);
       return;
@@ -221,7 +250,7 @@ export default function ShoppingApp() {
     const order: ShoppingOrder = {
       id: genOrderId(),
       charId: target.type === 'char' ? target.charId : undefined,
-      placedBy: 'user', recipientType: target.type, recipientName: target.name,
+      placedBy: actorIsChar ? 'char' : 'user', recipientType: target.type, recipientName: target.name,
       addressText: target.addressText || '（未填地址）',
       shopId: 'multi', shopName: itemsToShopLabel(cart.items),
       shopCat: '购物',
@@ -238,7 +267,7 @@ export default function ShoppingApp() {
     const nextBank = { ...(bank || { config: { dailyBudget: 100, currencySymbol: '¥' }, shop: {} as any, goals: [] }), cards: nextCards };
     await DB.saveBankState(nextBank as any);
     await DB.saveTransaction({
-      id: 'tx_' + Date.now(), amount: -order.total, category: '购物',
+      id: 'tx_' + Date.now(), amount: -order.total, category: '购物', ownerId: actorIsChar ? actor : undefined,
       note: `购物订单 × ${order.itemCount} 件（${target.type === 'char' ? '给' + target.name + '买的' : '自购'}）`,
       timestamp: order.createdAt, dateStr: new Date(order.createdAt).toISOString().slice(0, 10),
     });
