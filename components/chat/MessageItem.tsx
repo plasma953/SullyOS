@@ -15,6 +15,8 @@ import { buildReplySnapshotContent } from '../../utils/applyAssistantPostProcess
 import TokenImg from '../os/TokenImg';
 import McdCard from './McdCard';
 import HtmlCard from './HtmlCard';
+import ShoppingOrderCard from './ShoppingOrderCard';
+import { parseShoppingOrderTag } from '../../utils/shoppingFormat';
 import LuckinCard from './LuckinCard';
 import LuckinCheckoutCard from './LuckinCheckoutCard';
 import QixiEventCardView from './QixiEventCard';
@@ -3564,6 +3566,12 @@ const MessageItem = React.memo(({
         : (isShowingTarget && langBContent) ? langBContent : langAContent;
     const showTranslateButton = translationEnabled && !showExpandedTranslation && hasBilingual && langBContent;
 
+    // 购物订单标签：正文里含 [[SHOPPING_ORDER|...]] 时整条替换为订单卡（user 给 char 点单 / 转发均可）
+    const shoppingOrderData = parseShoppingOrderTag(displayContent);
+    const shoppingOrderRemaining = shoppingOrderData
+        ? displayContent.replace(/\[\[SHOPPING_ORDER\|[^\]]+\]\]/g, '').trim()
+        : '';
+
     // Check if raw content has a <语音> tag (voice-only message that hasn't been TTS'd yet).
     // 未闭合的开标签也算 (历史坏数据: 语音块曾被 chunkText 切碎, 开标签落单) —
     // 当语音条渲染 + 转文字兜底, 而不是把原始标签漏给用户看。
@@ -3632,9 +3640,14 @@ const MessageItem = React.memo(({
 
             {/* Layer 4: Text Content — shown when there's visible text after stripping voice tags */}
             {/* 外语语音消息把双语文字交给下方语音条渲染，顶部不再重复正文 */}
+            {shoppingOrderData && !isForeignVoiceMsg && (
+                <div className="relative z-10">
+                    <ShoppingOrderCard data={shoppingOrderData} />
+                </div>
+            )}
             {displayContent && !isForeignVoiceMsg && (
             <div className="relative z-10 text-[15px] leading-relaxed whitespace-pre-wrap break-all select-text" style={{ color: styleConfig.textColor }}>
-                {renderContent(displayContent)}
+                {renderContent(shoppingOrderData ? (shoppingOrderRemaining || '') : displayContent)}
                 {showExpandedTranslation && (
                     <div className="mt-2.5 pt-2 border-t border-current/15">
                         <div className="mb-1 text-[9px] font-bold tracking-[0.16em] opacity-40 select-none">翻译</div>

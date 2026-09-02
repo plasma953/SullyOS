@@ -1344,6 +1344,16 @@ ${(await resolveVoiceActingGuide()) ?? ''}`;
                     const fileName = String(m.metadata?.fileName || m.content || '未命名文件');
                     content = `${timeStr} [你在聊天界面向用户交付了协同文件：《${fileName}》]`;
                 }
+                else if (m.type === 'shopping_order') {
+                    // 购物订单历史行：轻占位（模型只读摘要，严禁照抄 [[SHOPPING_ORDER|...]] 到正文）。
+                    // 标签本体只活在聊天 UI 渲染层（MessageItem 正则替换为订单卡），
+                    // 历史行里剥掉，防复读（与 [[记录:...]] 哨兵同理）。
+                    const oMeta = m.metadata || {};
+                    const who = oMeta.recipient ? String(oMeta.recipient) : '';
+                    const st = String(oMeta.status || '');
+                    const stLabel = st === 'delivered' ? '已送达' : st === 'delivering' ? '配送中' : st === 'cancelled' ? '已取消' : '已完成下单';
+                    content = `${timeStr} [用户在购物App下单: ${String(oMeta.shop || '外卖')} ¥${String(oMeta.total || '')}，送给${who || '自己'}，${stLabel}]`;
+                }
                 else if (m.type === 'transfer') {
                     // 统一记录形态 [[记录:TRANSFER|to=|amount=|status=]] —— 跟输出语法
                     // [[ACTION:TRANSFER|to=|amount=]] 共用词汇表 (见 transferFormat.ts 头注)。

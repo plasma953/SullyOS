@@ -42,9 +42,9 @@ while (products.length < LIMIT) {
     page++;
     await sleep(3000);
   } catch (e) {
-    console.log('page ' + page + ' error: ' + e.message + ', retry in 10s');
-    await sleep(10000);
-    if (++fails >= 5) { console.log('too many fails, stop'); break; }
+    console.log('page ' + page + ' error: ' + e.message + ', retry in 30s');
+    await sleep(30000);
+    if (++fails >= 12) { console.log('too many fails, stop'); break; }
   }
 }
 

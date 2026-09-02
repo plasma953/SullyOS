@@ -2499,6 +2499,17 @@ const handleDeepLink = () => {
     }));
   }
 
+  // 购物订单深链：?openApp=shopping&orderId=xxx（聊天订单卡「查看订单」跳转）。
+  // ShoppingApp 挂载后自己会读 orderId（同一次 URL 清理周期内），这里只负责
+  // 在参数清理前把订单 id 冻进事件，避免刷新后参数消失导致回跳失效。
+  if (openApp === 'shopping') {
+    const orderId = currentUrl.searchParams.get('orderId');
+    if (orderId) {
+      try { sessionStorage.setItem('sullyos_shopping_open_order', orderId); } catch { /* ignore */ }
+      window.dispatchEvent(new CustomEvent('sullyos:open-shopping-order', { detail: { orderId } }));
+    }
+  }
+
   // 参数只要出现过就从地址栏清掉，不管齐不齐——角色 id 留在 URL 里，
   // 收藏、分享、截图都会把它带出去。统计侧另有 data-exclude-search 兜底
   // （见 utils/analytics.ts），这里管的是地址栏本身。

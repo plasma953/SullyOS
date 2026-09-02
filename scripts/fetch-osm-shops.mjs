@@ -3,6 +3,7 @@
 // 用法: node scripts/fetch-osm-shops.mjs
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const OUT = 'public/shopping/shops-raw.json';
 
@@ -33,6 +34,81 @@ function catOf(tags) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-import { execFileSync } from 'node:child_process';
+async function overpass(bbox) {
+  const q = `[out:json][timeout:60];(
+    nwr["amenity"~"^(restaurant|fast_food|cafe|pharmacy)$"]["name"](${bbox.join(',')});
+    nwr["shop"~"^(convenience|supermarket|bakery|pastry|confectionery|greengrocer|seafood|butcher|beverages|tea|coffee|florist|grocery|chemist)$"]["name"](${bbox.join(',')});
+    nwr["healthcare"="pharmacy"]["name"](${bbox.join(',')});
+  );out center tags;`;
 
+  const endpoints = [
+    { name: 'mail.ru', url: 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', method: 'POST' },
+    { name: 'overpass-api.de', url: 'https://overpass-api.de/api/interpreter', method: 'GET' },
+  ];
 
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    for (const ep of endpoints) {
+      try {
+        let out;
+        if (ep.method === 'POST') {
+          out = execFileSync('curl', ['-s', '-m', '120', '--data-urlencode', 'data=' + q, ep.url], { maxBuffer: 64 * 1024 * 1024 });
+        } else {
+          out = execFileSync('curl', ['-s', '-m', '120', '-A', 'SullyOS-Dataset/1.0', ep.url + '?data=' + encodeURIComponent(q)], { maxBuffer: 64 * 1024 * 1024 });
+        }
+        const text = out.toString('utf-8');
+        if (!text.trim() || text.includes('Internal Server Error') || text.startsWith('<!DOCTYPE') || text.includes('406 Not Acceptable')) {
+          throw new Error(ep.name + ' bad response');
+        }
+        return JSON.parse(text).elements || [];
+      } catch (e) {
+        console.log('  [' + ep.name + ' attempt ' + attempt + '] ' + e.message.slice(0, 80));
+        await sleep(6000);
+      }
+    }
+  }
+  console.log('  all endpoints failed for ' + bbox.join(','));
+  return [];
+}
+
+const seen = new Set();
+const shops = [];
+const perCity = {};
+
+for (const { city, boxes } of CITY_BOXES) {
+  perCity[city] = 0;
+  for (const bbox of boxes) {
+    console.log('Fetching ' + city + ' [' + bbox.join(',') + '] ...');
+    const els = await overpass(bbox);
+    let kept = 0;
+    for (const el of els) {
+      const tags = el.tags || {};
+      const cat = catOf(tags);
+      if (!cat) continue;
+      const id = 'shop_' + el.type + el.id;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const lat = el.lat ?? el.center?.lat;
+      const lng = el.lon ?? el.center?.lon;
+      if (!lat || !lng) continue;
+      const name = (tags['name:zh'] || tags['brand:zh'] || tags.name || '').trim();
+      if (!name) continue;
+      shops.push({
+        id,
+        name,
+        cat,
+        city,
+        cuisine: tags.cuisine || '',
+        brand: tags['brand:zh'] || tags.brand || '',
+        lat, lng,
+      });
+      kept++;
+    }
+    perCity[city] += kept;
+    console.log('  kept ' + kept + ' (total ' + shops.length + ')');
+    await sleep(8000); // Overpass 节流
+  }
+}
+
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
+fs.writeFileSync(OUT, JSON.stringify(shops));
+console.log('DONE. per-city:', JSON.stringify(perCity), 'total:', shops.length);

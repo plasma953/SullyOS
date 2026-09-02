@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, BankCard } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import Modal from '../components/os/Modal';
@@ -15,7 +15,7 @@ import BankAnalytics from '../components/bank/BankAnalytics';
 import { SHOP_RECIPES, INITIAL_DOLLHOUSE } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
-import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
+import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront, CreditCard } from '@phosphor-icons/react';
 import { addLocalDays, getLocalDateKey } from '../utils/localDate';
 import { roundMoney, sumMoney } from '../utils/format';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
@@ -70,7 +70,7 @@ const BankApp: React.FC = () => {
     const dollhouseRef = useRef<DollhouseState>(INITIAL_DOLLHOUSE);
     
     // Tabs: 'game' (Shop) | 'manage' (Menu) | 'report' (Finance)
-    const [activeTab, setActiveTab] = useState<'game' | 'manage' | 'report'>('game');
+    const [activeTab, setActiveTab] = useState<'game' | 'manage' | 'report' | 'cards'>('game');
     
     // UI Modals
     const [showAddTxModal, setShowAddTxModal] = useState(false);
@@ -112,6 +112,36 @@ const BankApp: React.FC = () => {
     // Compute new state from ref (synchronous), update ref + React state + DB.
     // This avoids React 18's batched setState where the updater callback may not
     // run before DB.save, causing data to never be persisted (root cause of data loss).
+    // ── 银行卡（购物 App 默认支付方式）──
+    const upsertCard = (card: BankCard) => {
+        const cards = state.cards || [];
+        const exists = cards.some(c => c.id === card.id);
+        let next: BankCard[];
+        if (exists) {
+            next = cards.map(c => (c.id === card.id ? card : c));
+        } else {
+            if (cards.length >= 5) { addToast('银行卡最多 5 张'); return; }
+            next = [...cards, card];
+        }
+        if (card.isDefault) next = next.map(c => ({ ...c, isDefault: c.id === card.id }));
+        else if (next.every(c => !c.isDefault)) next = next.map((c, i) => ({ ...c, isDefault: i === 0 }));
+        persistStateUpdate(prev => ({ ...prev, cards: next }));
+        addToast(exists ? '卡片已更新' : '卡片已添加');
+    };
+    const removeCard = (id: string) => {
+        const cards = (state.cards || []).filter(c => c.id !== id);
+        if (cards.length > 0 && cards.every(c => !c.isDefault)) cards[0] = { ...cards[0], isDefault: true };
+        persistStateUpdate(prev => ({ ...prev, cards }));
+        addToast('卡片已删除');
+    };
+    const setDefaultCard = (id: string) => {
+        const next = (state.cards || []).map(c => ({ ...c, isDefault: c.id === id }));
+        persistStateUpdate(prev => ({ ...prev, cards: next }));
+        addToast('已设为默认支付卡');
+    };
+    const [showCardModal, setShowCardModal] = useState(false);
+    const [cardDraft, setCardDraft] = useState({ name: '', tailNo: '', balance: '' });
+
     const persistStateUpdate = async (updater: (prev: BankFullState) => BankFullState): Promise<BankFullState> => {
         const nextState = updater(stateRef.current);
         stateRef.current = nextState;
@@ -295,6 +325,10 @@ const BankApp: React.FC = () => {
         setState(finalState);
         setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
 
+        // 银行卡迁移：老数据无 cards 字段 → 补一张默认零花钱卡（购物 App 可用）
+        if (!finalState.cards || finalState.cards.length === 0) {
+            (finalState as any).cards = [{ id: 'card_default', name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true }];
+        }
         // Always persist after load to ensure migrations are saved
         await DB.saveBankState(finalState);
 
@@ -866,6 +900,67 @@ ${previousGuestbook}
                 )}
 
                 {/* 3. Analytics Report */}
+                {activeTab === 'cards' && (
+                    isBankDataLoaded ? (
+                    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                        <div className="rounded-2xl p-4 text-white shadow-lg" style={{ background: 'linear-gradient(135deg, #5C6BC0 0%, #3949AB 100%)' }}>
+                            <div className="flex items-center gap-2 text-[11px] opacity-80"><CreditCard size={14} weight="bold" /> 默认支付卡 · 购物 App 结算用</div>
+                            {(() => {
+                                const cards = state.cards || [];
+                                const def = cards.find(c => c.isDefault) || cards[0];
+                                return def ? (
+                                    <div className="mt-2">
+                                        <div className="text-2xl font-black tracking-wide">¥{def.balance.toFixed(2)}</div>
+                                        <div className="text-[12px] opacity-90 mt-0.5">{def.name} ···· {def.tailNo}</div>
+                                    </div>
+                                ) : (
+                                    <div className="mt-2 text-[13px] opacity-90">还没有银行卡，添加一张开始购物吧</div>
+                                );
+                            })()}
+                        </div>
+
+                        {(state.cards || []).map(card => (
+                            <div key={card.id} className="bg-white/90 rounded-2xl p-4 border border-[#E8DCC8] shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <CreditCard size={18} className="text-indigo-500" weight="bold" />
+                                        <div>
+                                            <div className="text-[14px] font-bold text-[#5D4037]">{card.name} {card.isDefault && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">默认</span>}</div>
+                                            <div className="text-[11px] text-[#8D6E63]">···· {card.tailNo}</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-[16px] font-black text-[#5D4037]">¥{card.balance.toFixed(2)}</div>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2 mt-3">
+                                    {!card.isDefault && (
+                                        <button onClick={() => setDefaultCard(card.id)} className="flex-1 py-2 rounded-xl bg-indigo-50 text-indigo-600 text-[12px] font-bold">设为默认</button>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            const v = window.prompt('设置卡片余额（¥）', String(card.balance));
+                                            if (v !== null) {
+                                                const n = parseFloat(v);
+                                                if (Number.isFinite(n) && n >= 0) upsertCard({ ...card, balance: Math.round(n * 100) / 100 });
+                                            }
+                                        }}
+                                        className="flex-1 py-2 rounded-xl bg-[#FDF6E3] text-[#8D6E63] text-[12px] font-bold">改余额</button>
+                                    <button onClick={() => { if (window.confirm('删除这张卡？')) removeCard(card.id); }} className="flex-1 py-2 rounded-xl bg-red-50 text-red-400 text-[12px] font-bold">删除</button>
+                                </div>
+                            </div>
+                        ))}
+
+                        <button
+                            onClick={() => { setCardDraft({ name: '', tailNo: String(1000 + Math.floor(Math.random() * 9000)), balance: '' }); setShowCardModal(true); }}
+                            className="w-full py-3.5 rounded-2xl border-2 border-dashed border-[#C5B39B] text-[#8D6E63] text-[13px] font-bold flex items-center justify-center gap-2">
+                            <CreditCard size={16} weight="bold" /> 添加银行卡（最多 5 张）
+                        </button>
+                        <div className="text-[10px] text-[#BCAAA4] text-center pb-2">虚拟卡 · 余额自主设定 · 购物 App 默认从这里扣款</div>
+                    </div>
+                    ) : <div className="flex-1" />
+                )}
+
                 {activeTab === 'report' && (
                     <div className="flex-1 overflow-y-auto no-scrollbar">
                         <BankAnalytics
@@ -1006,7 +1101,8 @@ ${previousGuestbook}
                     {[
                         { key: 'game', label: '店铺', color: '#8D6E63' },
                         { key: 'manage', label: '经营', color: '#FF7043' },
-                        { key: 'report', label: '账本', color: '#66BB6A' }
+                        { key: 'report', label: '账本', color: '#66BB6A' },
+                        { key: 'cards', label: '银行卡', color: '#5C6BC0' }
                     ].map(tab => (
                         <button
                             key={tab.key}
@@ -1017,7 +1113,7 @@ ${previousGuestbook}
                                     : 'hover:bg-[#FDF6E3]'
                             }`}
                         >
-                            <span className={`text-xl mb-0.5 ${activeTab === tab.key ? 'transform scale-110' : ''}`}>{tab.key === 'game' ? <Storefront size={20} weight="bold" /> : tab.key === 'manage' ? <ClipboardText size={20} weight="bold" /> : <ChartBar size={20} weight="bold" />}</span>
+                            <span className={`text-xl mb-0.5 ${activeTab === tab.key ? 'transform scale-110' : ''}`}>{tab.key === 'game' ? <Storefront size={20} weight="bold" /> : tab.key === 'manage' ? <ClipboardText size={20} weight="bold" /> : tab.key === 'report' ? <ChartBar size={20} weight="bold" /> : <CreditCard size={20} weight="bold" />}</span>
                             <span className={`text-[10px] font-bold tracking-wide ${activeTab === tab.key ? 'text-white' : 'text-[#A1887F]'}`}>
                                 {tab.label}
                             </span>
@@ -1028,6 +1124,39 @@ ${previousGuestbook}
                     ))}
                 </div>
             </div>
+
+            <Modal isOpen={showCardModal} title="添加银行卡" onClose={() => setShowCardModal(false)} footer={
+                <button
+                    onClick={() => {
+                        const name = cardDraft.name.trim() || '零花钱卡';
+                        const tail = (cardDraft.tailNo.replace(/\D/g, '') || String(1000 + Math.floor(Math.random() * 9000))).slice(-4);
+                        const bal = parseFloat(cardDraft.balance);
+                        if (!Number.isFinite(bal) || bal < 0) { addToast('请输入有效余额'); return; }
+                        upsertCard({ id: 'card_' + Date.now(), name, tailNo: tail, balance: Math.round(bal * 100) / 100, isDefault: (state.cards || []).length === 0 });
+                        setShowCardModal(false);
+                    }}
+                    className="w-full py-4 bg-gradient-to-r from-[#5C6BC0] to-[#3949AB] text-white font-bold rounded-2xl shadow-lg active:scale-[0.98] transition-all text-base">
+                    添加卡片
+                </button>
+            }>
+                <div className="space-y-3">
+                    <div>
+                        <div className="text-[12px] text-[#8D6E63] mb-1">卡片名称</div>
+                        <input value={cardDraft.name} onChange={e => setCardDraft({ ...cardDraft, name: e.target.value })} placeholder="如：零花钱卡 / 工资卡"
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC8] outline-none focus:border-[#5C6BC0] text-[14px]" />
+                    </div>
+                    <div>
+                        <div className="text-[12px] text-[#8D6E63] mb-1">尾号（4位）</div>
+                        <input value={cardDraft.tailNo} onChange={e => setCardDraft({ ...cardDraft, tailNo: e.target.value })} inputMode="numeric"
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC8] outline-none focus:border-[#5C6BC0] text-[14px]" />
+                    </div>
+                    <div>
+                        <div className="text-[12px] text-[#8D6E63] mb-1">余额（¥）</div>
+                        <input value={cardDraft.balance} onChange={e => setCardDraft({ ...cardDraft, balance: e.target.value })} inputMode="decimal" placeholder="0.00"
+                            className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC8] outline-none focus:border-[#5C6BC0] text-[14px]" />
+                    </div>
+                </div>
+            </Modal>
 
             {/* Premium Modals */}
             <Modal isOpen={showAddTxModal} title="记一笔" onClose={() => setShowAddTxModal(false)} footer={

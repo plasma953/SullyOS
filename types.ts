@@ -38,6 +38,7 @@ export enum AppID {
   CharCreatorDev = 'char_creator_dev', // 捏脸系统开发模式 — 仅开发模式可见，向捏人器指定类目追加自定义部件
   WorldHome = 'world_home', // 家园 — 同世界观多角色共同生活的大世界（观测驱动演绎，每角色独立 LLM 调用 + NPC 世界引擎）
   Preset = 'preset', // 预设 — 提示词段落预设管理（内容/顺序/启停，注入聊天 system prompt）
+  Shopping = 'shopping', // 购物 — 真实店面模拟点单（OSM 店面 + OFF 真实商品，模拟下单不真实支付）
 }
 
 export interface SystemLog {
@@ -2486,10 +2487,20 @@ export interface BankShopState {
     dollhouse?: DollhouseState;
 }
 
+/** 银行卡（存钱罐 · 购物支付）：用户自主添加，可设余额与默认卡 */
+export interface BankCard {
+    id: string;
+    name: string;       // 卡名称，如「零花钱卡」
+    tailNo: string;     // 展示用 4 位尾号
+    balance: number;
+    isDefault?: boolean;
+}
+
 export interface BankFullState {
     config: BankConfig;
     shop: BankShopState;
     goals: SavingsGoal[];
+    cards?: BankCard[]; // v2: 银行卡（购物 App 默认支付方式）
     firedStaff?: ShopStaff[]; // Fired staff pool: can rehire or permanently delete
     todaySpent: number;
     lastLoginDate: string;
@@ -3916,7 +3927,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'voice' | 'collaboration_file' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'luckin_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'novel_card' | 'world_card' | 'sim_card' | 'phone_card' | 'webpage_card' | 'theater_card' | 'room_card' | 'life_card' | 'group_topic_card' | 'busy_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'voice' | 'collaboration_file' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'luckin_card' | 'html_card' | 'shopping_order' | 'news_card' | 'vr_card' | 'trpg_card' | 'novel_card' | 'world_card' | 'sim_card' | 'phone_card' | 'webpage_card' | 'theater_card' | 'room_card' | 'life_card' | 'group_topic_card' | 'busy_card';
 
 export interface Message {
     id: number;

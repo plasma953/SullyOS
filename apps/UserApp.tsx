@@ -125,6 +125,29 @@ const UserApp: React.FC = () => {
                         placeholder="描述你自己..."
                     />
                 </div>
+                {/* 常驻地址（购物 App 收货用） */}
+                <div className="bg-white rounded-[1.75rem] shadow-[0_10px_30px_-12px_rgba(80,70,120,0.18)] border border-slate-100 p-5">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="w-7 h-7 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                            </svg>
+                        </span>
+                        <h2 className="text-sm font-bold text-slate-700">常驻地址</h2>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">购物 App 的收货地址，自由填写（开头写城市可作为「附近」排序标签）。</p>
+                    <input
+                        value={((userProfile as any).delivery?.addressText as string) || ''}
+                        onChange={(e) => {
+                            const cur = (userProfile as any).delivery || {};
+                            const text = e.target.value;
+                            updateUserProfile({ delivery: { ...cur, addressText: text, cityTag: text.slice(0, 3) } } as any);
+                        }}
+                        className="w-full bg-slate-50 focus:bg-white border border-slate-100 focus:border-amber-300 rounded-2xl px-4 py-3 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-300"
+                        placeholder="如：北京市朝阳区望京SOHO T1"
+                    />
+                </div>
                 </>}
             </div>
         </div>

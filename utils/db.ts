@@ -11,6 +11,7 @@ import {
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     WorldProfile, WorldEpisode, StoryTheaterEntry, StoryTheaterPreset, StoryTheaterMask, PromptPreset
 } from '../types';
+import type { ShoppingOrder } from './shoppingTypes';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 import { exportSignalLocal, importSignalLocal } from './vrWorld/signal';
 import { exportLuckinLocal, importLuckinLocal } from './luckinMcpClient';
@@ -28,7 +29,8 @@ const DB_NAME = 'AetherOS_Data';
 // v70：剧场面具箱（原创人物面具）；角色面具仍只存 characterId，不复制神经链接资料。
 // v71：角色小红书伪主页；发帖归属与可删除的自由活动日志分离。
 // v72：提示词段落预设（Preset App）。独立 store，随备份动态枚举自动带走。
-const DB_VERSION = 72;
+// v73：购物订单（Shopping App）。独立 store，随备份动态枚举自动带走。
+const DB_VERSION = 73; // v73: 购物订单（Shopping App）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_CHAR_GROUPS = 'character_groups'; // 角色分组定义（角色通过 groupId 指向；与群聊 groups 无关）
@@ -55,6 +57,7 @@ const STORE_WORLDBOOKS = 'worldbooks';
 const STORE_NOVELS = 'novels'; 
 const STORE_BANK_TX = 'bank_transactions';
 const STORE_BANK_DATA = 'bank_data';
+const STORE_SHOPPING_ORDERS = 'shopping_orders'; // v73: 购物订单
 const STORE_XHS_STOCK = 'xhs_stock';
 const STORE_XHS_ACTIVITIES = 'xhs_activities';
 const STORE_XHS_OWNED_POSTS = 'xhs_owned_posts';
@@ -360,6 +363,8 @@ export const openDB = (): Promise<IDBDatabase> => {
 
       // v72: 提示词段落预设
       createStore(STORE_PROMPT_PRESETS, { keyPath: 'id' });
+      // v73: 购物订单（Shopping App）
+      createStore(STORE_SHOPPING_ORDERS, { keyPath: 'id' });
 
       // ─── Memory Palace (记忆宫殿) stores ───
       if (!db.objectStoreNames.contains('memory_nodes')) {
@@ -2913,6 +2918,33 @@ export const DB = {
       transaction.objectStore(STORE_BANK_TX).delete(id);
   },
 
+  // ─── 购物订单（Shopping App / v73）───
+  getAllShoppingOrders: async (): Promise<ShoppingOrder[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SHOPPING_ORDERS)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_SHOPPING_ORDERS, 'readonly');
+          const store = transaction.objectStore(STORE_SHOPPING_ORDERS);
+          const request = store.getAll();
+          request.onsuccess = () => resolve((request.result || []) as ShoppingOrder[]);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveShoppingOrder: async (order: ShoppingOrder): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SHOPPING_ORDERS)) return;
+      const transaction = db.transaction(STORE_SHOPPING_ORDERS, 'readwrite');
+      transaction.objectStore(STORE_SHOPPING_ORDERS).put(order);
+  },
+
+  deleteShoppingOrder: async (id: string): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SHOPPING_ORDERS)) return;
+      const transaction = db.transaction(STORE_SHOPPING_ORDERS, 'readwrite');
+      transaction.objectStore(STORE_SHOPPING_ORDERS).delete(id);
+  },
+
   // --- Songs (Songwriting App) ---
   getAllSongs: async (): Promise<SongSheet[]> => {
       const db = await openDB();
@@ -3268,6 +3300,7 @@ export const DB = {
           'room_plates', 'digest_reports',
           'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
           STORE_PROMPT_PRESETS, // v72 提示词段落预设（Preset App）—— importFullData 侧白名单
+          STORE_SHOPPING_ORDERS, // v73 购物订单（Shopping App）
       ].filter(name => db.objectStoreNames.contains(name));
 
       const hasStore = (storeName: string) => availableStores.includes(storeName);

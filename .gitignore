@@ -60,3 +60,7 @@ xiaohongshu-skills/
 # TIAO-Capacitor local Android toolchain and caches (D: only, never committed)
 .android-sdk/
 .gradle-user-home/
+
+# shopping 数据中间产物（可由 scripts/fetch-*.mjs 重新生成）
+public/shopping/shops-raw.json
+public/shopping/off-products.json

@@ -1449,6 +1449,19 @@ ${isInitialGeneration ? `
                                <div className="flex-1 space-y-3">
                                    <input value={formData.name} onChange={(e) => handleChange('name', e.target.value)} className="w-full bg-transparent py-1 text-xl font-medium text-slate-800 border-b border-slate-200" placeholder="名称" />
                                    <input value={formData.description} onChange={(e) => handleChange('description', e.target.value)} className="w-full bg-transparent py-1 text-sm text-slate-500 border-b border-slate-200" placeholder="描述" />
+                                   {/* 常驻地址（购物 App 给 TA 点单用）：delivery.addressText + cityTag */}
+                                   <input
+                                       value={(formData as any).delivery?.addressText || ''}
+                                       onChange={(e) => {
+                                           const cur = (formData as any).delivery || {};
+                                           const text = e.target.value;
+                                           const cityFallback = (formData as any).location?.city || '';
+                                           const cityTag = text.slice(0, 3) || cityFallback;
+                                           handleChange('delivery' as any, { ...cur, addressText: text, cityTag });
+                                       }}
+                                       className="w-full bg-transparent py-1 text-sm text-slate-500 border-b border-slate-200"
+                                       placeholder="常驻地址（外卖收货用，如：朝阳区望京SOHO T1）"
+                                   />
                                    {/* 头像 URL 入口: 与左侧上传文件平级. 走 draft -> 失焦/回车 commit,
                                        避免逐字 commit 导致所有引用 char.avatar 的 <img> 在打字时疯狂
                                        请求不完整 URL. https URL 会作为 Instant Push 通知图标传到 worker;

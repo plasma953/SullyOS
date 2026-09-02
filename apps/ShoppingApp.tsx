@@ -1,0 +1,550 @@
+// ============================================================
+// 购物 App 主组件 —— 美团外卖式 UI（真实店面 × 真实商品 · 模拟点单）
+// 数据: OSM 真实店铺 (ODbL) + OFF 真实商品 (ODbL/CC-BY-SA) + 品牌 SKU 名录
+// ============================================================
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useOS } from '../context/OSContext';
+import { DB } from '../utils/db';
+import {
+  ShoppingShop, ShoppingDish, ShoppingCart, ShoppingOrder, CartItem,
+  ShopCategory, SHOP_CATEGORIES, CATEGORY_EMOJI, ORDER_STATUS_LABEL,
+} from '../utils/shoppingTypes';
+import { loadShoppingData, sortShopsForAddress, dishImgUrl } from '../utils/shoppingData';
+import { buildShoppingOrderTag, sanitizeOrderField } from '../utils/shoppingFormat';
+import { roundMoney, sumMoney } from '../utils/format';
+import { trackEvent } from '../utils/analytics';
+import { CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
+
+// ── 视图状态 ──
+type View = 'list' | 'shop' | 'orders' | 'orderDetail' | 'checkout';
+
+/** 当前点单目标（右上角地点 pill 切换） */
+interface TargetInfo {
+  type: 'user' | 'char';
+  charId?: string;
+  name: string;
+  addressText: string; // 收货地址（char 未填时为空 → 置灰）
+  cityTag?: string;
+}
+
+const EMOJI_FALLBACK: Record<string, string> = {
+  '美食外卖': '🍜', '奶茶饮品': '🧋', '甜品蛋糕': '🍰', '超市便利': '🏪',
+  '生鲜果蔬': '🥬', '医药健康': '💊', '鲜花绿植': '💐',
+};
+
+const fmtMoney = (n: number) => {
+  const v = Math.round(n * 100) / 100;
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+};
+
+const STATUS_FLOW: ShoppingOrder['status'][] = ['pending_pay', 'paid', 'accepted', 'delivering', 'delivered'];
+
+/** 按下单时间推进状态：接单 8 分钟、配送 32 分钟后送达（纯时间驱动） */
+function computeStatus(o: ShoppingOrder, now = Date.now()): ShoppingOrder['status'] {
+  if (o.status === 'cancelled' || o.status === 'delivered') return o.status;
+  const t = now - o.createdAt;
+  if (t > 40 * 60_000) return 'delivered';
+  if (t > 8 * 60_000) return 'delivering';
+  return o.status === 'pending_pay' ? 'pending_pay' : o.status === 'paid' ? 'paid' : 'accepted';
+}
+
+const genOrderId = () => {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return 'ORD' + ymd + Math.random().toString(36).slice(2, 8).toUpperCase();
+};
+
+export default function ShoppingApp() {
+  const { userProfile, characters, openApp, updateCharacter, updateUserProfile } = useOS();
+  const [view, setView] = useState<View>('list');
+  const [ds, setDs] = useState<{ shops: ShoppingShop[]; dishes: ShoppingDish[] } | null>(null);
+  const [loadErr, setLoadErr] = useState(false);
+  const [activeCat, setActiveCat] = useState<ShopCategory | 'all'>('all');
+  const [activeShop, setActiveShop] = useState<ShoppingShop | null>(null);
+  const [carts, setCarts] = useState<Record<string, ShoppingCart>>({});
+  const [orders, setOrders] = useState<ShoppingOrder[]>([]);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [targetSel, setTargetSel] = useState(false);
+  const [target, setTarget] = useState<TargetInfo | null>(null);
+  const [editAddr, setEditAddr] = useState(false);
+  const [addrDraft, setAddrDraft] = useState('');
+  const [payErr, setPayErr] = useState('');
+  const [lastOrder, setLastOrder] = useState<ShoppingOrder | null>(null);
+
+  // ── 数据加载 ──
+  useEffect(() => { loadShoppingData().then(setDs).catch(() => setLoadErr(true)); }, []);
+
+  // ── 订单加载 + 时间驱动状态刷新 ──
+  useEffect(() => {
+    DB.getAllShoppingOrders().then(list => {
+      const fixed = list.map(o => {
+        const st = computeStatus(o);
+        if (st !== o.status) {
+          const next = { ...o, status: st, statusHistory: [...o.statusHistory, { status: st, at: Date.now() }], deliveredAt: st === 'delivered' ? Date.now() : o.deliveredAt };
+          DB.saveShoppingOrder(next);
+          return next;
+        }
+        return o;
+      });
+      setOrders(fixed.sort((a, b) => b.createdAt - a.createdAt));
+    }).catch(() => {});
+    const iv = setInterval(() => {
+      setOrders(prev => prev.map(o => {
+        const st = computeStatus(o);
+        return st === o.status ? o : { ...o, status: st, statusHistory: [...o.statusHistory, { status: st, at: Date.now() }], deliveredAt: st === 'delivered' ? Date.now() : o.deliveredAt };
+      }));
+    }, 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // ── 购物车持久化（按「被点单人」隔离，key = type:charId|user）──
+  useEffect(() => { refreshCarts(); }, []);
+  const refreshCarts = () => {
+    // 购物车暂存 BankFullState 之外的 localStorage 快路径（大 JSON 不进 IDB 也无妨）
+    try { setCarts(JSON.parse(localStorage.getItem('sullyos_shopping_carts') || '{}')); } catch { setCarts({}); }
+  };
+  const persistCarts = (next: Record<string, ShoppingCart>) => {
+    setCarts(next);
+    try { localStorage.setItem('sullyos_shopping_carts', JSON.stringify(next)); } catch { /* ignore */ }
+  };
+
+  const cartKeyOf = (t: TargetInfo) => (t.type === 'user' ? 'user' : `char:${t.charId || t.name}`);
+  const cart = target ? carts[cartKeyOf(target)] : undefined;
+
+  // ── 点单目标：默认 user，可切到有地址的 char ──
+  const targets: TargetInfo[] = useMemo(() => {
+    const me: TargetInfo = {
+      type: 'user', name: userProfile.name || '我',
+      addressText: (userProfile as any).delivery?.addressText || '',
+      cityTag: (userProfile as any).delivery?.cityTag || '',
+    };
+    const chars = characters.map(c => ({
+      type: 'char' as const, charId: c.id, name: c.name,
+      addressText: (c as any).delivery?.addressText || '',
+      cityTag: (c as any).delivery?.cityTag || (c as any).location?.city || '',
+    }));
+    return [me, ...chars];
+  }, [userProfile, characters]);
+
+  useEffect(() => {
+    if (!target && targets.length > 0) setTarget(targets[0]);
+  }, [targets]);
+
+  const updateTargetAddress = async (text: string, cityTag?: string) => {
+    if (!target) return;
+    if (target.type === 'user') {
+      const cur = (userProfile as any).delivery || {};
+      updateUserProfile({ delivery: { ...cur, addressText: text, cityTag: cityTag ?? cur.cityTag } } as any);
+      setTarget({ ...target, addressText: text, cityTag: cityTag ?? target.cityTag });
+    } else if (target.charId) {
+      const ch = characters.find(c => c.id === target.charId);
+      if (ch) {
+        const cur = (ch as any).delivery || {};
+        updateCharacter(ch.id, { delivery: { ...cur, addressText: text, cityTag: cityTag ?? cur.cityTag } } as any);
+        setTarget({ ...target, addressText: text, cityTag: cityTag ?? target.cityTag });
+      }
+    }
+    setEditAddr(false);
+  };
+
+  // ── 店铺列表：全量展示，城市标签匹配者优先 ──
+  const visibleShops = useMemo(() => {
+    if (!ds) return [];
+    let list = ds.shops;
+    if (activeCat !== 'all') list = list.filter(s => s.cat === activeCat);
+    return sortShopsForAddress(list, target?.cityTag || undefined);
+  }, [ds, activeCat, target]);
+
+  const shopMenu = useMemo(() => {
+    if (!ds || !activeShop) return [];
+    return ds.dishes.filter(d => d.shopId === activeShop.id);
+  }, [ds, activeShop]);
+
+  // ── 购物车操作 ──
+  const addToCart = (dish: ShoppingDish, qty = 1) => {
+    if (!target || !activeShop) return;
+    const key = cartKeyOf(target);
+    const cur: ShoppingCart = carts[key] || {
+      key, recipientType: target.type, charId: target.charId, recipientName: target.name,
+      addressText: target.addressText, cityTag: target.cityTag, shopId: activeShop.id, shopName: activeShop.name, items: [], updatedAt: Date.now(),
+    };
+    if (cur.shopId && cur.shopId !== activeShop.id) {
+      if (!confirm(`购物车里还有「${cur.shopName}」的商品，换店将清空，继续？`)) return;
+    }
+    const items = [...((cur.shopId === activeShop.id ? cur.items : []))];
+    const idx = items.findIndex(i => i.dishId === dish.id);
+    if (idx >= 0) items[idx] = { ...items[idx], qty: items[idx].qty + qty, lineTotal: roundMoney((items[idx].qty + qty) * items[idx].unitPrice) };
+    else items.push({ dishId: dish.id, name: dish.name, unitPrice: dish.price, qty, img: dish.img, lineTotal: roundMoney(dish.price * qty) });
+    persistCarts({ ...carts, [key]: { ...cur, shopId: activeShop.id, shopName: activeShop.name, items, addressText: target.addressText, updatedAt: Date.now() } });
+  };
+  const changeQty = (dishId: string, delta: number) => {
+    if (!target) return;
+    const key = cartKeyOf(target);
+    const cur = carts[key];
+    if (!cur) return;
+    const items = cur.items.map(i => ({ ...i }))
+      .map(i => { if (i.dishId === dishId) { i.qty += delta; i.lineTotal = roundMoney(i.qty * i.unitPrice); } return i; })
+      .filter(i => i.qty > 0);
+    persistCarts({ ...carts, [key]: { ...cur, items, updatedAt: Date.now() } });
+  };
+  const cartShop = useMemo(() => {
+    if (!ds || !cart?.shopId) return null;
+    return ds.shops.find(s => s.id === cart.shopId) || null;
+  }, [ds, cart?.shopId]);
+  const cartCount = cart?.items.reduce((a, i) => a + i.qty, 0) || 0;
+  const cartTotal = cart ? sumMoney(cart.items.map(i => i.lineTotal)) : 0;
+
+  // ── 下单：银行卡扣款（存钱罐 BankFullState.cards，默认卡优先）──
+  const placeOrder = async () => {
+    if (!target || !cart || cart.items.length === 0) return;
+    setPayErr('');
+    const bank = await DB.getBankState();
+    let cards = bank?.cards || [];
+    if (cards.length === 0) {
+      // 初始卡：余额 520（拟真），用户可在存钱罐里改
+      cards = [{ id: 'card_' + Date.now(), name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true }];
+    }
+    const payCard = cards.find(c => c.isDefault) || cards[0];
+    if (payCard.balance < cartTotal) {
+      setPayErr(`「${payCard.name}·${payCard.tailNo}」余额不足（¥${fmtMoney(payCard.balance)}），去存钱罐充值或换卡`);
+      return;
+    }
+    const order: ShoppingOrder = {
+      id: genOrderId(),
+      charId: target.type === 'char' ? target.charId : undefined,
+      placedBy: 'user', recipientType: target.type, recipientName: target.name,
+      addressText: target.addressText || '（未填地址）',
+      shopId: cart.shopId!, shopName: cart.shopName!,
+      shopCat: cartShop?.cat || '美食外卖',
+      items: cart.items, itemCount: cart.items.reduce((a, i) => a + i.qty, 0),
+      subtotal: cartTotal, deliveryFee: cartShop?.deliveryFee ?? 0,
+      total: roundMoney(cartTotal + (cartShop?.deliveryFee ?? 0)),
+      payMethod: 'bank_card', cardLabel: `${payCard.name}·${payCard.tailNo}`,
+      status: 'paid',
+      statusHistory: [{ status: 'paid', at: Date.now() }],
+      createdAt: Date.now(),
+    };
+    // 扣款 + 流水
+    const nextCards = cards.map(c => c.id === payCard.id ? { ...c, balance: roundMoney(c.balance - order.total) } : c);
+    const nextBank = { ...(bank || { config: { dailyBudget: 100, currencySymbol: '¥' }, shop: {} as any, goals: [] }), cards: nextCards };
+    await DB.saveBankState(nextBank as any);
+    await DB.saveTransaction({
+      id: 'tx_' + Date.now(), amount: -order.total, category: '购物',
+      note: `${order.shopName} × ${order.itemCount} 件（${target.type === 'char' ? '给' + target.name + '点的' : '自购'}）`,
+      timestamp: order.createdAt, dateStr: new Date(order.createdAt).toISOString().slice(0, 10),
+    });
+    await DB.saveShoppingOrder(order);
+
+    // 给 char 点单 → 落一条带标签的 user 消息（聊天界面正则替换为订单卡）
+    if (target.type === 'char' && target.charId) {
+      await DB.saveMessage({
+        charId: target.charId, role: 'user', type: 'shopping_order', metadata: { orderId: order.id, status: order.status, shop: order.shopName, total: order.total, recipient: order.recipientName },
+        content: `我给你点了${order.shopName}的外卖～\n${buildShoppingOrderTag(order)}`,
+      } as any);
+      // bump lastMsgTimestamp：当前开着该聊天就实时刷新（user 消息不补未读/toast）
+      window.dispatchEvent(new CustomEvent(CHAT_GEN_EVENTS.replyEnd, { detail: { charId: target.charId, charName: target.name } }));
+    }
+    // 清购物车
+    const nextCarts = { ...carts };
+    delete nextCarts[cartKeyOf(target)];
+    persistCarts(nextCarts);
+    setOrders(prev => [order, ...prev]);
+    setLastOrder(order);
+    trackEvent('购物下单', { shop: order.shopName, total: order.total, recipient: target.type });
+    setView('orderDetail'); setDetailOrderId(order.id);
+  };
+
+  // ── 深链回跳（?openApp=shopping&orderId=xxx / 聊天卡 CustomEvent）──
+  useEffect(() => {
+    const openOrder = (e: Event) => {
+      const id = (e as CustomEvent).detail?.orderId;
+      if (id) { setDetailOrderId(id); setView('orderDetail'); }
+    };
+    window.addEventListener('sullyos:open-shopping-order', openOrder);
+    const url = new URL(window.location.href);
+    const orderId = url.searchParams.get('orderId');
+    if (url.searchParams.get('openApp') === 'shopping' && orderId) {
+      setDetailOrderId(orderId); setView('orderDetail');
+      url.searchParams.delete('openApp'); url.searchParams.delete('orderId');
+      window.history.replaceState({}, '', url.toString());
+    }
+    // 深链兜底：事件可能在 App 挂载前派发（activeMsgRuntime 先清了 URL），
+    // 那条路径会把 orderId 冻进 sessionStorage，这里补读一次。
+    try {
+      const pending = sessionStorage.getItem('sullyos_shopping_open_order');
+      if (pending) {
+        sessionStorage.removeItem('sullyos_shopping_open_order');
+        setDetailOrderId(pending);
+        setView('orderDetail');
+      }
+    } catch { /* ignore */ }
+    return () => window.removeEventListener('sullyos:open-shopping-order', openOrder);
+  }, []);
+
+  // ── 订单转发到聊天（任意会话）──
+  const forwardOrder = async (o: ShoppingOrder, charId: string) => {
+    await DB.saveMessage({
+      charId, role: 'user', type: 'shopping_order', metadata: { orderId: o.id, status: o.status, shop: o.shopName, total: o.total, recipient: o.recipientName },
+      content: `（转发订单）${o.shopName} 的点单～\n${buildShoppingOrderTag(o)}`,
+    } as any);
+    const ch = characters.find(c => c.id === charId);
+    window.dispatchEvent(new CustomEvent(CHAT_GEN_EVENTS.replyEnd, { detail: { charId, charName: ch?.name || '' } }));
+  };
+
+  if (loadErr) {
+    return <div className="h-full flex items-center justify-center text-sm text-slate-400">数据加载失败，请稍后重试</div>;
+  }
+  if (!ds || !target) {
+    return <div className="h-full flex items-center justify-center text-sm text-slate-400 animate-pulse">加载中…</div>;
+  }
+
+  // ════════ 渲染 ════════
+  const backBtn = (label: string, onBack: () => void) => (
+    <button onClick={onBack} className="flex items-center gap-1 text-[13px] text-slate-500 py-1">
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="h-full flex flex-col bg-[#f5f6f7] text-slate-800">
+      {/* 顶栏：返回 + 地点 pill（右上角切换 点给谁）*/}
+      <div className="shrink-0 px-3 pt-2 pb-1 bg-gradient-to-r from-amber-400 to-orange-400">
+        <div className="flex items-center justify-between">
+          {view === 'list' ? <span className="text-[15px] font-bold text-white">外卖购物</span>
+            : backBtn(view === 'shop' ? '返回店铺列表' : view === 'orders' ? '返回首页' : '返回', () => {
+              if (view === 'shop') setView('list');
+              else if (view === 'orders' || view === 'checkout') setView('list');
+              else setView('orders');
+            })}
+          <button onClick={() => setTargetSel(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/25 backdrop-blur text-white text-[12px] font-bold max-w-[62%]">
+            <span>📍</span>
+            <span className="truncate">{target.type === 'user' ? '我的地址' : `给 ${target.name}`}</span>
+            {!target.addressText && target.type === 'char' && <span className="text-[10px] opacity-90">（未填）</span>}
+            <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          </button>
+        </div>
+      </div>
+
+      {view === 'list' && (
+        <>
+          {/* 品类宫格 */}
+          <div className="shrink-0 grid grid-cols-4 gap-y-2 px-2 pt-3 pb-2 bg-white">
+            <button onClick={() => setActiveCat('all')} className={`flex flex-col items-center gap-1 ${activeCat === 'all' ? 'opacity-100' : 'opacity-70'}`}>
+              <span className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl ${activeCat === 'all' ? 'bg-amber-100 ring-2 ring-amber-300' : 'bg-slate-50'}`}>🧭</span>
+              <span className="text-[10px]">全部</span>
+            </button>
+            {SHOP_CATEGORIES.map(c => (
+              <button key={c} onClick={() => setActiveCat(c)} className="flex flex-col items-center gap-1">
+                <span className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xl ${activeCat === c ? 'bg-amber-100 ring-2 ring-amber-300' : 'bg-slate-50'}`}>{EMOJI_FALLBACK[c]}</span>
+                <span className="text-[10px]">{c}</span>
+              </button>
+            ))}
+          </div>
+          {/* 店铺列表 */}
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+            {visibleShops.map(s => (
+              <div key={s.id} onClick={() => { setActiveShop(s); setView('shop'); }}
+                className="flex gap-3 bg-white rounded-2xl p-3 shadow-sm active:scale-[0.99] transition-transform cursor-pointer">
+                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-2xl shrink-0">
+                  {EMOJI_FALLBACK[s.cat] || '🏪'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[14px] font-bold truncate">{s.name}</span>
+                    {s.city && target.cityTag && s.city.includes(target.cityTag) && (
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">附近</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-amber-500 font-bold mt-0.5">★ {s.rating?.toFixed(1) || '4.5'} <span className="text-slate-400 font-normal">月售{s.monthlySales || 0}</span></div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">起送¥{fmtMoney(s.minOrder || 0)} · 配送¥{fmtMoney(s.deliveryFee || 0)} · {s.deliveryTime || '30分钟'} · {s.cat}</div>
+                </div>
+                <div className="self-center text-slate-300 shrink-0">›</div>
+              </div>
+            ))}
+            {visibleShops.length === 0 && <div className="text-center text-[12px] text-slate-400 py-10">该品类暂无店铺</div>}
+          </div>
+          {/* 底部：购物车条 + 订单入口 */}
+          <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">
+            <button onClick={() => setView('orders')} className="text-[12px] text-slate-500 shrink-0">📋 订单</button>
+            <div className="flex-1" />
+            {cart && cart.items.length > 0 && (
+              <button onClick={() => setView('checkout')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-400 text-white text-[13px] font-bold">
+                🛒 {cartCount} 件 · ¥{fmtMoney(cartTotal)} 去结算
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {view === 'shop' && activeShop && (
+        <>
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-4 pt-3 pb-3 bg-gradient-to-br from-amber-50 to-orange-50">
+              <div className="text-[16px] font-bold">{activeShop.name}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating?.toFixed(1)} · 月售{activeShop.monthlySales} · {activeShop.deliveryTime} · {activeShop.city || ''}</div>
+            </div>
+            <div className="px-3 pb-24 space-y-2">
+              {shopMenu.map(d => (
+                <div key={d.id} className="flex gap-3 bg-white rounded-xl p-2.5">
+                  {d.img ? (
+                    <img src={dishImgUrl(d.img)} alt="" loading="lazy" className="w-14 h-14 rounded-lg object-cover shrink-0"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  ) : (
+                    <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-xl shrink-0">{EMOJI_FALLBACK[activeShop.cat] || '🛍️'}</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold truncate">{d.name}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{d.qty || d.desc || d.cat}</div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[14px] font-bold text-orange-500">¥{fmtMoney(d.price)}</span>
+                      <div className="flex items-center gap-1.5">
+                        {(() => {
+                          const inCart = cart?.items.find(i => i.dishId === d.id);
+                          return inCart ? (
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={e => { e.stopPropagation(); changeQty(d.id, -1); }} className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold">−</button>
+                              <span className="text-[12px] font-bold w-4 text-center">{inCart.qty}</span>
+                            </div>
+                          ) : null;
+                        })()}
+                        <button onClick={e => { e.stopPropagation(); addToCart(d); }} className="w-6 h-6 rounded-full bg-amber-400 text-white flex items-center justify-center font-bold">+</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {shopMenu.length === 0 && <div className="text-center text-[12px] text-slate-400 py-10">菜单整理中…</div>}
+            </div>
+          </div>
+          {cart && cart.items.length > 0 && (
+            <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">
+              <button onClick={() => setView('checkout')} className="flex-1 flex items-center gap-2 px-4 py-2 rounded-full bg-amber-400 text-white text-[13px] font-bold justify-center">
+                🛒 {cartCount} 件 · ¥{fmtMoney(cartTotal)} 去结算
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {view === 'checkout' && cart && (
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+          <div className="bg-white rounded-2xl p-4">
+            <div className="text-[13px] font-bold mb-1">收货信息</div>
+            <div className="text-[12px] text-slate-500">{target.type === 'user' ? '送给我自己' : `送给 ${target.name}`}</div>
+            <div className="text-[12px] text-slate-500">📍 {target.addressText || '（未填地址）'}</div>
+          </div>
+          <div className="bg-white rounded-2xl p-4 space-y-2">
+            <div className="text-[13px] font-bold">{cart.shopName}</div>
+            {cart.items.map(i => (
+              <div key={i.dishId} className="flex justify-between text-[12px]">
+                <span className="truncate">{i.name} × {i.qty}</span>
+                <span className="shrink-0 ml-2">¥{fmtMoney(i.lineTotal)}</span>
+              </div>
+            ))}
+            <div className="border-t border-slate-100 pt-2 flex justify-between text-[13px] font-bold">
+              <span>合计{cartShop ? `（含配送费¥${fmtMoney(cartShop.deliveryFee || 0)}）` : ''}</span>
+              <span className="text-orange-500">¥{fmtMoney(cartTotal + (activeShop?.deliveryFee || 0))}</span>
+            </div>
+          </div>
+          {payErr && <div className="text-[12px] text-red-500 bg-red-50 rounded-xl px-3 py-2">{payErr}</div>}
+          <button onClick={placeOrder} className="w-full py-3 rounded-full bg-amber-400 text-white text-[14px] font-bold">
+            银行卡支付 ¥{fmtMoney(cartTotal + (cartShop?.deliveryFee || 0))}
+          </button>
+          <div className="text-[10px] text-slate-300 text-center">模拟支付 · 扣款走存钱罐银行卡</div>
+        </div>
+      )}
+
+      {view === 'orders' && (
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+          {orders.map(o => (
+            <div key={o.id} onClick={() => { setDetailOrderId(o.id); setView('orderDetail'); }} className="bg-white rounded-2xl p-3 cursor-pointer">
+              <div className="flex justify-between items-center">
+                <span className="text-[13px] font-bold truncate">{o.shopName}</span>
+                <span className="text-[11px] text-amber-500 shrink-0">{ORDER_STATUS_LABEL[o.status]}</span>
+              </div>
+              <div className="text-[11px] text-slate-400 truncate mt-0.5">{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
+              <div className="flex justify-between mt-1">
+                <span className="text-[10px] text-slate-400">{o.recipientType === 'char' ? `给${o.recipientName}点的` : '自购'} · {o.cardLabel}</span>
+                <span className="text-[13px] font-bold">¥{fmtMoney(o.total)}</span>
+              </div>
+            </div>
+          ))}
+          {orders.length === 0 && <div className="text-center text-[12px] text-slate-400 py-10">还没有订单</div>}
+        </div>
+      )}
+
+      {view === 'orderDetail' && (() => {
+        const o = orders.find(x => x.id === detailOrderId) || lastOrder;
+        if (!o) return <div className="flex-1" />;
+        return (
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+            <div className="bg-white rounded-2xl p-4">
+              <div className="flex justify-between items-center">
+                <span className="text-[15px] font-bold">{ORDER_STATUS_LABEL[o.status]}</span>
+                <span className="text-[13px] font-bold text-orange-500">¥{fmtMoney(o.total)}</span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1">订单号 {o.id} · {o.cardLabel}</div>
+              {o.status !== 'delivered' && o.status !== 'cancelled' && (
+                <button
+                  onClick={() => {
+                    const next: ShoppingOrder = { ...o, status: 'delivered', statusHistory: [...o.statusHistory, { status: 'delivered', at: Date.now() }], deliveredAt: Date.now() };
+                    DB.saveShoppingOrder(next); setOrders(prev => prev.map(x => x.id === o.id ? next : x));
+                  }}
+                  className="mt-3 w-full py-2.5 rounded-full bg-emerald-400 text-white text-[13px] font-bold">立即送达</button>
+              )}
+            </div>
+            <div className="bg-white rounded-2xl p-4 space-y-1">
+              <div className="text-[13px] font-bold">{o.shopName}</div>
+              {o.items.map(i => (
+                <div key={i.dishId} className="flex justify-between text-[12px]">
+                  <span className="truncate">{i.name} × {i.qty}</span><span>¥{fmtMoney(i.lineTotal)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="bg-white rounded-2xl p-4 text-[12px] text-slate-500 space-y-1">
+              <div>📍 {o.addressText}</div>
+              <div>{o.recipientType === 'char' ? `送给 ${o.recipientName}` : '送给我自己'}</div>
+              <div>下单时间 {new Date(o.createdAt).toLocaleString()}</div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 地点切换弹层（我的地址 / char 的地址）*/}
+      {targetSel && (
+        <div className="absolute inset-0 z-50 bg-black/40 flex items-end" onClick={() => setTargetSel(false)}>
+          <div className="w-full bg-white rounded-t-3xl p-4 space-y-2" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[14px] font-bold">选择收货地址</div>
+              <button onClick={() => { setAddrDraft(target?.addressText || ''); setEditAddr(true); }} className="text-[11px] text-amber-500 font-bold">编辑当前地址</button>
+            </div>
+            {editAddr && (
+              <div className="flex gap-2 mb-2">
+                <input value={addrDraft} onChange={e => setAddrDraft(e.target.value)}
+                  placeholder="如：北京市朝阳区望京SOHO T1 2501（城市标签可写开头）"
+                  className="flex-1 text-[12px] px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-amber-300" />
+                <button onClick={() => updateTargetAddress(addrDraft.trim())} className="px-3 py-2 rounded-xl bg-amber-400 text-white text-[12px] font-bold shrink-0">保存</button>
+              </div>
+            )}
+            {targets.map(t => {
+              const disabled = t.type === 'char' && !t.addressText;
+              return (
+                <button key={cartKeyOf(t)} disabled={disabled}
+                  onClick={() => { setTarget(t); setTargetSel(false); }}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-2 ${disabled ? 'opacity-40' : 'hover:bg-slate-50'} ${target && cartKeyOf(t) === cartKeyOf(target) ? 'bg-amber-50 ring-1 ring-amber-300' : 'bg-slate-50'}`}>
+                  <span>{t.type === 'user' ? '🏠' : '💌'}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold">{t.type === 'user' ? '我的地址' : `${t.name} 的地址`}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{t.addressText || '未填写'}</div>
+                  </div>
+                  {disabled && <span className="text-[10px] text-slate-400">先去角色卡填地址</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
