@@ -344,7 +344,7 @@ export interface InstantPushConfig {
   enabled: boolean;
   workerUrl: string;        // https://your-instant.workers.dev
   // VAPID 公私钥已迁移到 utils/pushVapid.ts (push_vapid_v1)，与 Proactive Push
-  // 共享同一份，避免两边互相 unsubscribe 抢同一个 pushManager 订阅。
+  // 共享同一份，避免两边互相 unsubscribe 抢���一个 pushManager 订阅。
   clientToken?: string;     // 对应 Worker 的 AMSG_CLIENT_TOKEN
   // 发送文本后是否���动触发 AI 回复 (worker 端跑 + push 回写). 仅控制"自动触发"这件事,
   // 不改变 instant push 本身的开关含义. 关闭时 instant 模式也保留手动 ⚡, 跟本地模式一致.
@@ -517,7 +517,7 @@ export interface ActiveMsg2InboxMessage {
   /**
    * 任务身份，由库盖在 push 顶层带下来（不是排程方写进 metadata 的）。
    * 两条排程路径——用户在面板排的、角色在 fire 里给自己排的——走的是同一份，
-   * 所以防穿帮闸和任务认领都读这里，不读 metadata 里各自抄的那份。
+   * 所以防穿帮闸和任务认���都读这里，不读 metadata 里各自抄的那份。
    */
   taskUuid?: string | null;
   recurrenceType?: string | null;
@@ -618,7 +618,7 @@ export interface RealtimeConfig {
   // Notion 配置
   notionEnabled: boolean;
   notionApiKey: string;   // Notion Integration Token
-  notionDatabaseId: string; // 日记数据库ID
+  notionDatabaseId: string; // 日���数据库ID
   notionNotesDatabaseId?: string; // 用户笔记数据库ID（可选，让角色读取用户的日常笔记）
 
   // 飞书��置 (中国区 Notion 替代)
@@ -986,7 +986,7 @@ export interface PhoneEvidence {
  * 角色（机主）通讯录里的一个人，可能是神经链接里真实存在的角色（real），
  * 也可能是纯按人设虚构的路人（npc）。
  */
-/** 聊天话题盒的一条总结记忆（某一侧第一人称、带主观色彩，由一段原文浓缩而来；可编辑/删除） */
+/** 聊天话题盒的一条总结记忆（某一侧第一人称、��主观色彩，由一段原文浓缩而来；可编辑/删除） */
 export interface ConvTopic {
     id: string;
     text: string;
@@ -1075,7 +1075,7 @@ export interface AiSession {
     transcript: string;
     /** tavern：关联的角色卡 id */
     cardId?: string;
-    /** 长会话自动总结出的「前情提要」（参考 TRPG：超 100 条触发，把旧剧情压成小说梗概） */
+    /** 长会话自动总结出的「前情提要」（参考 TRPG：超 100 条���发，把旧剧情压成小说梗概） */
     summaries?: { id: string; content: string; createdAt: number }[];
     /** 被折叠归档的旧原��（不删除，UI 可展开回看；总结后从 transcript 移到这里） */
     archived?: string;
@@ -1664,7 +1664,7 @@ export interface WorldProfile {
     feedReactions?: Record<string, { likes: number; comments: { from: string; text: string }[] }>;
     /** 每天离线 tick 的时段（凌晨/早/午/晚），空数组 = 仅手动观测推进 */
     offlineTickSlots?: ('latenight' | 'morning' | 'noon' | 'evening')[];
-    /** 剧情时钟：累计推进的段数（0 = 第1天早上；一天四段：早/中/晚/凌晨） */
+    /** 剧情时钟：累计推进的段数（0 = 第1天早上；一天四段��早/中/晚/凌晨） */
     storyClock: number;
     /** storyClock/simSummarizedClock 的「每天段数」版本：旧存档（无此字段）= 3 段（早中晚），
      *  4 = 含凌晨的四段制。加载/演绎时经 migrateWorldDaySegs 自动迁移。 */
@@ -2495,6 +2495,9 @@ export interface BankCard {
     tailNo: string;     // 展示用 4 位尾号
     balance: number;
     isDefault?: boolean;
+    brand?: string;     // v3: 银行品牌 key（utils/bankIcons BANK_ICON_MAP），卡面渲染 SVG 图标 + 品牌渐变
+    owner?: 'user' | 'char';   // v3: 归属（默认 user）；char 卡由查手机入口管理
+    ownerId?: string;   // char 名下时存 charId
 }
 
 export interface BankFullState {
@@ -3117,7 +3120,7 @@ export interface CharacterProfile {
   autoArchiveEnabled?: boolean;
   /**
    * 角色独立的记忆水位节奏。整个角色消息时间线共用这一份配置，不区分私聊、
-   * 见面、通话或剧情来源。缺省代表 online，即保持历史行为 200/100。
+   * 见面、通话或剧情来源。缺省代表 online，即保��历史行为 200/100。
    * 作为 CharacterProfile 一部分随 IndexedDB 与完整备份持久化。
    */
   memoryPalaceWaterline?: MemoryPalaceWaterlineConfig;
@@ -3183,7 +3186,7 @@ export interface CharacterProfile {
    * - true：把 LLM 返回的 reasoning_content 与 <think>...</think> 抽���来，
    *   作为 metadata.thinkingChain 落库到 assistant 消息上，
    *   MessageItem 在气泡顶部渲染可折叠"💭 思考过程"区块。
-   * - false / undefined：依然按旧逻辑剥离，不展示。
+   * - false / undefined：依然按旧逻辑��离，不展示。
    * - 仅影响开关切到 true 之后产生的新消息；旧消息没有 thinkingChain，
    *   UI 自然不会显示，符合"打开后才看"的预期。
    */
@@ -3267,7 +3270,7 @@ export interface GroupProfile {
      */
     replyMode?: 'director' | 'roundRobin';
     /**
-     * 成员独立气泡：true = 每位成员的气泡用其私聊 bubbleStyle 主题的 AI 侧；
+     * 成员独立气泡���true = 每位成员的气泡用其私聊 bubbleStyle 主题的 AI 侧；
      * false/undefined = 全员统一（现状白色）。
      */
     memberBubbleIndependent?: boolean;
@@ -3466,7 +3469,7 @@ export type SlotPayload =
 // ─── 单页拼贴排版 ───────────────────────────────��──────
 //
 // v2 设计 (2026-05): "版式优先"。先 roll 一份 layout template (pre-baked JSON),
-// 它已包含每个槽的 {位置, 视觉角色, 字数预算, 可写者} —— LLM 只填空,不排版。
+// 它已包含每个槽的 {位置, 视觉角色, 字数预算, 可写者} —�� LLM 只填空,不排版。
 // 角色按顺序看到 "已填的槽 + 剩余槽 + 自己人格", 选一个槽写,或 pass。
 //
 // 旧的 'main'|'side'|'corner'|'margin' 仍然保留 (老数据回放兼容),
@@ -4103,7 +4106,7 @@ export interface FullBackupData {
     // 手账（跨角色聚合留痕本 — handbook store）
     handbooks?: HandbookEntry[];
 
-    // 手账 Tracker（健康/生活打卡引擎）
+    // 手账 Tracker（健康/生活���卡引擎）
     trackers?: Tracker[];
     trackerEntries?: TrackerEntry[];
 
@@ -4440,7 +4443,7 @@ export interface SimNPC {
     backstory?: string;         // 背景故事（2-3句）
     // 内驱力系统
     desires?: NPCDesire[];      // 当前欲望
-    grudges?: string[];         // 记仇对象 NPC IDs
+    grudges?: string[];         // 记��对象 NPC IDs
     crushes?: string[];         // 暗恋对象 NPC IDs
     // 向后兼容旧存档（迁移时删除）
     energy?: number;

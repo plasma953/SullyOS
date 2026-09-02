@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
@@ -20,6 +19,8 @@ import { addLocalDays, getLocalDateKey } from '../utils/localDate';
 import { roundMoney, sumMoney } from '../utils/format';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
+import BankBrandIcon from '../components/BankBrandIcon';
+import { BANK_BRANDS, BANK_ICON_MAP, bankCardGradient } from '../utils/bankIcons';
 
 const INITIAL_STATE: BankFullState = {
     config: {
@@ -140,7 +141,7 @@ const BankApp: React.FC = () => {
         addToast('已设为默认支付卡');
     };
     const [showCardModal, setShowCardModal] = useState(false);
-    const [cardDraft, setCardDraft] = useState({ name: '', tailNo: '', balance: '' });
+    const [cardDraft, setCardDraft] = useState({ name: '', tailNo: '', balance: '', brand: '' });
 
     const persistStateUpdate = async (updater: (prev: BankFullState) => BankFullState): Promise<BankFullState> => {
         const nextState = updater(stateRef.current);
@@ -903,7 +904,7 @@ ${previousGuestbook}
                 {activeTab === 'cards' && (
                     isBankDataLoaded ? (
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-                        <div className="rounded-2xl p-4 text-white shadow-lg" style={{ background: 'linear-gradient(135deg, #5C6BC0 0%, #3949AB 100%)' }}>
+                        <div className="rounded-2xl p-4 text-white shadow-lg" style={{ background: bankCardGradient(((state.cards || []).find(c => c.isDefault))?.brand) }}>
                             <div className="flex items-center gap-2 text-[11px] opacity-80"><CreditCard size={14} weight="bold" /> 默认支付卡 · 购物 App 结算用</div>
                             {(() => {
                                 const cards = state.cards || [];
@@ -911,7 +912,7 @@ ${previousGuestbook}
                                 return def ? (
                                     <div className="mt-2">
                                         <div className="text-2xl font-black tracking-wide">¥{def.balance.toFixed(2)}</div>
-                                        <div className="text-[12px] opacity-90 mt-0.5">{def.name} ···· {def.tailNo}</div>
+                                        <div className="flex items-center gap-1.5 text-[12px] opacity-90 mt-0.5"><BankBrandIcon brand={def.brand} size={14} className="brightness-0 invert" />{BANK_ICON_MAP[def.brand || '']?.label ? BANK_ICON_MAP[def.brand || ''].label + ' · ' : ''}{def.name} ···· {def.tailNo}</div>
                                     </div>
                                 ) : (
                                     <div className="mt-2 text-[13px] opacity-90">还没有银行卡，添加一张开始购物吧</div>
@@ -923,10 +924,10 @@ ${previousGuestbook}
                             <div key={card.id} className="bg-white/90 rounded-2xl p-4 border border-[#E8DCC8] shadow-sm">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <CreditCard size={18} className="text-indigo-500" weight="bold" />
+                                        {card.brand ? <BankBrandIcon brand={card.brand} size={20} /> : <CreditCard size={18} className="text-indigo-500" weight="bold" />}
                                         <div>
                                             <div className="text-[14px] font-bold text-[#5D4037]">{card.name} {card.isDefault && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">默认</span>}</div>
-                                            <div className="text-[11px] text-[#8D6E63]">···· {card.tailNo}</div>
+                                            <div className="text-[11px] text-[#8D6E63]">{BANK_ICON_MAP[card.brand || '']?.label ? BANK_ICON_MAP[card.brand || ''].label + ' · ' : ''}···· {card.tailNo}</div>
                                         </div>
                                     </div>
                                     <div className="text-right">
@@ -952,7 +953,7 @@ ${previousGuestbook}
                         ))}
 
                         <button
-                            onClick={() => { setCardDraft({ name: '', tailNo: String(1000 + Math.floor(Math.random() * 9000)), balance: '' }); setShowCardModal(true); }}
+                            onClick={() => { setCardDraft({ name: '', tailNo: String(1000 + Math.floor(Math.random() * 9000)), balance: '', brand: '' }); setShowCardModal(true); }}
                             className="w-full py-3.5 rounded-2xl border-2 border-dashed border-[#C5B39B] text-[#8D6E63] text-[13px] font-bold flex items-center justify-center gap-2">
                             <CreditCard size={16} weight="bold" /> 添加银行卡（最多 5 张）
                         </button>
@@ -1028,7 +1029,7 @@ ${previousGuestbook}
                                         <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                                         偷听中...
                                     </span>
-                                ) : '刷新情报 · 40 AP'}
+                                ) : '刷��情报 · 40 AP'}
                             </button>
                         </div>
 
@@ -1132,7 +1133,7 @@ ${previousGuestbook}
                         const tail = (cardDraft.tailNo.replace(/\D/g, '') || String(1000 + Math.floor(Math.random() * 9000))).slice(-4);
                         const bal = parseFloat(cardDraft.balance);
                         if (!Number.isFinite(bal) || bal < 0) { addToast('请输入有效余额'); return; }
-                        upsertCard({ id: 'card_' + Date.now(), name, tailNo: tail, balance: Math.round(bal * 100) / 100, isDefault: (state.cards || []).length === 0 });
+                        upsertCard({ id: 'card_' + Date.now(), name, tailNo: tail, balance: Math.round(bal * 100) / 100, brand: cardDraft.brand || undefined, isDefault: (state.cards || []).length === 0 });
                         setShowCardModal(false);
                     }}
                     className="w-full py-4 bg-gradient-to-r from-[#5C6BC0] to-[#3949AB] text-white font-bold rounded-2xl shadow-lg active:scale-[0.98] transition-all text-base">
@@ -1154,6 +1155,19 @@ ${previousGuestbook}
                         <div className="text-[12px] text-[#8D6E63] mb-1">余额（¥）</div>
                         <input value={cardDraft.balance} onChange={e => setCardDraft({ ...cardDraft, balance: e.target.value })} inputMode="decimal" placeholder="0.00"
                             className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC8] outline-none focus:border-[#5C6BC0] text-[14px]" />
+                    </div>
+                    <div>
+                        <div className="text-[12px] text-[#8D6E63] mb-1.5">银行品牌（卡面图标与配色）</div>
+                        <div className="grid grid-cols-5 gap-1.5">
+                            {BANK_BRANDS.map(b => (
+                                <button key={b.key} onClick={() => setCardDraft({ ...cardDraft, brand: cardDraft.brand === b.key ? '' : b.key })}
+                                    title={b.label}
+                                    className={`flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-xl border ${cardDraft.brand === b.key ? 'border-[#5C6BC0] bg-indigo-50' : 'border-[#E8DCC8] bg-white'}`}>
+                                    <BankBrandIcon brand={b.key} size={20} />
+                                    <span className="text-[8px] text-[#8D6E63] leading-none truncate w-full text-center">{b.label}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </Modal>
@@ -1289,7 +1303,7 @@ ${previousGuestbook}
                     <div className="flex gap-4 p-4 bg-gradient-to-r from-[#E3F2FD] to-[#BBDEFB] rounded-2xl">
                         <div className="w-12 h-12 bg-gradient-to-br from-[#42A5F5] to-[#1E88E5] rounded-xl flex items-center justify-center text-2xl shadow-md shrink-0"><Lightning size={24} weight="fill" className="text-white" /></div>
                         <div>
-                            <div className="font-bold text-base mb-1">互动操作</div>
+                            <div className="font-bold text-base mb-1">互动操��</div>
                             <p className="text-xs text-[#5C6BC0] leading-relaxed">
                                 • 点击情报志可查看和刷新八卦<br/>
                                 • 点击地板可以让店长走过去<br/>
