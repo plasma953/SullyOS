@@ -4375,7 +4375,11 @@ const Settings: React.FC = () => {
               <div className="bg-cyan-50/60 p-4 rounded-2xl space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 text-[10px] font-bold">透视窗</span>
+                          <div className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center shrink-0">
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-5 h-5 text-cyan-600">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.5 7.5a2.5 2.5 0 1 0-2.5 2.5m2.5-2.5v9m-2.5-6.5V19.5M17.5 7.5a2.5 2.5 0 1 1 2.5 2.5m-2.5-2.5v9m2.5-6.5V19.5M12 8v8M9.5 8h5" />
+                              </svg>
+                          </div>
                           <span className="text-sm font-bold text-cyan-700">透视窗</span>
                           <span className="text-[9px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full">Supabase</span>
                       </div>

@@ -71,7 +71,12 @@ export const probeApiConfig = async (apiConfig: APIConfig): Promise<StatusEntry>
 };
 
 /**
- * 主代理中转：`GET {agentUrl}/agent/v1/health`；4xx 说明服务在、是鉴权/参数口径问题 → warn。
+ * 主代理中转：`GET {agentUrl}/agent/health`（后端免鉴权健康端点，服务活着即 200）。
+ * 注意：不能用 `/agent/v1/health`——经 Caddy 剥 `/agent` 前缀后落到后端 `/v1/health`，
+ * 该路径命中 checkAuth（未带 X-Client-Token 时返回 403），与「测试中转连接」按钮口径
+ * （先探 /agent/health 再带 token 探 /agent/v1/tools）不一致，导致徽章恒显 403。
+ * 这里对齐按钮：先探免鉴权 /health 判可达；若填了 token 则顺带带 X-Client-Token，
+ * 让「服务在但 token 口径不对」也能被识别出来。
  * 留空 = 直连模式（合法状态，灰）。
  */
 export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => {
@@ -80,7 +85,10 @@ export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => 
     if (!base) return entry;
     const t0 = performance.now();
     try {
-        const res = await fetchWithTimeout(`${base}/agent/v1/health`, 5000);
+        const token = String(apiConfig.agentToken || '').trim();
+        const headers: Record<string, string> = {};
+        if (token) headers['X-Client-Token'] = token;
+        const res = await fetchWithTimeout(`${base}/agent/health`, 5000, { headers });
         const ms = fmtMs(performance.now() - t0);
         if (res.ok) {
             return { ...entry, status: 'ok', detail: ms };
