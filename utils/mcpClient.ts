@@ -180,7 +180,12 @@ export const isMcpChatAvailable = (charId?: string): boolean => getEnabledMcpSer
  * prompt 的是哪几台，就拿哪几台来判，别把别的角色绑定的服务器算进来。
  */
 export const hasWorkerUnreachableMcpServer = (charId?: string): boolean =>
-    getEnabledMcpServers(charId).some((s) => !isWorkerReachableUrl(s.url));
+    getEnabledMcpServers(charId).some((s) => {
+        // relay 模式看中转 URL 的可达性：VPS 能吃到自己 127.0.0.1 的服务，
+        // 不该因为原始地址写了 localhost 就把即时对话整体否决。
+        if (s.routing === 'relay' && readAgentRoutingConfig().agentUrl.trim()) return false;
+        return !isWorkerReachableUrl(s.url);
+    });
 
 /**
  * 上云给 amsg worker 用的服务器子集。注意不走 getEnabledMcpServers：
@@ -191,17 +196,31 @@ export const hasWorkerUnreachableMcpServer = (charId?: string): boolean =>
  * amsg worker（不是项目方服务器，与文件头「不走中心 sfworker」的原则不冲突），
  * 与 notion/飞书凭据同一信任模型。
  */
-export const collectMcpFireServers = (): McpFireServer[] =>
-    loadMcpServers()
-        .filter((s) => s.enabled && s.url && (s.tools?.length || 0) > 0 && isWorkerReachableUrl(s.url))
-        .map((s) => ({
-            id: s.id, name: s.name, url: s.url,
-            ...(s.routing === 'relay' ? { routing: 'relay' as const } : {}),
-            ...(s.token ? { token: s.token } : {}),
-            ...(s.customHeaders?.length ? { customHeaders: s.customHeaders } : {}),
-            ...(s.charIds?.length ? { charIds: s.charIds } : {}),
-            tools: (s.tools || []).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+export const collectMcpFireServers = (): McpFireServer[] => {
+    const agentCfg = readAgentRoutingConfig();
+    const agentBase = agentCfg.agentUrl.trim().replace(new RegExp('/+$'), '');
+    return loadMcpServers()
+        .map((s) => {
+            // relay 物化：上云形态直接是「中转 URL + Bearer=主代理 token」，
+            // worker 侧 buildMcpDirectHeaders 现有逻辑零改动即可打穿中转
+            //（主代理 checkAuth 同时接受 X-Client-Token 与 Bearer）。主代理 token
+            // 本就存在浏览器配置里，进端到端加密的 client_state 不新增暴露面。
+            const relayActive = s.routing === 'relay' && !!agentBase;
+            const url = relayActive
+                ? agentBase + '/agent/v1/mcp-relay?target=' + encodeURIComponent(s.url)
+                : s.url;
+            const token = relayActive ? agentCfg.agentToken : s.token;
+            return { s, relayActive, url, token };
+        })
+        .filter((e) => e.s.enabled && e.url && (e.s.tools?.length || 0) > 0 && isWorkerReachableUrl(e.url))
+        .map((e) => ({
+            id: e.s.id, name: e.s.name, url: e.url,
+            ...(e.token ? { token: e.token } : {}),
+            ...(e.s.customHeaders?.length ? { customHeaders: e.s.customHeaders } : {}),
+            ...(e.s.charIds?.length ? { charIds: e.s.charIds } : {}),
+            tools: (e.s.tools || []).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
         }));
+};
 
 // ── 备份用：随「设置 → 导出/导入备份」一起带走（存 localStorage） ──
 export function exportMcpLocal(): Record<string, string> | undefined {

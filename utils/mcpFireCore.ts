@@ -31,8 +31,6 @@ export interface McpFireServer {
     url: string;
     /** Bearer Token，可选（Authorization: Bearer <token>） */
     token?: string;
-    /** 连接方式：'relay' = 走 VPS 主代理中转（仅 X-Client-Token）；缺省/'direct' = 直连 */
-    routing?: 'direct' | 'relay';
     customHeaders?: Array<{ name: string; value: string }>;
     /** 空/缺省 = 通用；非空 = 只有这些角色可见（与 mcpClient.getEnabledMcpServers 同语义） */
     charIds?: string[];

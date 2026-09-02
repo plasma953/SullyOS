@@ -20,7 +20,7 @@ import {
     getElevenLabsVoiceActingGuide,
 } from '../utils/elevenLabsTts';
 import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
-import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected, Binoculars } from '@phosphor-icons/react';
+import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected } from '@phosphor-icons/react';
 import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
 import { getMcpResultList, clearMcpResults } from '../utils/mcpResultMemory';
 import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
@@ -44,6 +44,7 @@ import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '..
 import StatusBadge from '../components/StatusBadge';
 import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers, probePerspective } from '../utils/statusPanel';
 import { PERCEPTION_CAPABILITIES, perceptionRenderState } from '../utils/perceptionRegistry';
+import { readAgentRoutingConfig } from '../utils/agentRouting';
 import type { APIConfig, BridgeConfig, TtsProvider } from '../types';
 import { getEffectiveBridges, normalizeBridges, makeBridgeId } from '../utils/bridgeRegistry';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
@@ -227,10 +228,13 @@ const McpServersCard: React.FC<{
     const update = (id: string, patch: Partial<McpServerConfig>) => {
         persist(servers.map(s => s.id === id ? { ...s, ...patch, updatedAt: Date.now() } : s));
         // URL / 鉴权头 / 代理变了，旧 session 不能再用
-        if (patch.url !== undefined || patch.token !== undefined || patch.customHeaders !== undefined || patch.proxyUrl !== undefined || patch.proxyKey !== undefined) {
+        if (patch.url !== undefined || patch.token !== undefined || patch.customHeaders !== undefined || patch.proxyUrl !== undefined || patch.proxyKey !== undefined || patch.routing !== undefined) {
             resetMcpSession(id);
         }
     };
+
+    // 中转模式可用性：主代理中转已配置（地址非空）才开放选择
+    const agentRelayReady = !!readAgentRoutingConfig().agentUrl.trim();
 
     const addServer = () => {
         const s = createMcpServer(`MCP 服务器 ${servers.length + 1}`, '');
@@ -381,6 +385,28 @@ const McpServersCard: React.FC<{
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">服务器 URL</label>
                                 <input type="text" value={server.url} onChange={e => update(server.id, { url: e.target.value.trim() })} className="w-full bg-white/80 border border-violet-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="https://mcp.example.com/mcp" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">连接方式</label>
+                                <div className="flex gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => update(server.id, { routing: 'direct' })}
+                                        className={'flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all ' + (server.routing !== 'relay' ? 'bg-violet-100 border-violet-300 text-violet-700' : 'bg-white/60 border-slate-200 text-slate-400')}
+                                    >直连（公网域名 + Token）</button>
+                                    <button
+                                        type="button"
+                                        onClick={() => update(server.id, { routing: 'relay' })}
+                                        disabled={!agentRelayReady}
+                                        className={'flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all disabled:opacity-40 ' + (server.routing === 'relay' ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-white/60 border-slate-200 text-slate-400')}
+                                    >走主代理中转</button>
+                                </div>
+                                {server.routing === 'relay' && (
+                                    <p className="text-[10px] text-emerald-600/80 mt-1 leading-relaxed">请求经 VPS 主代理转发，鉴权只用主代理中转的 Token；下面 Bearer Token / 代理 URL 都不用填，各服务 token 由服务端自动注入。</p>
+                                )}
+                                {!agentRelayReady && (
+                                    <p className="text-[10px] text-slate-400 mt-1">选「走主代理中转」前，先在「主代理中转」区块填好地址与 Token 并保存。</p>
+                                )}
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Bearer Token（可选）</label>
@@ -578,6 +604,8 @@ const Settings: React.FC = () => {
   const [localAgentUrl, setLocalAgentUrl] = useState(apiConfig.agentUrl || '');
 
   const [localAgentToken, setLocalAgentToken] = useState(apiConfig.agentToken || '');
+  const [agentTestPending, setAgentTestPending] = useState(false);
+  const [agentTestResult, setAgentTestResult] = useState<string | null>(null);
   const [localModel, setLocalModel] = useState(String(apiConfig.model || ''));
   const [localStream, setLocalStream] = useState<boolean>(apiConfig.stream === true);
   const [localTemperature, setLocalTemperature] = useState<number>(
@@ -2636,13 +2664,48 @@ const Settings: React.FC = () => {
                     <input type="password" value={localAgentToken} onChange={(e) => setLocalAgentToken(e.target.value)} placeholder="X-Client-Token（VPS 的 AMSG_CLIENT_TOKEN）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                     <p className="text-[9px] text-slate-400 mt-1 pl-1">VPS 没开鉴权就留空；填错会连不上中转。</p>
                 </div>
-                <button
-                    type="button"
-                    onClick={handleSaveAgentRelay}
-                    className="w-full py-2.5 rounded-2xl font-bold text-sm border border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all"
-                >
-                    保存中转配置
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={handleSaveAgentRelay}
+                        className="flex-1 py-2.5 rounded-2xl font-bold text-sm border border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 active:scale-95 transition-all"
+                    >
+                        保存中转配置
+                    </button>
+                    <button
+                        type="button"
+                        onClick={async () => {
+                            const base = String(localAgentUrl || '').trim().replace(/\/+$/, '');
+                            if (!base) { setAgentTestResult('请先填中转地址'); return; }
+                            setAgentTestPending(true);
+                            try {
+                                const res = await fetch(base + '/agent/health', { method: 'GET' });
+                                if (!res.ok) {
+                                    setAgentTestResult('HTTP ' + res.status + '：' + (await res.text()).slice(0, 80));
+                                    return;
+                                }
+                                const probe = await fetch(base + '/agent/v1/tools', { headers: { 'X-Client-Token': String(localAgentToken || '').trim() } });
+                                if (probe.status === 403) setAgentTestResult('Token 错误（403）：检查是否完整复制了 64 位令牌，末尾不要多空格。');
+                                else if (probe.ok) setAgentTestResult('✅ 中转可用：鉴权通过，可以保存了');
+                                else setAgentTestResult('HTTP ' + probe.status + '：服务异常，请检查 VPS 服务状态');
+                            } catch (err: any) {
+                                setAgentTestResult('连接失败：' + (err?.message || '网络异常') + '（检查域名/代理/防火墙）');
+                            } finally {
+                                setAgentTestPending(false);
+                            }
+                        }}
+                        disabled={agentTestPending}
+                        className="flex-1 py-2.5 rounded-2xl font-bold text-sm border border-slate-300/60 text-slate-500 bg-white/60 hover:bg-white active:scale-95 transition-all disabled:opacity-50"
+                    >
+                        {agentTestPending ? '测试中…' : '测试中转连接'}
+                    </button>
+                </div>
+                {agentTestResult && (
+                    <p className="text-[10px] px-1 leading-relaxed text-slate-500 whitespace-pre-wrap">{agentTestResult}</p>
+                )}
+                <p className="text-[9px] text-slate-300 px-1 leading-relaxed">
+                    地址只填域名根（如 https://43451695.xyz，不带 /agent 后缀）；Token 为 VPS .env 的 AMSG_CLIENT_TOKEN（完整 64 位）。
+                </p>
             </div>
         </SettingsSection>
         {/* 独立识图 API：给不支持 image_url 的主模型补视觉能力；可手动从通用模型预设载入。 */}
@@ -3186,7 +3249,6 @@ const Settings: React.FC = () => {
                             title={`${cap.label}：${cap.description}${st === 'pending' ? '（已启用但未配置完成）' : ''}`}
                             className={`py-3 rounded-xl text-xs font-bold flex flex-col items-center justify-center gap-0.5 ${st === 'on' ? cap.tint : cap.tintIdle}`}
                         >
-                            {cap.iconKey === 'binoculars' && <Binoculars size={12} weight='fill' />}
                             <span>{cap.label}</span>
                             {st === 'pending' && <span className="text-[9px] font-medium opacity-80">未配置</span>}
                         </div>
@@ -4313,7 +4375,7 @@ const Settings: React.FC = () => {
               <div className="bg-cyan-50/60 p-4 rounded-2xl space-y-3">
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                          <Binoculars size={20} weight="fill" className="text-cyan-600" />
+                          <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 text-[10px] font-bold">透视窗</span>
                           <span className="text-sm font-bold text-cyan-700">透视窗</span>
                           <span className="text-[9px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full">Supabase</span>
                       </div>

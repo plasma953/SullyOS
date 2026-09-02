@@ -5,8 +5,9 @@
  * Settings.tsx 硬拷 UI：有则显示，无则不体现；已启用但没配好凭据时灰态
  * 显示「未配置」而不是装作正常。
  *
- * 图标：iconKey 需在 Settings 的图标映射里有一个 case（Phosphor 组件没法
- * 序列化进注册表）；不填则纯文字。
+ * 宫格不渲染任何图标（iconKey 已废弃，仅保留字段避免老引用报错）；
+ * 颜色高亮只在「启用且已配置」时出现，停用/未配置统一灰态（tintIdle），
+ * 不得给停用项留彩色底（透视窗曾因 tintIdle 带青色调被误读为已启用）。
  */
 import type { RealtimeConfig } from '../types';
 
@@ -76,7 +77,7 @@ export const PERCEPTION_CAPABILITIES: PerceptionCapability[] = [
         label: '透视窗',
         description: '角色查看你的真实操作轨迹（Supabase 事件流）',
         tint: 'bg-cyan-50 text-cyan-600',
-        tintIdle: 'bg-cyan-50/40 text-cyan-400/70',
+        tintIdle: 'bg-slate-50 text-slate-400',
         enabled: (rc) => !!rc.perspectiveEnabled,
         configured: (rc) => !!(rc.perspectiveSupabaseUrl?.trim() && rc.perspectiveSupabaseAnonKey?.trim()),
         iconKey: 'binoculars',
