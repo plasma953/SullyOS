@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useOS, DEFAULT_WALLPAPER, DEFAULT_PAPER_APPEARANCE, NOSTALGIA_APPEARANCE } from '../context/OSContext';
-import { AppID, OSTheme, DesktopDecoration, AppearancePreset, Toast } from '../types';
+import { AppID, OSTheme, DesktopDecoration, AppearancePreset, Toast, UserFont } from '../types';
 import { INSTALLED_APPS, Icons } from '../constants';
 import { processImage, processImageToBlob } from '../utils/file';
 import { deleteBlobRef, putImageBlob, useBlobRefUrl } from '../utils/blobRef';
@@ -21,6 +21,7 @@ import { Check, ImageSquare, Sparkle, Trash, UploadSimple } from '@phosphor-icon
 import { ChatAppearanceEditor as ModularChatAppearanceEditor } from '../components/appearance/ChatAppearanceEditor';
 import AppIconEditor from '../components/appearance/AppIconEditor';
 import { shareOrDownloadBlob } from '../utils/shareExport';
+import { createUserFont, fontFormatFromFileName, formatFontSize, userFontFamily, validateFontFile } from '../utils/userFonts';
 
 const CustomIconImage: React.FC<{ value: string; alt: string; preserveOutline?: boolean }> = ({ value, alt, preserveOutline = false }) => {
     const url = useBlobRefUrl(value);
@@ -805,42 +806,57 @@ const Appearance: React.FC = () => {
       updateTheme({ launcherWidgets: Object.keys(current).length > 0 ? current : undefined });
   };
 
-  const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      
-      const allowedExts = ['.ttf', '.otf', '.woff', '.woff2'];
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      
-      if (!allowedExts.includes(ext)) {
-          addToast('仅支持 ttf/otf/woff/woff2 格式', 'error');
-          return;
-      }
+  const fontLibrary = theme.userFonts || [];
 
-      addToast('正在处理字体文件...', 'info');
-      
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-          try {
-              const dataUrl = ev.target?.result as string;
-              updateTheme({ customFont: dataUrl });
-              addToast('系统字体已更新', 'success');
-          } catch(err) {
-              addToast('字体加载失败', 'error');
-          }
-      };
-      reader.onerror = () => addToast('读取失败', 'error');
-      reader.readAsDataURL(file);
-      
-      // Clear input
+  const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
       if (fontInputRef.current) fontInputRef.current.value = '';
+      if (files.length === 0) return;
+      addToast('正在处理字体文件...', 'info');
+      const added: UserFont[] = [];
+      for (const file of files) {
+          try {
+              const validated = await validateFontFile(file);
+              added.push(createUserFont(validated));
+          } catch (err: any) {
+              addToast(`${file.name}: ${err?.message || '字体加载失败'}`, 'error');
+          }
+      }
+      if (added.length === 0) return;
+      const next = [...fontLibrary, ...added];
+      updateTheme({ userFonts: next, activeFontId: theme.activeFontId || added[0].id });
+      addToast(`已导入 ${added.length} 个字体`, 'success');
   };
 
   const applyWebFont = () => {
-      if (!webFontUrl.trim()) return;
-      updateTheme({ customFont: webFontUrl.trim() });
+      const url = webFontUrl.trim();
+      if (!url) return;
+      const clean = url.split('?')[0].split('#')[0];
+      const format = fontFormatFromFileName(clean);
+      if (!format) { addToast('仅支持 ttf/otf/woff/woff2 格式', 'error'); return; }
+      const entry: UserFont = { id: `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`, name: (clean.split('/').pop() || '网络字体').slice(0, 32), format, dataUrl: url, sizeBytes: 0, createdAt: Date.now() };
+      const next = [...fontLibrary, entry];
+      updateTheme({ userFonts: next, activeFontId: theme.activeFontId || entry.id });
       setWebFontUrl('');
-      addToast('网络字体已应用', 'success');
+      addToast('网络字体已添加', 'success');
+  };
+
+  const handleSetActiveFont = (id: string) => {
+      updateTheme({ activeFontId: id });
+  };
+
+  const handleDeleteFont = (id: string) => {
+      const next = fontLibrary.filter(f => f.id !== id);
+      if (next.length === 0) {
+          updateTheme({ userFonts: undefined, activeFontId: undefined });
+      } else {
+          updateTheme({ userFonts: next, activeFontId: theme.activeFontId === id ? next[0].id : theme.activeFontId });
+      }
+      addToast('字体已删除', 'info');
+  };
+
+  const handleResetFonts = () => {
+      updateTheme({ userFonts: undefined, activeFontId: undefined, customFont: undefined });
   };
 
   // 切换桌面整机风格：动森模式自动撒叶子贴纸（保留用户已有装饰），切回默认时只清掉 acnh 叶子。
@@ -1196,7 +1212,32 @@ const Appearance: React.FC = () => {
                 {/* Global Font Section */}
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">全局字体 (Global Font)</h2>
-                    
+
+                    {fontLibrary.length > 0 && (
+                        <div className="space-y-2 mb-4">
+                            {fontLibrary.map(f => {
+                                const isActive = theme.activeFontId ? theme.activeFontId === f.id : fontLibrary[0].id === f.id;
+                                return (
+                                    <div key={f.id} className={`flex items-center gap-3 p-3 rounded-2xl border ${isActive ? 'border-primary/50 bg-primary/5' : 'border-slate-100 bg-slate-50'}`}>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm text-slate-700 truncate" style={{ fontFamily: `'${userFontFamily(f.id)}', sans-serif` }}>Aa 汉字 Abc 123</div>
+                                            <div className="text-[10px] text-slate-400 truncate mt-0.5">{f.name} · {f.format} · {formatFontSize(f.sizeBytes)}</div>
+                                        </div>
+                                        {isActive ? (
+                                            <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded-full shrink-0">使用中</span>
+                                        ) : (
+                                            <button onClick={() => handleSetActiveFont(f.id)} className="text-[10px] font-bold text-primary px-2 py-1 rounded-full border border-primary/30 shrink-0">设为默认</button>
+                                        )}
+                                        <button onClick={() => handleDeleteFont(f.id)} className="text-[10px] font-bold text-red-400 px-2 py-1 rounded-full shrink-0">删除</button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {fontLibrary.length === 0 && theme.customFont && (
+                        <div className="text-[10px] text-slate-400 px-1 mb-3">检测到旧单字体、下次启动自动并入字体库。</div>
+                    )}
+
                     <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
                         <button onClick={() => setFontMode('local')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${fontMode === 'local' ? 'bg-white text-primary shadow-sm' : 'text-slate-400'}`}>本地文件</button>
                         <button onClick={() => setFontMode('web')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${fontMode === 'web' ? 'bg-white text-primary shadow-sm' : 'text-slate-400'}`}>网络 URL</button>
@@ -1204,14 +1245,14 @@ const Appearance: React.FC = () => {
 
                     {fontMode === 'local' ? (
                         <>
-                            <div 
-                                className="w-full h-24 bg-slate-100 rounded-2xl overflow-hidden relative shadow-inner mb-2 group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary/50 flex items-center justify-center flex-col gap-2" 
+                            <div
+                                className="w-full h-24 bg-slate-100 rounded-2xl overflow-hidden relative shadow-inner mb-2 group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary/50 flex items-center justify-center flex-col gap-2"
                                 onClick={() => fontInputRef.current?.click()}
                             >
-                                {theme.customFont && theme.customFont.startsWith('data:') ? (
+                                {fontLibrary.length > 0 ? (
                                     <>
-                                        <span className="text-lg font-bold text-slate-700">Abc 字体预览</span>
-                                        <span className="text-[10px] text-slate-400">已应用本地字体</span>
+                                        <span className="text-lg font-bold text-slate-700">Aa 汉字 Abc 123</span>
+                                        <span className="text-[10px] text-slate-400">已收录 {fontLibrary.length} 个字体·点击继续添加</span>
                                     </>
                                 ) : (
                                     <>
@@ -1220,17 +1261,17 @@ const Appearance: React.FC = () => {
                                     </>
                                 )}
                                 <div className="absolute inset-0 bg-black/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span className="text-white text-xs font-bold bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">更换字体</span>
+                                    <span className="text-white text-xs font-bold bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">选择文件</span>
                                 </div>
                             </div>
-                            <input type="file" ref={fontInputRef} className="hidden" accept=".ttf,.otf,.woff,.woff2" onChange={handleFontUpload} />
+                            <input type="file" ref={fontInputRef} className="hidden" accept=".ttf,.otf,.woff,.woff2" multiple onChange={handleFontUpload} />
                         </>
                     ) : (
                         <div className="space-y-2">
-                            <input 
-                                value={webFontUrl} 
-                                onChange={e => setWebFontUrl(e.target.value)} 
-                                placeholder="输入字体文件 URL (https://...)" 
+                            <input
+                                value={webFontUrl}
+                                onChange={e => setWebFontUrl(e.target.value)}
+                                placeholder="输入字体文件 URL (https://...)"
                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-primary transition-all"
                             />
                             <button onClick={applyWebFont} className="w-full py-2 bg-primary text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-transform">
@@ -1244,8 +1285,8 @@ const Appearance: React.FC = () => {
                         </div>
                     )}
 
-                    {theme.customFont && (
-                        <button onClick={() => updateTheme({ customFont: undefined })} className="w-full py-2 text-xs font-bold text-red-400 bg-red-50 rounded-lg hover:bg-red-100 mt-2">恢复默认字体</button>
+                    {(fontLibrary.length > 0 || theme.customFont) && (
+                        <button onClick={handleResetFonts} className="w-full py-2 text-xs font-bold text-red-400 bg-red-50 rounded-lg hover:bg-red-100 mt-2">恢复默认字体</button>
                     )}
                 </section>
 

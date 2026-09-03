@@ -105,6 +105,16 @@ export interface JournalAppearance {
   customCss?: string;
 }
 
+
+/** User-imported font file (Phase6). dataUrl may be data: URI or http(s) URL. */
+export interface UserFont {
+  id: string;
+  name: string;
+  format: 'ttf' | 'otf' | 'woff' | 'woff2';
+  dataUrl: string;
+  sizeBytes: number;
+  createdAt: number;
+}
 export interface OSTheme {
   hue: number;
   saturation: number;
@@ -144,6 +154,9 @@ export interface OSTheme {
   journalAppearance?: JournalAppearance;
   desktopDecorations?: DesktopDecoration[];
   customFont?: string;
+  /** Multi-font library (Phase6). userFonts co-exist; activeFontId selects effective one. customFont is legacy single-font compat. */
+  userFonts?: UserFont[];
+  activeFontId?: string;
   /** 顶部时间栏布局：安全显示（安全区下方）/ 紧凑显示（嵌入安全区）/ 完全隐藏。 */
   statusBarMode?: 'standard' | 'compact' | 'hidden';
   /** @deprecated 旧版两档开关，仅用于兼容已有存档；新设置写入 statusBarMode。 */

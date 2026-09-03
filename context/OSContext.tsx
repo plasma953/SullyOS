@@ -12,6 +12,7 @@ import { initPwaIcon, clearPwaIcon } from '../utils/appIcon';
 import { LEGACY_DEFAULT_WALLPAPER, isLegacyDefaultWallpaper, shouldPreserveLegacyDefaultWallpaper } from '../utils/wallpaperCompat';
 import { migrateSharkpanAssets } from '../utils/sharkpanAssetMigration';
 import { stripCompanionChatStyleResidue } from '../utils/companionThemeIsolation';
+import { applyUserFonts, fontAssetId, migrateLegacyCustomFont, stripUserFontsForLS } from '../utils/userFonts';
 import { SULLY_DEFAULT_AVATAR_URL, shouldMigrateSullyAvatar } from '../utils/sullyAvatar';
 import { exportStoryTheaterAppearanceSetting, restoreStoryTheaterAppearanceSetting } from '../utils/storyTheaterBackup';
 import { createV2ArrayFieldWriter, writeV2Backup, assembleV2Backup, type BackupManifest, type ZipFileWriter, type ZipFileReader } from '../utils/backupFormat';
@@ -1052,6 +1053,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           `;
       }
   };
+  // Phase6 multi-font: prefer userFonts, fallback legacy customFont.
+  const applyThemeFonts = (t: OSTheme) => {
+      if (t.userFonts && t.userFonts.length > 0) { applyUserFonts(t.userFonts, t.activeFontId); return; }
+      applyCustomFont(t.customFont);
+  };
 
   // --- API 调用记录的环境兜底：当前在哪个 App、当前角色是谁 ---
   // 裸 fetch 调用点无法传 meta，全局拦截器记录时用这份兜底标出 App / 角色。
@@ -1538,6 +1544,27 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 if (assetMap['custom_font_data']) {
                     loadedTheme.customFont = assetMap['custom_font_data'];
                 }
+                // Phase6: restore userFonts dataUrls from font_* assets (LS strips data:).
+                if (loadedTheme.userFonts && loadedTheme.userFonts.length > 0) {
+                    loadedTheme.userFonts = loadedTheme.userFonts.map((f: any) => {
+                        if ((!f.dataUrl || f.dataUrl === '') && f.id && assetMap[fontAssetId(f.id)]) return { ...f, dataUrl: assetMap[fontAssetId(f.id)] };
+                        return f;
+                    }).filter((f: any) => f.dataUrl);
+                    if (!loadedTheme.activeFontId || !loadedTheme.userFonts.some((f: any) => f.id === loadedTheme.activeFontId)) {
+                        loadedTheme.activeFontId = loadedTheme.userFonts[0]?.id;
+                    }
+                    if (loadedTheme.userFonts.length === 0) { loadedTheme.userFonts = undefined; loadedTheme.activeFontId = undefined; }
+                }
+                // Phase6 migration: legacy single customFont to userFonts[0].
+                if ((!loadedTheme.userFonts || loadedTheme.userFonts.length === 0) && loadedTheme.customFont) {
+                    const mig = migrateLegacyCustomFont(loadedTheme.customFont);
+                    if (mig && mig.dataUrl) {
+                        loadedTheme.userFonts = [mig];
+                        loadedTheme.activeFontId = mig.id;
+                        try { await DB.saveAsset(fontAssetId(mig.id), mig.dataUrl); } catch {}
+                        loadedTheme.customFont = undefined;
+                    }
+                }
 
                 const DEPRECATED_WIDGET_SLOTS = new Set(['bl', 'br']);
                 const loadedIcons: Record<string, string> = {};
@@ -1602,7 +1629,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
         setTheme(loadedTheme);
         // Apply font
-        applyCustomFont(loadedTheme.customFont);
+        applyThemeFonts(loadedTheme);
     };
 
     const initData = async () => {
@@ -2948,7 +2975,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, [isDataLoaded]);
 
   const updateTheme = async (updates: Partial<OSTheme>) => {
-    const { wallpaper, lockWallpaper, launcherWidgetImage, launcherWidgets, desktopDecorations, customFont, ...styleUpdates } = updates;
+    const { wallpaper, lockWallpaper, launcherWidgetImage, launcherWidgets, desktopDecorations, customFont, userFonts, activeFontId, ...styleUpdates } = updates;
     // Legacy slots are banned — never let them enter state, regardless of caller intent.
     const sanitizedWidgets = launcherWidgets !== undefined
         ? Object.fromEntries(Object.entries(launcherWidgets).filter(([k]) => k !== 'bl' && k !== 'br'))
@@ -3015,24 +3042,30 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         }
     }
 
-    // Logic for Font: Differentiate between Data URI (Blob) and URL (Web Font)
-    // Use `in` check so an explicit `customFont: undefined` (user-initiated reset)
-    // still triggers the reset branch — `customFont !== undefined` would skip it.
+    // Logic for Font (legacy single + Phase6 multi).
     if ('customFont' in updates) {
         if (customFont && customFont.startsWith('data:')) {
-            // Blob: Save to DB, Apply
             await DB.saveAsset('custom_font_data', customFont);
-            applyCustomFont(customFont);
         } else if (customFont && (customFont.startsWith('http') || customFont.startsWith('https'))) {
-            // Web URL: Clear Blob from DB, Apply, Save to LS (via cleanTheme below)
             await DB.deleteAsset('custom_font_data');
-            applyCustomFont(customFont);
         } else {
-            // Reset
             await DB.deleteAsset('custom_font_data');
-            applyCustomFont(undefined);
         }
     }
+    // Phase6 multi-font sync.
+    if ('userFonts' in updates || 'activeFontId' in updates) {
+        const fonts = newTheme.userFonts || [];
+        try {
+            const all = await DB.getAllAssets();
+            const oldFontIds = all.filter(a => a.id.startsWith('font_')).map(a => a.id);
+            const keep = new Set(fonts.filter(f => f.dataUrl && f.dataUrl.startsWith('data:')).map(f => fontAssetId(f.id)));
+            for (const oid of oldFontIds) { if (!keep.has(oid)) await DB.deleteAsset(oid); }
+            for (const f of fonts) { if (f.dataUrl && f.dataUrl.startsWith('data:')) await DB.saveAsset(fontAssetId(f.id), f.dataUrl); }
+        } catch {}
+        if (fonts.length === 0) { newTheme.userFonts = undefined; newTheme.activeFontId = undefined; }
+        else if (!newTheme.activeFontId || !fonts.some(f => f.id === newTheme.activeFontId)) { newTheme.activeFontId = fonts[0].id; }
+    }
+    applyThemeFonts(newTheme);
 
     // Save lightweight settings to LocalStorage (strip data URIs & blob object URLs)
     // blob: objectURL 是本次会话临时的，重启后失效——不能进 LS，清空让加载路径从 assets 重新解析。
@@ -3061,6 +3094,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
     // Clear data URI font from LS, keep URL font
     if (lsTheme.customFont && lsTheme.customFont.startsWith('data:')) lsTheme.customFont = '';
+    if (lsTheme.userFonts) lsTheme.userFonts = stripUserFontsForLS(lsTheme.userFonts);
 
     try {
         localStorage.setItem('os_theme', JSON.stringify(lsTheme));
@@ -3717,6 +3751,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }));
       }
       if (lsTheme.customFont && typeof lsTheme.customFont === 'string' && lsTheme.customFont.startsWith('data:')) lsTheme.customFont = '';
+    if (lsTheme.userFonts) lsTheme.userFonts = stripUserFontsForLS(lsTheme.userFonts);
       try {
           localStorage.setItem('os_theme', JSON.stringify(lsTheme));
       } catch (e) {
@@ -3724,7 +3759,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           console.warn('[applyAppearancePreset] localStorage 写入失败，已跳过', e);
           addToast('主题没能保存到本地（存储空间可能已满），重启后可能会还原', 'error');
       }
-      applyCustomFont(preset.theme.customFont);
+      for (const pf of (preset.theme.userFonts || [])) { if (pf.dataUrl && pf.dataUrl.startsWith('data:')) { try { await DB.saveAsset(fontAssetId(pf.id), pf.dataUrl); } catch {} } }
+      applyThemeFonts(preset.theme);
       // Apply custom icons if present
       if (preset.customIcons) {
           const persistedIcons: Record<string, string> = {};
@@ -3782,7 +3818,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       try {
           await resolveLockWallpaperStoredValue(undefined);
           setTheme(defaultTheme);
-          applyCustomFont(undefined);
+          applyUserFonts([], undefined);
 
           const iconAppIds = Object.keys(customIcons);
           setCustomIcons({});
@@ -3802,6 +3838,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   id === 'lock_wallpaper' ||
                   id === 'launcherWidgetImage' ||
                   id === 'custom_font_data' ||
+                  id.startsWith('font_') ||
                   id.startsWith('widget_') ||
                   id.startsWith('deco_') ||
                   id.startsWith('icon_')
@@ -4024,6 +4061,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               id === 'wallpaper' ||
               id === 'launcherWidgetImage' ||
               id === 'custom_font_data' ||
+                  id.startsWith('font_') ||
               id === 'spark_social_profile' ||
               id === 'spark_user_bg' ||
               id === 'room_custom_assets_list' ||
