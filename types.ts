@@ -979,6 +979,7 @@ export interface PhoneEvidence {
     value?: string;
     /** 人际关系系统：本条记录归属的联系人（phoneState.contacts 里的 id） */
     contactId?: string;
+    linkedBankTxnId?: string; // 购买记录对应的银行流水 id（BankTransaction.id、可空）
 }
 
 /**
@@ -2368,6 +2369,7 @@ export interface BankTransaction {
     timestamp: number;
     dateStr: string; // YYYY-MM-DD
     ownerId?: string; // char 账本流水归属（不进 user 预算）
+    linkedPurchaseId?: string; // 查手机购买记录关联（PhoneEvidence id、可空）
 }
 
 export interface SavingsGoal {

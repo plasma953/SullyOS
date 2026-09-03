@@ -174,12 +174,8 @@ export default function ShoppingApp() {
     if (!ds) return [];
     let list = ds.shops;
     if (activeCat !== 'all') list = list.filter(s => s.cat === activeCat);
-    // 城市标签匹配优先排序
-    const city = target?.cityTag || '';
+    // 去地域：仅按评分排序
     const sorted = [...list].sort((a, b) => {
-      const am = city && a.city && a.city.includes(city) ? 1 : 0;
-      const bm = city && b.city && b.city.includes(city) ? 1 : 0;
-      if (am !== bm) return bm - am;
       return (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0);
     });
     if (q) {
@@ -445,15 +441,12 @@ export default function ShoppingApp() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[14px] font-bold truncate">{s.name}</span>
-                    {target.cityTag && s.city?.includes(target.cityTag) && (
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-orange-100 text-orange-700 shrink-0">同城</span>
-                    )}
                     {q && goodHitShopIds.has(s.id) && (
                       <span className="text-[9px] px-1 py-0.5 rounded bg-red-100 text-red-600 shrink-0">有你要的货</span>
                     )}
                   </div>
                   <div className="text-[11px] text-orange-500 font-bold mt-0.5">★ {s.rating} <span className="text-slate-400 font-normal">月销{s.monthlySales} · {s.fanCount}粉丝</span></div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{s.cat} · 7天无理由退货 · {s.returnDays}天价保 · {s.city}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{s.cat} · 7天无理由退货 · {s.returnDays}天价保</div>
                 </div>
                 <div className="self-center text-slate-300 shrink-0">›</div>
               </div>
@@ -477,7 +470,7 @@ export default function ShoppingApp() {
           <div className="flex-1 overflow-y-auto">
             <div className="px-4 pt-3 pb-3 bg-gradient-to-br from-orange-50 to-red-50">
               <div className="text-[16px] font-bold">{activeShop.name}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating} · 月销{activeShop.monthlySales} · {activeShop.fanCount}粉丝 · {activeShop.city}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating} · 月销{activeShop.monthlySales} · {activeShop.fanCount}粉丝</div>
             </div>
             {/* 商品两列瀑布流（淘宝式） */}
             <div className="px-3 pb-24 grid grid-cols-2 gap-2">
@@ -515,7 +508,7 @@ export default function ShoppingApp() {
             <div className="px-4 py-3 space-y-2">
               <div className="text-[17px] font-bold leading-snug">{activeGood.name}</div>
               <div className="text-[20px] font-bold text-red-500">¥{fmtMoney(activeGood.price)} <span className="text-[11px] text-slate-400 font-normal">{activeGood.brand}官方正品</span></div>
-              <div className="text-[11px] text-slate-400">{shop?.name} · {shop?.city} · 7天无理由退货 · 顺丰包邮</div>
+              <div className="text-[11px] text-slate-400">{shop?.name} · 7天无理由退货 · 顺丰包邮</div>
               <div className="text-[11px] text-slate-500 bg-white rounded-xl p-2.5">📍 送货至：{target.type === 'user' ? '我的地址' : `${target.name} 的地址`} · {target.addressText || '（未填地址）'}</div>
             </div>
             {/* 加入购物车条 */}

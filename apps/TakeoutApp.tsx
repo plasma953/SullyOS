@@ -469,9 +469,6 @@ export default function TakeoutApp() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[14px] font-bold truncate">{s.name}</span>
-                    {s.city && target.cityTag && s.city.includes(target.cityTag) && (
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 shrink-0">附近</span>
-                    )}
                     {q && dishHitShopIds.has(s.id) && (
                       <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">有你要的货</span>
                     )}
@@ -502,7 +499,7 @@ export default function TakeoutApp() {
           <div className="flex-1 overflow-y-auto">
             <div className="px-4 pt-3 pb-3 bg-gradient-to-br from-amber-50 to-orange-50">
               <div className="text-[16px] font-bold">{activeShop.name}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating?.toFixed(1)} · 月售{activeShop.monthlySales} · {activeShop.deliveryTime} · {activeShop.city || ''}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating?.toFixed(1)} · 月售{activeShop.monthlySales} · {activeShop.deliveryTime}</div>
             </div>
             <div className="px-3 pb-24 space-y-2">
               {shopMenu.map(d => (

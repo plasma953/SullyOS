@@ -139,7 +139,7 @@ export interface MallShop {
   id: string;
   name: string;
   cat: MallCategory | string;
-  city: string;
+  city?: string; // 去地域：保留兼容，UI不再使用
   rating: string;
   monthlySales: number;
   returnDays: number;

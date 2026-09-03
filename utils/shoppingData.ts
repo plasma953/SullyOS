@@ -12,6 +12,38 @@ export interface ShoppingDataset {
 let cache: ShoppingDataset | null = null;
 let loading: Promise<ShoppingDataset> | null = null;
 
+
+/** 商品归一化（去空白/全角/小写/剥价格后缀/剥品牌前缀） */
+export function normalizeGoodName(name: string): string {
+  let s = (name || '').replace(/[　\s]+/g, '');
+  s = s.replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  s = s.toLowerCase();
+  s = s.replace(/[\(\[\{（【｛][^\)\]\}）】｝]*[\)\]\}）】｝]/g, '');
+  return s;
+}
+
+export function dishDedupKey(shopId: string, name: string, brand?: string, spec?: string): string {
+  return [shopId, normalizeGoodName(name), normalizeGoodName(brand || ''), normalizeGoodName(spec || '')].join('|');
+}
+
+/** 同店去重：同键保留首条，价格取均值，月销累加 */
+export function dedupDishesByShop<T extends { shopId: string; name: string; price: number; monthlySales?: number; brand?: string; qty?: string; cat: string }>(list: T[]): T[] {
+  const seen = new Map<string, { item: T; total: number; count: number; sales: number }>();
+  for (const d of list) {
+    const k = dishDedupKey(d.shopId, d.name, (d as any).brand, (d as any).qty);
+    const e = seen.get(k);
+    if (!e) seen.set(k, { item: { ...d }, total: d.price, count: 1, sales: d.monthlySales || 0 });
+    else { e.total += d.price; e.count += 1; e.sales += d.monthlySales || 0; }
+  }
+  const out: T[] = [];
+  for (const { item, total, count, sales } of seen.values()) {
+    (item as any).price = Math.round((total / count) * 10) / 10;
+    if (sales) (item as any).monthlySales = sales;
+    out.push(item);
+  }
+  return out;
+}
+
 export function invalidateShoppingDataCache() {
   cache = null;
   loading = null;
@@ -50,7 +82,7 @@ export async function loadShoppingData(): Promise<ShoppingDataset> {
       }
 
     }
-    const ds: ShoppingDataset = { shops, dishes };
+    const ds: ShoppingDataset = { shops, dishes: dedupDishesByShop(dishes) };
     cache = ds;
     return ds;
   })();
@@ -70,22 +102,16 @@ export function getShopMenu(ds: ShoppingDataset, shopId: string): ShoppingDish[]
 /** 店铺列表排序：城市标签匹配优先，其余按月销/评分 */
 export function sortShopsForAddress(
   shops: ShoppingShop[],
-  cityTag?: string,
+  _cityTag?: string,
 ): ShoppingShop[] {
-  const tag = (cityTag || '').trim();
+  // 去地域：不再按城市置顶，仅按月销/评分排序（参数保留兼容）
   return [...shops].sort((a, b) => {
-    if (tag) {
-      const am = (a.city || '').includes(tag) || tag.includes(a.city || '');
-      const bm = (b.city || '').includes(tag) || tag.includes(b.city || '');
-      if (am !== bm) return am ? -1 : 1;
-    }
     const sa = (a.monthlySales || 0) + (a.rating || 0) * 1000;
     const sb = (b.monthlySales || 0) + (b.rating || 0) * 1000;
     return sb - sa;
   });
 }
 
-/** 商品图 URL（本地 webp 优先，缺失时返回空串由 UI 用渐变占位） */
 export function dishImgUrl(img?: string): string {
   if (!img) return '';
   if (img.startsWith('http')) return img;
@@ -126,7 +152,7 @@ export async function loadMallData(): Promise<MallDataset> {
     ]);
     const shops: MallShop[] = shopsRes.ok ? await shopsRes.json() : [];
     const goods: MallGood[] = goodsRes.ok ? await goodsRes.json() : [];
-    const ds: MallDataset = { shops, goods };
+    const ds: MallDataset = { shops, goods: dedupDishesByShop(goods as any) as any };
     mallCache = ds;
     return ds;
   })();

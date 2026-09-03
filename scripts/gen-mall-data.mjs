@@ -58,7 +58,7 @@ for (const s of raw) {
   const h = hash32(s.id);
   const cfg = CAT_CONFIG[s.cat] || { returnDays: 7 };
   shopsOut.push({
-    id: s.id, name: s.name, cat: s.cat, city: s.city || '',
+    id: s.id, name: s.name, cat: s.cat,
     rating: (4.3 + (h % 7) / 10).toFixed(1),
     monthlySales: 200 + (h % 9800),
     returnDays: cfg.returnDays,

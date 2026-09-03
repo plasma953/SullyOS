@@ -151,7 +151,7 @@ function enrichShop(s) {
     id: s.id,
     name: s.name,
     cat: s.cat,
-    city: s.city || '',
+    // 去地域：不再输出city
     rating: 4.2 + (h % 8) / 10,
     monthlySales: 80 + (h % 2400),
     minOrder: cfg.minOrder,

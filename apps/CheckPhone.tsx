@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneContact, PhoneSimLog, ConvTopic, AiSession, AiServiceKind, TavernCard, APIConfig } from '../types';
+import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneContact, PhoneSimLog, ConvTopic, AiSession, AiServiceKind, TavernCard, APIConfig, BankTransaction, BankCard } from '../types';
 import { AppID } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
@@ -21,6 +21,8 @@ import { trackEvent } from '../utils/analytics';
 import { normalizePhoneEvidence, phoneFieldToText } from '../utils/phoneEvidence';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { getCheckPhoneApi, resolveCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
+import { buildPurchaseGenPrompt, parsePurchaseGenJson, extractInterestKeywords } from '../utils/phonePurchaseGen';
+import { appendCharPurchaseTxn } from '../utils/charLedger';
 import { isPhoneAutoRefreshDue, maybeAutoRefreshPhone } from '../utils/phoneAutoRefresh';
 import { generateRelationshipContacts, type ContactGenApiConfig } from '../utils/relationshipContactGen';
 import {
@@ -1033,6 +1035,121 @@ ${realCharRule}
     // ============================================================
     //  智能体 App · Handlers（「TA 的小手机」）
     // ============================================================
+
+    // Phase 2: purchase-record simulation (read-only snapshot, no real ordering UI).
+    // Char-driven: interest-keyword picks (majority) + impulse flashes (minority); time/content/reason via LLM.
+    const handleGeneratePurchases = async (kind: 'order' | 'delivery') => {
+        if (!targetChar || !effectiveApiConfig.apiKey) {
+            addToast('配置错误', 'error');
+            return;
+        }
+        setIsLoading(true);
+        try {
+            await injectMemoryPalace(targetChar);
+            const msgs = await DB.getMessagesByCharId(targetChar.id);
+            const lastMsg = msgs[msgs.length - 1];
+            const context = ContextBuilder.buildCoreContext(
+                targetChar, userProfile, true, undefined, undefined,
+                { lastInteractionTs: lastMsg?.timestamp },
+            );
+            const recentMsgs = msgs.slice(-50).map(m => {
+                const roleName = m.role === 'user' ? userProfile.name : targetChar.name;
+                const content = m.type === 'text' ? m.content : `[${m.type}]`;
+                return `${roleName}: ${content}`;
+            }).join('\n');
+            const keywords = extractInterestKeywords({
+                personality: targetChar.description,
+                background: [targetChar.systemPrompt, targetChar.worldview].filter(Boolean).join('\n'),
+                bio: targetChar.socialProfile?.bio,
+            });
+            const now = new Date();
+            const pad2 = (n: number) => String(n).padStart(2, '0');
+            const currentDate = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+            const isFood = kind === 'delivery';
+            const simPrompt = buildPurchaseGenPrompt(
+                {
+                    id: targetChar.id,
+                    name: targetChar.name,
+                    personality: (targetChar.description || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+                    interestKeywords: keywords,
+                    spendingLevel: 'moderate',
+                    schedule: '',
+                    impulseAnchor: ['daily necessities', 'snacks', 'stationery', 'coffee', 'small accessories'],
+                },
+                {
+                    currentDate,
+                    count: 5,
+                    impulseProbability: 0.2,
+                    platformPool: isFood ? ['Meituan', 'Ele.me'] : ['Taobao', 'JD', 'Pinduoduo'],
+                    priceRange: isFood ? [10, 120] : [20, 800],
+                },
+            );
+            const perspective = `These records belong to ${targetChar.name}'s own phone (first-person view). The user "${userProfile.name}" is only peeking; do not include the user as a contact.`;
+            const fullPrompt = `${context}\n\n### [Recent chats with user (background only)]\n${recentMsgs}\n\n${perspective}\n\n### [Task]\n${simPrompt}`;
+            const raw = await callLLM(fullPrompt);
+            const sims = parsePurchaseGenJson(raw, currentDate);
+            if (!sims.length) throw new Error('empty purchase records');
+            const pushToChat = targetChar.phoneState?.sendToChat !== false;
+            const logPrefix = isFood ? '外卖APP' : '购物APP';
+            const newRecordsToAdd: PhoneEvidence[] = [];
+            for (const s of sims) {
+                const ts = Date.parse((s.time && s.time.timestamp) || '') || Date.now();
+                const title = s.item || s.merchant || 'Unknown';
+                const kw = s.interest_keyword_hit ? ` (keyword: ${s.interest_keyword_hit})` : '';
+                const recordDetail = `${s.merchant} | ${s.reason}${kw} | ${((s.time && s.time.description) || '')}`;
+                const recordValue = `¥${Number(s.amount || 0).toFixed(2)}`;
+                const purchaseId = s.transaction_id || `txn-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+                let linkedBankTxnId: string | undefined;
+                try {
+                    const link = await appendCharPurchaseTxn(targetChar.id, {
+                        amount: Number(s.amount || 0),
+                        merchant: s.merchant || s.platform || '',
+                        item: title,
+                        category: isFood ? '外卖' : '购物',
+                        purchaseId,
+                        timestamp: ts,
+                    });
+                    linkedBankTxnId = link.bankTxnId;
+                } catch { linkedBankTxnId = undefined; }
+                let savedMsgId: number | undefined;
+                if (pushToChat) {
+                    const cardContent = `[你手机的${logPrefix}] ${title}${recordValue ? ` · ${recordValue}` : ''} — ${recordDetail}`;
+                    await DB.saveMessage({
+                        charId: targetChar.id,
+                        role: 'assistant',
+                        type: 'phone_card',
+                        content: cardContent,
+                        metadata: { phoneCard: { app: logPrefix, kind, title, detail: recordDetail, value: recordValue } },
+                    } as any);
+                    const currentMsgs = await DB.getMessagesByCharId(targetChar.id);
+                    savedMsgId = currentMsgs[currentMsgs.length - 1]?.id;
+                }
+                newRecordsToAdd.push({
+                    id: `rec-${Date.now()}-${Math.random()}`,
+                    type: kind,
+                    title,
+                    detail: recordDetail,
+                    value: recordValue,
+                    timestamp: ts,
+                    systemMessageId: savedMsgId,
+                    linkedBankTxnId,
+                });
+                await new Promise(r => setTimeout(r, 50));
+            }
+            updateCharacter(targetChar.id, (cur) => ({
+                phoneState: {
+                    ...cur.phoneState,
+                    records: [...(cur.phoneState?.records || []), ...newRecordsToAdd],
+                }
+            }));
+            addToast(`已生成 ${newRecordsToAdd.length} 条购买记录`, 'success');
+        } catch (e: any) {
+            console.error(e);
+            addToast('解析失败，请重试', 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     // 裸 LLM 调用（智能体生成 / 互动续写共用）
     const callLLM = async (prompt: string, temperature = 0.85): Promise<string> => {
@@ -2137,13 +2254,27 @@ ${olderText}
         : 'no orders yet';
 
     const momentsSub = socialRecords.length ? `${socialRecords.length} new posts` : 'nothing shared';
-    const taobaoSub = orderRecords.length ? `${orderRecords.length} items in cart` : 'cart is empty';
+    const taobaoSub = orderRecords.length ? `${orderRecords.length} purchase records` : 'no records yet';
     // 「联系人」主卡副标题：TA 通讯录里的人数（不含用户自己）
     const contactCount = contacts.filter(c => !isUserName(c.name)).length;
     const contactsSub = contactCount ? `${contactCount} 位联系人` : 'tap to scan';
     const aiSub = aiSessions.length ? `${aiSessions.length} 段对话 · TA 的小手机` : 'tap to peek';
     // 「银行卡」主卡副标题：TA 名下默认卡余额（无卡时提示去办卡）。BankApp 数据在 IndexedDB，这里异步读 DB.getBankState() 汇总。
     const [bankCardSub, setBankCardSub] = useState('tap to peek');
+    // Phase 3: internal bank ledger (read-only cards + ownerId-filtered txns).
+    const [bankCards, setBankCards] = useState<BankCard[]>([]);
+    const [bankTxns, setBankTxns] = useState<BankTransaction[]>([]);
+    const refreshBankLedger = async (cid: string) => {
+        try {
+            const st = await DB.getBankState();
+            const txs = await DB.getAllTransactions().catch(() => [] as BankTransaction[]);
+            setBankCards(((st && st.cards) || []).filter(c => c.owner === 'char' && c.ownerId === cid));
+            setBankTxns((txs || []).filter(t => t.ownerId === cid).sort((a, b) => b.timestamp - a.timestamp));
+        } catch { /* keep stale ledger on read failure */ }
+    };
+    useEffect(() => {
+        if (activeAppId === 'bank' && targetChar && targetChar.id) refreshBankLedger(targetChar.id);
+    }, [activeAppId, targetChar?.id]);
     useEffect(() => {
         let alive = true;
         setBankCardSub('tap to peek');
@@ -2473,8 +2604,8 @@ ${olderText}
                         style={{ background: `linear-gradient(120deg, ${accent}26, ${accent}08)` }}>
                         <Storefront size={26} weight="fill" style={{ color: accent }} />
                         <div className="min-w-0">
-                            <div className="text-[13px] font-semibold text-white">{charName} 的购物车</div>
-                            <div className="text-[10.5px] text-white/50">{list.length} 件商品 · 待付款 / 待收货</div>
+                            <div className="text-[13px] font-semibold text-white">{charName} 的购买记录</div>
+                            <div className="text-[10.5px] text-white/50">{list.length} 笔 · 只读快照</div>
                         </div>
                     </div>
                 </div>
@@ -2499,7 +2630,7 @@ ${olderText}
                         </div>
                     ))}
                 </div>
-                <RefreshFab onClick={() => handleGenerate('order')} label="刷新订单" accent={accent} loading={isLoading} />
+                <RefreshFab onClick={() => handleGeneratePurchases('order')} label="重新生成购买记录" accent={accent} loading={isLoading} />
             </SubAppShell>
         );
     };
@@ -2534,7 +2665,52 @@ ${olderText}
                         </div>
                     ))}
                 </div>
-                <RefreshFab onClick={() => handleGenerate('delivery')} label="刷新外卖" accent={accent} loading={isLoading} />
+                <RefreshFab onClick={() => handleGeneratePurchases('delivery')} label="重新生成外卖记录" accent={accent} loading={isLoading} />
+            </SubAppShell>
+        );
+    };
+
+    // Phase 3: bank ledger (read-only) — cards + ownerId-filtered transactions linked to purchases.
+    const renderBank = () => {
+        const accent = '#5C6BC0';
+        const def = bankCards.find(c => c.isDefault) || bankCards[0];
+        return (
+            <SubAppShell>
+                <TermHeader title="银行卡" sub="ledger · read-only" accent={accent} onBack={() => setActiveAppId('home')}
+                    right={<Wallet size={20} weight="fill" style={{ color: accent }} />} />
+                <div className="flex-1 overflow-y-auto px-4 pt-2 no-scrollbar pb-28 overscroll-contain space-y-3">
+                    {def ? (
+                        <div className="rounded-2xl p-3.5 border border-white/[0.06]"
+                            style={{ background: `linear-gradient(120deg, ${accent}26, ${accent}08)` }}>
+                            <div className="flex items-center justify-between">
+                                <span className="text-[13px] font-semibold text-white">{def.name}</span>
+                                {def.isDefault && <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/[0.08] text-white/60">默认</span>}
+                            </div>
+                            <div className="text-[10.5px] text-white/50 mt-1">**** {def.tailNo}</div>
+                            <div className="text-[22px] font-bold mt-1.5 tabular-nums" style={{ color: accent }}>¥{def.balance.toFixed(2)}</div>
+                            {bankCards.length > 1 && <div className="text-[10px] text-white/35 mt-1">共 {bankCards.length} 张卡</div>}
+                        </div>
+                    ) : (
+                        <EmptyState text="TA 还没办卡" />
+                    )}
+                    <div className="text-[10px] tracking-[0.3em] uppercase text-white/35 px-1">进出记录</div>
+                    {bankTxns.length === 0 && <EmptyState text="暂无流水" />}
+                    {bankTxns.map(t => {
+                        const neg = t.amount < 0;
+                        return (
+                            <div key={t.id} className="rounded-2xl p-3 bg-white/[0.035] border border-white/[0.06] flex items-center gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[13px] font-medium text-white/95 truncate">{t.note || t.category}</div>
+                                    <div className="text-[10px] text-white/35 mt-0.5">{t.dateStr} · {fmtClock(t.timestamp)} · {t.category}</div>
+                                </div>
+                                <span className="text-[14px] font-bold tabular-nums shrink-0" style={{ color: neg ? '#fb7185' : '#4ade80' }}>
+                                    {neg ? '-' : '+'}¥{Math.abs(t.amount).toFixed(2)}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+                <RefreshFab onClick={() => { if (targetChar && targetChar.id) refreshBankLedger(targetChar.id); }} label="刷新账单" accent={accent} loading={isLoading} />
             </SubAppShell>
         );
     };
@@ -3462,11 +3638,11 @@ ${olderText}
                 <HomeCard icon={<ImagesSquare size={24} weight="light" />} label="Moments" sub={momentsSub} accent="#c084fc"
                     onClick={() => { setActiveAppId('social'); trackEvent('打开查手机子应用', { subApp: 'social' }); }} />
                 <HomeCard icon={<Hamburger size={24} weight="light" />} label="外卖" sub={foodSub} accent="#fbbf24"
-                    onClick={() => { openApp(AppID.Takeout, targetChar?.id ? { placedBy: targetChar.id } : undefined); trackEvent('打开查手机子应用', { subApp: 'takeout_app' }); }} />
+                    onClick={() => { setActiveAppId('waimai'); trackEvent('打开查手机子应用', { subApp: 'waimai' }); }} />
                 <HomeCard icon={<ShoppingBag size={24} weight="light" />} label="购物" sub={taobaoSub} accent="#ff7a45"
-                    onClick={() => { openApp(AppID.Shopping, targetChar?.id ? { placedBy: targetChar.id } : undefined); trackEvent('打开查手机子应用', { subApp: 'shopping_app' }); }} />
+                    onClick={() => { setActiveAppId('taobao'); trackEvent('打开查手机子应用', { subApp: 'taobao' }); }} />
                 <HomeCard icon={<Wallet size={24} weight="light" />} label="银行卡" sub={bankCardSub} accent="#5C6BC0"
-                    onClick={() => { openApp(AppID.Bank, targetChar?.id ? { owner: targetChar.id } : undefined); trackEvent('打开查手机子应用', { subApp: 'bank_app' }); }} />
+                    onClick={() => { setActiveAppId('bank'); trackEvent('打开查手机子应用', { subApp: 'bank_ledger' }); }} />
             </div>
 
             {/* 智能体：偷看「TA 的小手机」 —— 给个抢眼的横条入口 */}
@@ -3853,6 +4029,7 @@ ${olderText}
                     {activeAppId === 'call' && renderCallList()}
                     {activeAppId === 'taobao' && renderShop()}
                     {activeAppId === 'waimai' && renderFood()}
+                    {activeAppId === 'bank' && renderBank()}
                     {activeAppId === 'social' && renderMoments()}
                     {activeAppId === 'aiagent' && renderAiAgent()}
                     {activeAppId === 'ai_session' && renderAiSession()}
