@@ -20,6 +20,7 @@ import { roundMoney, sumMoney } from '../utils/format';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
 import BankBrandIcon from '../components/BankBrandIcon';
+import BankCardFace from '../components/bank/BankCardFace';
 import { BANK_BRANDS, BANK_ICON_MAP, bankCardGradient } from '../utils/bankIcons';
 
 const INITIAL_STATE: BankFullState = {
@@ -172,6 +173,7 @@ const BankApp: React.FC = () => {
     }, [actor, actorIsChar]);
     const scopedCards = actorIsChar ? (state.cards || []).filter(c => c.owner === 'char' && c.ownerId === actor) : (state.cards || []);
     const [showCardModal, setShowCardModal] = useState(false);
+    const [flippedCardId, setFlippedCardId] = useState<string | null>(null);
     const [cardDraft, setCardDraft] = useState({ name: '', tailNo: '', balance: '', brand: '', owner: undefined as 'user' | 'char' | undefined, ownerId: undefined as string | undefined });
 
     const persistStateUpdate = async (updater: (prev: BankFullState) => BankFullState): Promise<BankFullState> => {
@@ -966,36 +968,21 @@ ${previousGuestbook}
                 {activeTab === 'cards' && (
                     isBankDataLoaded ? (
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-                        <div className="rounded-2xl p-4 text-white shadow-lg" style={{ background: bankCardGradient((scopedCards.find(c => c.isDefault))?.brand) }}>
-                            <div className="flex items-center gap-2 text-[11px] opacity-80"><CreditCard size={14} weight="bold" /> 默认支付卡 · 购物 App 结算用</div>
+                                                <div>
+                            <div className="flex items-center gap-2 text-[11px] text-[#8D6E63] mb-1.5"><CreditCard size={14} weight="bold" /> 默认支付卡 · 购物 App 结算用</div>
                             {(() => {
-                                const cards = state.cards || [];
-                                const def = cards.find(c => c.isDefault) || cards[0];
+                                const def = scopedCards.find(c => c.isDefault) || scopedCards[0];
                                 return def ? (
-                                    <div className="mt-2">
-                                        <div className="text-2xl font-black tracking-wide">¥{def.balance.toFixed(2)}</div>
-                                        <div className="flex items-center gap-1.5 text-[12px] opacity-90 mt-0.5"><BankBrandIcon brand={def.brand} size={14} className="brightness-0 invert" />{BANK_ICON_MAP[def.brand || '']?.label ? BANK_ICON_MAP[def.brand || ''].label + ' · ' : ''}{def.name} ···· {def.tailNo}</div>
-                                    </div>
+                                    <BankCardFace card={def} holderName={actorIsChar ? charName : undefined} flipped={flippedCardId === def.id} onFlip={() => setFlippedCardId(v => v === def.id ? null : def.id)} />
                                 ) : (
-                                    <div className="mt-2 text-[13px] opacity-90">还没有银行卡，添加一张开始购物吧</div>
+                                    <div className="rounded-2xl p-4 text-white shadow-lg" style={{ background: bankCardGradient(undefined) }}><div className="mt-2 text-[13px] opacity-90">还没有银行卡，添加一张开始购物吧</div></div>
                                 );
                             })()}
                         </div>
 
                         {scopedCards.map(card => (
-                            <div key={card.id} className="bg-white/90 rounded-2xl p-4 border border-[#E8DCC8] shadow-sm">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        {card.brand ? <BankBrandIcon brand={card.brand} size={20} /> : <CreditCard size={18} className="text-indigo-500" weight="bold" />}
-                                        <div>
-                                            <div className="text-[14px] font-bold text-[#5D4037]">{card.name} {card.isDefault && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-600">默认</span>}</div>
-                                            <div className="text-[11px] text-[#8D6E63]">{BANK_ICON_MAP[card.brand || '']?.label ? BANK_ICON_MAP[card.brand || ''].label + ' · ' : ''}···· {card.tailNo}</div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-[16px] font-black text-[#5D4037]">¥{card.balance.toFixed(2)}</div>
-                                    </div>
-                                </div>
+                            <div key={card.id} className="bg-white/90 rounded-2xl p-3 border border-[#E8DCC8] shadow-sm space-y-3">
+                                                                <BankCardFace card={card} holderName={actorIsChar ? charName : undefined} flipped={flippedCardId === card.id} onFlip={() => setFlippedCardId(v => v === card.id ? null : card.id)} />
                                 <div className="flex gap-2 mt-3">
                                     {!card.isDefault && (
                                         <button onClick={() => setDefaultCard(card.id)} className="flex-1 py-2 rounded-xl bg-indigo-50 text-indigo-600 text-[12px] font-bold">设为默认</button>
