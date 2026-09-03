@@ -1715,7 +1715,7 @@ ${isInitialGeneration ? `
                                    <div className="flex items-center justify-between gap-3">
                                        <div className="min-w-0">
                                            <p className="text-xs font-bold text-slate-700">主动点单</p>
-                                           <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">TA 可以主动给你点外卖（扣你的默认卡，聊天里出订单卡）</p>
+                                           <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">TA 可以主动给你点外卖（扣TA自己的银行卡，聊天里出订单卡）</p>
                                        </div>
                                        <button
                                            onClick={() => handleChange('charOrderEnabled', !(formData.charOrderEnabled === true))}

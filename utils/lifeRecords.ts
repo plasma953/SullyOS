@@ -8,6 +8,7 @@ import { addLocalDays, getLocalDateKey } from './localDate';
 import { formatMoney, sumMoney } from './format';
 import type { ShoppingOrder } from './shoppingTypes';
 import { buildShoppingOrderTag } from './shoppingFormat';
+import { debitCharCardForOrder, restoreCharCardBalance } from './charOrder';
 
 /**
  * 生活记录（档案 App：生理期 / 药盒 / 记账 / 锻炼）
@@ -434,7 +435,7 @@ export const buildLifeRecordInjection = async (
     if (moduleActive('exercise')) tools.push(`- TA 明确说做了什么运动 → \`[[LIFE:EXERCISE|运动|时长]]\`（时长可省略）`);
     // char 主动点单（独立于记账模块；总开关 + char.charOrderEnabled 双闸门，默认关）
     if (moduleActive('order') && !forFirePack) {
-        tools.push(`- 你想主动给 ${userName} 点外卖（只限 TA 提过想吃 / 你们正在聊的食物） → \`[[LIFE:ORDER|店名|商品×数量;商品×数量|金额|备注]]\`（金额纯数字，从 ${userName} 的默认卡代扣；一天最多一单）`);
+        tools.push(`- 你想主动给 ${userName} 点外卖（只限 TA 提过想吃 / 你们正在聊的食物） → \`[[LIFE:ORDER|店名|商品×数量;商品×数量|金额|备注]]\`（金额纯数字，从你的默认银行卡代扣（扣你的钱）；没办卡或余额不足时不要输出指令；一天最多一单）`);
     }
     if (tools.length > 0 && !forFirePack) {
         s += `**代记工具**：只有当 ${userName} 在对话中**明确说出**以下事实时，才单独起一行输出对应指令、帮 TA 顺手记一笔（一次一条）：\n${tools.join('\n')}\n`;
@@ -685,17 +686,22 @@ export const executeLifeDirectives = async (
                 bankTxId = tx.id;
             }
 
-            // order：char 主动给 user 点外卖 —— 扣 user 默认卡（虚拟支付）+ 落购物订单
+            // order：char 主动给 user 点外卖 —— 扣 char 默认卡（Phase 4）+ 落购物订单
             if (d.module === 'order') {
                 const total = d.payload.amount as number;
-                const bank = await DB.getBankState();
-                let cards = (bank?.cards || []).filter(c => !(c.owner === 'char'));
-                if (cards.length === 0) {
-                    cards = [{ id: `card-life-${Date.now()}`, name: '零花钱卡', tailNo: '8888', balance: 520, isDefault: true, owner: 'user' }];
-                }
-                const payCard = cards.find(c => c.isDefault) || cards[0];
-                if (payCard.balance < total) {
-                    await noteSkipped(summary, `你的卡余额不足（余额 ${formatMoney(payCard.balance)}，这笔要 ${formatMoney(total)}）`);
+                const orderId = 'ORD' + today.replace(/-/g, '') + Math.random().toString(36).slice(2, 8).toUpperCase();
+                const pay = await debitCharCardForOrder({
+                    orderId, charId: char.id, charName: char.name,
+                    shop: d.payload.shop as string, total,
+                });
+                if (!pay.ok) {
+                    if (pay.reason === 'no_card' || pay.reason === 'no_bank') {
+                        await noteSkipped(summary, `TA 还没有银行卡（去查手机→银行卡先办一张），这次没点成`);
+                    } else if (pay.reason === 'insufficient') {
+                        await noteSkipped(summary, `TA 的卡余额不足（余额 ${formatMoney(pay.balance || 0)}，这笔要 ${formatMoney(total)}），这次没点成`);
+                    } else {
+                        await noteSkipped(summary, `这笔订单金额异常，这次没点成`);
+                    }
                     continue;
                 }
                 const up = await DB.getUserProfile().catch(() => null);
@@ -710,7 +716,7 @@ export const executeLifeDirectives = async (
                         : Math.round(unit * it.qty * 100) / 100;
                 });
                 order = {
-                    id: 'ORD' + today.replace(/-/g, '') + Math.random().toString(36).slice(2, 8).toUpperCase(),
+                    id: orderId,
                     charId: char.id,
                     placedBy: 'char', recipientType: 'user', recipientName,
                     addressText: '（TA 帮你点的单）',
@@ -718,22 +724,12 @@ export const executeLifeDirectives = async (
                     shopCat: '美食外卖',
                     items: orderItems, itemCount: totalQty,
                     subtotal: total, deliveryFee: 0, total,
-                    payMethod: 'bank_card', cardLabel: `${payCard.name}·${payCard.tailNo}`,
+                    payMethod: 'bank_card', cardLabel: pay.cardLabel || 'char卡',
                     status: 'paid', statusHistory: [{ status: 'paid', at: Date.now() }], createdAt: Date.now(),
                 };
                 (d.payload as any).orderId = order.id;
-                const nextCards = cards.map(c => c.id === payCard.id ? { ...c, balance: Math.round((c.balance - total) * 100) / 100 } : c);
-                await DB.saveBankState({ ...(bank || { config: { dailyBudget: 100, currencySymbol: '¥' }, shop: {} as any, goals: [] }), cards: nextCards } as any);
-                const otx: BankTransaction = {
-                    id: `tx-order-${Date.now()}`,
-                    amount: -total,
-                    category: '购物',
-                    note: `${d.payload.shop}（${char.name}点的）`,
-                    timestamp: Date.now(),
-                    dateStr: today,
-                };
-                await DB.saveTransaction(otx);
-                bankTxId = otx.id;
+                (d.payload as any).cardId = pay.cardId;
+                bankTxId = pay.txnId;
                 await DB.saveShoppingOrder(order);
             }
 
@@ -798,6 +794,9 @@ export const resolveLifeRecordCard = async (
         const record = await DB.getLifeRecordById(recordId);
         if (record && record.reviewStatus !== action) {
             if (action === 'rejected' && record.bankTxId) {
+                if (record.module === 'order') {
+                    await restoreCharCardBalance(record.recordedBy, Number((record.payload as any)?.amount || 0), (record.payload as any)?.cardId as string | undefined).catch(() => {});
+                }
                 await DB.deleteTransaction(record.bankTxId).catch(() => {});
                 if (record.module === 'order' && (record.payload as any)?.orderId) {
                     await DB.deleteShoppingOrder((record.payload as any).orderId).catch(() => {});
