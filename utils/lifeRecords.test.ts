@@ -457,7 +457,18 @@ describe('ORDER 指令（char 主动点单）', () => {
                 await DB.saveBankState({ ...(bank || { config: { dailyBudget: 100, currencySymbol: '¥' }, shop: {} as any, goals: [], todaySpent: 0, lastLoginDate: '2026-01-01' }), cards: [...cards, { id: 'card_test_user_default', name: '测试零花钱卡', tailNo: '0001', balance: 1000, isDefault: true, owner: 'user' }] } as any);
             }
         }
-        const before = (await DB.getBankState())?.cards?.find(c => c.isDefault && !(c.owner === 'char'))?.balance ?? 0;
+        // Phase4 fix: char pays from own card
+        {
+            const bank2 = await DB.getBankState();
+            const cards2 = bank2?.cards || [];
+            const mine2 = cards2.find((c: any) => c.owner === 'char' && (c as any).ownerId === char.id);
+            if (!mine2) {
+                await DB.saveBankState({ ...(bank2 as any), cards: [...cards2, { id: 'card_test_char_' + char.id, name: 'CharTest', tailNo: '1002', balance: 1000, isDefault: true, owner: 'char', ownerId: char.id }] } as any);
+            } else {
+                await DB.saveBankState({ ...(bank2 as any), cards: cards2.map((c: any) => (c.owner === 'char' && (c as any).ownerId === char.id ? { ...c, balance: Math.max(Number(c.balance || 0), 1000) } : c)) } as any);
+            }
+        }
+        const before = (await DB.getBankState())?.cards?.find((c: any) => c.owner === 'char' && (c as any).ownerId === char.id)?.balance ?? 0;
         const out = await executeLifeDirectives('给你点了宵夜 [[LIFE:ORDER|unique-shop-2|烧烤×2|36|半夜饿了]]', char, noToast);
         expect(out).toBe('给你点了宵夜');
 
@@ -470,7 +481,7 @@ describe('ORDER 指令（char 主动点单）', () => {
         expect(order!.recipientType).toBe('user');
 
         const cards = (await DB.getBankState())?.cards || [];
-        const after = cards.find(c => c.isDefault && !(c.owner === 'char'))?.balance ?? 0;
+        const after = cards.find((c: any) => c.owner === 'char' && (c as any).ownerId === char.id)?.balance ?? 0;
         expect(Math.round((before - after) * 100) / 100).toBe(36);
 
         // 流水 + LifeRecord 镜像（否决回滚用）
@@ -495,6 +506,13 @@ describe('ORDER 指令（char 主动点单）', () => {
 
     it('同日同店重复 → 卡片标 duplicate，不重复扣款', async () => {
         const char = mkChar({ charOrderEnabled: true, name: '林深_unique_' + Math.random().toString(36).slice(2, 6) });
+        {
+            const bB = await DB.getBankState();
+            const csB = bB?.cards || [];
+            if (!csB.some((c: any) => c.owner === 'char' && (c as any).ownerId === char.id)) {
+                await DB.saveBankState({ ...(bB as any), cards: [...csB, { id: 'card_test_char_' + char.id, name: 'CharTest', tailNo: '1003', balance: 1000, isDefault: true, owner: 'char', ownerId: char.id }] } as any);
+            }
+        }
         const out = await executeLifeDirectives('[[LIFE:ORDER|unique-shop-3|小龙虾×1|88|]]', char, noToast);
         expect(out).toBe('');
         const out2 = await executeLifeDirectives('[[LIFE:ORDER|unique-shop-3|小龙虾×1|88|]]', char, noToast);
@@ -521,6 +539,16 @@ describe('ORDER 指令（char 主动点单）', () => {
                 await DB.saveBankState({ ...bank!, cards: cards.map(x => x.id === c.id ? { ...x, balance: 100 } : x) });
             }
         }
+        {
+            const bC = await DB.getBankState();
+            const csC = bC?.cards || [];
+            const exC = csC.find((c: any) => c.owner === 'char' && (c as any).ownerId === char.id);
+            if (!exC) {
+                await DB.saveBankState({ ...(bC as any), cards: [...csC, { id: 'card_test_char_' + char.id, name: 'CharTest', tailNo: '1004', balance: 50, isDefault: true, owner: 'char', ownerId: char.id }] } as any);
+            } else {
+                await DB.saveBankState({ ...(bC as any), cards: csC.map((c: any) => (c.owner === 'char' && (c as any).ownerId === char.id ? { ...c, balance: 50 } : c)) } as any);
+            }
+        }
         const out = await executeLifeDirectives('[[LIFE:ORDER|unique-shop-4|豪宅×1|999999|]]', char, noToast);
         expect(out).toBe('');
         const order = (await DB.getAllShoppingOrders()).find(o => o.shopName === 'unique-shop-4');
@@ -531,6 +559,13 @@ describe('ORDER 指令（char 主动点单）', () => {
 
     it('否决 → 流水回滚 + 订单删除 + 卡片确认', async () => {
         const char = mkChar({ charOrderEnabled: true, name: '苏婉_unique_' + Math.random().toString(36).slice(2, 6) });
+        {
+            const bD = await DB.getBankState();
+            const csD = bD?.cards || [];
+            if (!csD.some((c: any) => c.owner === 'char' && (c as any).ownerId === char.id)) {
+                await DB.saveBankState({ ...(bD as any), cards: [...csD, { id: 'card_test_char_' + char.id, name: 'CharTest', tailNo: '1005', balance: 1000, isDefault: true, owner: 'char', ownerId: char.id }] } as any);
+            }
+        }
         await executeLifeDirectives('[[LIFE:ORDER|unique-shop-5|蛋糕×1|52|]]', char, noToast);
         const rec = (await DB.getAllLifeRecords()).find(r => r.payload.shop === 'unique-shop-5');
         expect(rec).toBeTruthy();
