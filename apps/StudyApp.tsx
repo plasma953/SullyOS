@@ -14,6 +14,14 @@ import { extractPdfText, isPdfFile } from '../utils/pdfText';
 import { isEpubFile, parseEpubFile } from '../utils/epub';
 import { deleteBlobRef } from '../utils/blobRef';
 import { EpubReaderContent, SummaryPanel, EpubThemeMenu, useReaderTheme, ReadingThemeId, SummaryState } from './components/study/EpubReader';
+import './components/study/StudyClassroom.css';
+import type { StudyTocNode } from '../types';
+import { tocForCourse } from '../utils/studyToc';
+import { loadStudyPromptConfig, saveStudyPromptConfig, resetStudyPromptConfig, renderStudyPrompt, type StudyPromptConfig } from '../utils/studyPrompts';
+import { splitChapterText, buildMergeInput, lectureSourceForChapter, topKChunksForQuery, loadSummaryThreshold, saveSummaryThreshold } from '../utils/studySummary';
+import { CLASSROOM_THEMES, loadClassroomTheme, saveClassroomTheme, type ClassroomThemeId } from '../utils/studyClassroomTheme';
+import { loadEpubImageConfig, saveEpubImageConfig, type EpubImageConfig } from '../utils/studyEpubImageConfig';
+import { loadStudyMemoryDefault, saveStudyMemoryDefault, loadStudyVectorEnabled, saveStudyVectorEnabled, isChapterMemoryEnabled } from '../utils/studyMemory';
 
 type KatexLike = {
     renderToString: (latex: string, options: any) => string;
@@ -306,6 +314,32 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
     );
 };
 
+const StudyTocTree: React.FC<{ nodes: StudyTocNode[]; currentIdx?: number; collapsed: Record<string, boolean>; onToggle: (id: string) => void; onJump: (idx: number) => void; chapters: { title: string; isCompleted?: boolean; memoryEnabled?: boolean }[]; onToggleMemory?: (idx: number) => void }> = ({ nodes, currentIdx, collapsed, onToggle, onJump, chapters, onToggleMemory }) => {
+    return (<div className="space-y-1">
+        {nodes.map((n) => {
+            const hasKids = !!(n.children && n.children.length > 0);
+            const isCollapsed = !!collapsed[n.id];
+            const isCurrent = n.chapterIndex !== undefined && n.chapterIndex === currentIdx;
+            const done = n.chapterIndex !== undefined ? !!chapters[n.chapterIndex]?.isCompleted : false;
+            return (
+                <div key={n.id}>
+                    <div className={`flex items-center gap-1.5 w-full text-left p-2 rounded-xl text-xs transition-all ${isCurrent ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:bg-white/5'}`} style={n.level > 0 ? { marginLeft: Math.min(n.level, 3) * 12 } : undefined}>
+                        {hasKids ? (<button onClick={() => onToggle(n.id)} className="shrink-0 w-5 h-5 flex items-center justify-center rounded-md hover:bg-white/10">
+                            <span className="text-[10px] leading-none">{isCollapsed ? '▸' : '▾'}</span>
+                        </button>) : (<span className="shrink-0 w-5" />)}
+                        <button onClick={() => { if (n.chapterIndex !== undefined) onJump(n.chapterIndex); }} disabled={n.chapterIndex === undefined} className="flex-1 min-w-0 flex items-center gap-2 text-left disabled:opacity-50">
+                            {done ? <span className="text-emerald-400 text-xs">✓</span> : <span className="w-2 h-2 rounded-full bg-slate-600 shrink-0" />} 
+                            <span className="truncate​">{n.title}</span>
+                        </button>
+                        {n.chapterIndex !== undefined && onToggleMemory && (<button onClick={() => onToggleMemory(n.chapterIndex as number)} title="memory" className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-md border ${chapters[n.chapterIndex as number]?.memoryEnabled ? 'text-amber-300 border-amber-400/40' : 'text-slate-500 border-white/10'}`}>M</button>)}
+                    </div>
+                    {hasKids && !isCollapsed && (<StudyTocTree nodes={n.children} currentIdx={currentIdx} collapsed={collapsed} onToggle={onToggle} onJump={onJump} chapters={chapters} onToggleMemory={onToggleMemory} />)}
+                </div>
+            );
+        })}
+    </div>);
+};
+
 const StudyApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, characterGroups } = useOS();
     const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'reader' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
@@ -351,6 +385,19 @@ const StudyApp: React.FC = () => {
     const [localStudyUrl, setLocalStudyUrl] = useState('');
     const [localStudyKey, setLocalStudyKey] = useState('');
     const [localStudyModel, setLocalStudyModel] = useState('');
+    const [classroomTheme, setClassroomTheme] = useState<ClassroomThemeId>(() => loadClassroomTheme());
+    const [tocCollapsed, setTocCollapsed] = useState<Record<string, boolean>>({});
+    const [promptCfg, setPromptCfg] = useState<StudyPromptConfig>(() => loadStudyPromptConfig());
+    const [summaryThreshold, setSummaryThreshold] = useState<number>(() => loadSummaryThreshold());
+    const [vectorEnabled, setVectorEnabled] = useState<boolean>(() => loadStudyVectorEnabled());
+    const [memoryDefault, setMemoryDefault] = useState<boolean>(() => loadStudyMemoryDefault());
+    const [epubImgCfg, setEpubImgCfg] = useState<EpubImageConfig>(() => loadEpubImageConfig());
+    const [summaryLayers, setSummaryLayers] = useState<{ range: string; summary: string }[]>([]);
+    const [showClassThemeMenu, setShowClassThemeMenu] = useState(false);
+    const readerBarRef = useRef<HTMLDivElement | null>(null);
+    const classroomBarRef = useRef<HTMLDivElement | null>(null);
+    const [readerPad, setReaderPad] = useState<number>(96);
+    const [classPad, setClassPad] = useState<number>(128);
 
     // Tutor prompt presets
     const [tutorPresets, setTutorPresets] = useState<StudyTutorPreset[]>([]);
@@ -452,6 +499,20 @@ const StudyApp: React.FC = () => {
         return () => clearInterval(timer);
     }, [currentText]);
 
+    useEffect(() => { saveClassroomTheme(classroomTheme); }, [classroomTheme]);
+    useEffect(() => {
+        const measure = () => {
+            try {
+                if (readerBarRef.current) setReaderPad(readerBarRef.current.offsetHeight + 32);
+                if (classroomBarRef.current) setClassPad(classroomBarRef.current.offsetHeight + 32);
+            } catch { /* ignore */ }
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        const t = setTimeout(measure, 300);
+        return () => { window.removeEventListener('resize', measure); clearTimeout(t); };
+    }, [mode, activeCourse?.id]);
+
     const loadCourses = async () => {
         const list = await DB.getAllCourses();
         setCourses(list.sort((a,b) => b.createdAt - a.createdAt));
@@ -534,6 +595,8 @@ const StudyApp: React.FC = () => {
                     totalProgress: 0,
                     sourceType: 'epub',
                     coverImageRef: parsed.coverImageRef,
+                    toc: (parsed as unknown as { toc?: import('../types').StudyTocNode[] }).toc,
+                    memoryEnabled: loadStudyMemoryDefault(),
                 };
                 await DB.saveCourse(newCourse);
                 await loadCourses();
@@ -761,31 +824,20 @@ For each chapter, provide a title, a brief summary of what it covers, and a diff
         // 章节取文：rawContentRange 精准切片（导入时算好持久化，见 generateCurriculum），
         // 旧课程缺 range 时按比例盲切兜底。
         const chunkText = getChapterSourceText(course, chapterIdx);
+        const __bigSum: string = ((chapter as unknown as { aiSummary?: string }).aiSummary || '');
+        let __finalSource = lectureSourceForChapter(chunkText, __bigSum).sourceText;
+        try {
+            if (vectorEnabled) {
+                const __chunks = splitChapterText(chunkText, loadSummaryThreshold());
+                const __top = topKChunksForQuery(__chunks, chapter.title, 3);
+                if (__top.length > 0) __finalSource = __top.map((c) => c.text).join('\n\n');
+            }
+        } catch { /* vector fallback keeps head+tail source */ }
 
         const callApi = async (personaContext: string, isFallback: boolean = false) => {
-            const prompt = `${personaContext}
-
-### [Current Lesson Configuration]
-Topic: "${chapter.title}"
-Difficulty: ${chapter.difficulty}
-User Preference: "${course.preference || 'Standard'}"
-
-### [Source Material]
-${chunkText.substring(0, 8000)}
-
-### [Task: Lecture Generation]
-Explain this chapter's key concepts to the user based strictly on the Source Material above.
-- **Formatting**: Use Markdown extensively.
-  - **Bold** for key terms (\`**term**\`).
-  - Lists for steps.
-  - Math: Use \`$ E=mc^2 $\` for inline math, and \`$$ E=mc^2 $$\` for block equations.
-- **Style**: ${course.preference || 'Simple, conversational, and encouraging.'}
-- **Structure**:
-  1. Intro: Friendly greeting.
-  2. Core: Explanation of concepts using analogies.
-  3. Example: A concrete example or walkthrough.
-  4. Summary: Quick recap.
-`;
+            const __style = (tutorPresets.length > 0 ? tutorPresets[0].prompt : (course.preference || 'Simple, conversational, and encouraging.'));
+            const __rendered = renderStudyPrompt(promptCfg.lecturePrompt, { persona: personaContext, chapterTitle: chapter.title, difficulty: String(chapter.difficulty), preference: String(course.preference || 'Standard'), sourceText: __finalSource, summary: (__bigSum || '(no summary yet)'), style: __style });
+            const prompt = __rendered.text;
             return await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
@@ -807,7 +859,7 @@ Explain this chapter's key concepts to the user based strictly on the Source Mat
         try {
             // Attempt 1: Full Character Context (The "Soul")
             // [MODIFIED]: Use centralized ContextBuilder with memory enabled
-            await injectMemoryPalace(selectedChar, undefined, chapter.title);
+            try { const __memOn = isChapterMemoryEnabled({ courseEnabled: (course as unknown as { memoryEnabled?: boolean }).memoryEnabled, chapterEnabled: (chapter as unknown as { memoryEnabled?: boolean }).memoryEnabled, globalDefault: memoryDefault }); if (__memOn) await injectMemoryPalace(selectedChar, undefined, chapter.title); } catch { /* memory opt-in only */ }
             let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
 
             // Append Study Mode specific instructions to the core context
@@ -874,13 +926,14 @@ You are now acting as a private tutor for ${userProfile.name}.
 
     // --- EPUB AI Summary (按需生成 + 缓存) ---
 
-    const persistSummary = async (courseId: string, chapterIdx: number, summary: string) => {
+    const persistSummary = async (courseId: string, chapterIdx: number, summary: string, layers?: { range: string; summary: string }[]) => {
         // 以最新 courses 为准回写（避免覆盖课堂上其它字段的并发更新）
         const target = courses.find(c => c.id === courseId);
         if (!target) return;
         const updatedChapters = [...target.chapters];
         if (!updatedChapters[chapterIdx]) return;
-        updatedChapters[chapterIdx] = { ...updatedChapters[chapterIdx], aiSummary: summary, aiSummaryState: 'done' };
+        const __prevLayers = (updatedChapters[chapterIdx] as unknown as { aiSummaryLayers?: { range: string; summary: string }[] }).aiSummaryLayers;
+        updatedChapters[chapterIdx] = { ...updatedChapters[chapterIdx], aiSummary: summary, aiSummaryState: 'done', aiSummaryLayers: layers !== undefined ? layers : __prevLayers } as typeof updatedChapters[number];
         const updatedCourse = { ...target, chapters: updatedChapters };
         await DB.saveCourse(updatedCourse);
         setCourses(prev => prev.map(c => c.id === updatedCourse.id ? updatedCourse : c));
@@ -902,6 +955,7 @@ You are now acting as a private tutor for ${userProfile.name}.
         if (chapter.aiSummary) {
             setSummaryState('done');
             setSummaryContent(chapter.aiSummary);
+            try { setSummaryLayers(((chapter as unknown as { aiSummaryLayers?: { range: string; summary: string }[] }).aiSummaryLayers) || []); } catch { setSummaryLayers([]); }
             setSummaryError('');
             return;
         }
@@ -916,38 +970,51 @@ You are now acting as a private tutor for ${userProfile.name}.
 
         try {
             if (!effectiveApi.apiKey) throw new Error('未配置 API Key');
-            const prompt = `### Task: Chapter Summary
-You are a study assistant. Summarize the following book chapter for a student.
-
-**Book**: "${activeCourse.title}"
-**Chapter**: "${chapter.title}"
-
-**Source Material**:
-${getChapterSourceText(activeCourse, idx).substring(0, 12000)}
-
-### Requirements
-- Use the SAME LANGUAGE as the source material.
-- Output concise markdown: 3-6 key points (use **bold** for key terms), then a 1-2 sentence takeaway.
-- Do NOT invent content beyond the source material.
-`;
-            const response = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
-                body: JSON.stringify({
-                    model: effectiveApi.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.3,
-                    max_tokens: 2000,
-                }),
-            });
-            if (!response.ok) throw new Error(`API Error: ${response.status}`);
-            const data = await safeResponseJson(response);
-            const text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '';
+            const __fullSrc = getChapterSourceText(activeCourse, idx);
+            const __chunks = splitChapterText(__fullSrc, summaryThreshold);
+            const __callChat = async (prompt: string, maxTokens: number, temp: number) => {
+                const resp = await fetch(`${effectiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${effectiveApi.apiKey}` },
+                    body: JSON.stringify({ model: effectiveApi.model, messages: [{ role: 'user', content: prompt }], temperature: temp, max_tokens: maxTokens }),
+                });
+                if (!resp.ok) throw new Error(`API Error: ${resp.status}`);
+                const dd = await safeResponseJson(resp);
+                const tt = dd.choices?.[0]?.message?.content || dd.choices?.[0]?.message?.reasoning_content || '';
+                if (!tt) throw new Error('模型返回内容为空');
+                return tt as string;
+            };
+            const __cachedLayers = ((chapter as unknown as { aiSummaryLayers?: { range: string; summary: string }[] }).aiSummaryLayers) || [];
+            const __layers: { range: string; summary: string }[] = [];
+            for (const ch of __chunks) {
+                const hit = __cachedLayers.find((l) => l.range === ch.range);
+                if (hit) { __layers.push(hit); continue; }
+                const __cp = renderStudyPrompt(promptCfg.summaryChunkPrompt, { chapterTitle: chapter.title, sourceText: __fullSrc, chunkText: ch.text, range: ch.range }).text;
+                const __s = await __callChat(__cp, 1200, 0.3);
+                __layers.push({ range: ch.range, summary: __s });
+                setSummaryLayers([...__layers]);
+                await persistSummary(activeCourse.id, idx, __layers.map((l) => l.summary).join('\n\n'), [...__layers]);
+            }
+            let text: string;
+            if (__layers.length <= 1) { text = __layers[0]?.summary || ''; }
+            else {
+                const __mergeInput = buildMergeInput(__layers);
+                const __mp = renderStudyPrompt(promptCfg.summaryMergePrompt, { chapterTitle: chapter.title, sourceText: __fullSrc, layerSummaries: __mergeInput }).text;
+                text = await __callChat(__mp, 2000, 0.3);
+            }
             if (!text) throw new Error('模型返回内容为空');
 
             setSummaryContent(text);
             setSummaryState('done');
-            await persistSummary(activeCourse.id, idx, text);
+            setSummaryLayers([...__layers]);
+            await persistSummary(activeCourse.id, idx, text, [...__layers]);
+            try {
+                const __memOn2 = isChapterMemoryEnabled({ courseEnabled: (activeCourse as unknown as { memoryEnabled?: boolean }).memoryEnabled, chapterEnabled: (chapter as unknown as { memoryEnabled?: boolean }).memoryEnabled, globalDefault: memoryDefault });
+                if (__memOn2 && selectedChar) {
+                    const __note = `[学习笔记]${activeCourse.title}-${chapter.title}: ` + text.slice(0, 300);
+                    updateCharacter(selectedChar.id, { memories: [...(selectedChar.memories || []), { id: `mem-${Date.now()}`, date: new Date().toLocaleDateString(), summary: __note, mood: 'calm' }] });
+                }
+            } catch { /* memory write best-effort */ }
         } catch (e: any) {
             setSummaryState('error');
             setSummaryError(e.message || '总结生成失败');
@@ -974,13 +1041,11 @@ ${getChapterSourceText(activeCourse, idx).substring(0, 12000)}
         setCurrentText("让我想想...");
 
         try {
-            const totalLen = activeCourse.rawText.length;
-            const chunkSize = Math.floor(totalLen / activeCourse.chapters.length);
-            const start = activeCourse.currentChapterIndex * chunkSize;
-            const chunkText = activeCourse.rawText.substring(start, start + chunkSize + 2000);
+            const chunkText = getChapterSourceText(activeCourse, activeCourse.currentChapterIndex);
+            let __qaSource = lectureSourceForChapter(chunkText, '').sourceText;
+            try { if (vectorEnabled) { const __qc = splitChapterText(chunkText, loadSummaryThreshold()); const __qt = topKChunksForQuery(__qc, question, 3); if (__qt.length > 0) __qaSource = __qt.map((c) => c.text).join('\n\n'); } } catch { /* keep */ }
 
-            // [MODIFIED]: Use Full Context for Q&A
-            await injectMemoryPalace(selectedChar, undefined, question);
+            try { const __qaMem = isChapterMemoryEnabled({ courseEnabled: (activeCourse as unknown as { memoryEnabled?: boolean }).memoryEnabled, chapterEnabled: (activeCourse.chapters[activeCourse.currentChapterIndex] as unknown as { memoryEnabled?: boolean })?.memoryEnabled, globalDefault: memoryDefault }); if (__qaMem) await injectMemoryPalace(selectedChar, undefined, question); } catch { /* opt-in */ }
             let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
             baseContext += `
 ### [System: Study Mode Q&A]
@@ -990,7 +1055,7 @@ User is asking a question about the study material.
 
             const prompt = `${baseContext}
 ### Source Material
-${chunkText.substring(0, 8000)}
+${__qaSource}
 
 ### User Question
 "${question}"
@@ -1949,6 +2014,73 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                 )}
                             </div>
                         </div>
+                        <div>
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">AI 总结分段阈值</h4>
+                            <div className="flex items-center gap-2">
+                                <input type="number" min={500} max={20000} step={500} value={summaryThreshold} onChange={(e) => { const v = Math.max(500, Math.min(20000, Number(e.target.value) || 4000)); setSummaryThreshold(v); saveSummaryThreshold(v); }} className="flex-1 bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
+                                <span className="text-[10px] text-slate-400">字/段</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-1">超长章节按字数切块先小总结后合并大总结</div>
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">AI 提示词自定义</h4>
+                                <button onClick={() => { const d = resetStudyPromptConfig(); setPromptCfg(d); }} className="text-[10px] font-bold text-slate-400 hover:text-emerald-500 px-2 py-1 rounded-lg bg-slate-100">恢复默认</button>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-400">分段小结 prompt ({'{{chapterTitle}} {{sourceText}} {{chunkText}} {{range}}'})</label>
+                                <textarea value={promptCfg.summaryChunkPrompt} onChange={(e) => { const v = { ...promptCfg, summaryChunkPrompt: e.target.value }; setPromptCfg(v); saveStudyPromptConfig(v); }} className="w-full bg-slate-100 rounded-xl p-3 text-xs font-mono focus:outline-emerald-500 resize-none h-28" />
+                                <label className="text-[10px] font-bold text-slate-400">合并大总结 prompt ({'{{chapterTitle}} {{sourceText}} {{layerSummaries}}'})</label>
+                                <textarea value={promptCfg.summaryMergePrompt} onChange={(e) => { const v = { ...promptCfg, summaryMergePrompt: e.target.value }; setPromptCfg(v); saveStudyPromptConfig(v); }} className="w-full bg-slate-100 rounded-xl p-3 text-xs font-mono focus:outline-emerald-500 resize-none h-28" />
+                                <label className="text-[10px] font-bold text-slate-400">AI 讲课 prompt ({'{{persona}} {{chapterTitle}} {{difficulty}} {{preference}} {{sourceText}} {{summary}} {{style}}'})</label>
+                                <textarea value={promptCfg.lecturePrompt} onChange={(e) => { const v = { ...promptCfg, lecturePrompt: e.target.value }; setPromptCfg(v); saveStudyPromptConfig(v); }} className="w-full bg-slate-100 rounded-xl p-3 text-xs font-mono focus:outline-emerald-500 resize-none h-36" />
+                                <div className="text-[10px] text-slate-400 bg-slate-50 rounded-lg p-2">讲课风格预设作为 {'{{style}}'} 片段注入，不动完整模板。缺失变量会警告不崩溃。</div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">记忆 / 检索开关</h4>
+                            <div className="space-y-2 bg-slate-50 rounded-xl p-3">
+                                <label className="flex items-center justify-between text-xs text-slate-600 font-bold">
+                                    <span>讲课注入角色记忆 / 总结写入记忆库(全局默认)</span>
+                                    <button onClick={() => { const v = !memoryDefault; setMemoryDefault(v); saveStudyMemoryDefault(v); }} className={`w-10 h-6 rounded-full transition-colors ${memoryDefault ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                        <span className={`block w-5 h-5 bg-white rounded-full shadow transition-transform ${memoryDefault ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                    </button>
+                                </label>
+                                <label className="flex items-center justify-between text-xs text-slate-600 font-bold">
+                                    <span>讲课向量检索(默认关，端侧关键词 top-k)</span>
+                                    <button onClick={() => { const v = !vectorEnabled; setVectorEnabled(v); saveStudyVectorEnabled(v); }} className={`w-10 h-6 rounded-full transition-colors ${vectorEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                        <span className={`block w-5 h-5 bg-white rounded-full shadow transition-transform ${vectorEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                    </button>
+                                </label>
+                                <div className="text-[10px] text-slate-400">课程 / 章节可各自覆盖：书架卡片 M 按钮与目录 M 标记</div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">EPUB 图片显示</h4>
+                            <div className="space-y-2 bg-slate-50 rounded-xl p-3">
+                                <label className="flex items-center justify-between text-xs text-slate-600 font-bold">
+                                    <span>隐藏小图标(icon)</span>
+                                    <button onClick={() => { const v = { ...epubImgCfg, hideIconImages: !epubImgCfg.hideIconImages }; setEpubImgCfg(v); saveEpubImageConfig(v); }} className={`w-10 h-6 rounded-full transition-colors ${epubImgCfg.hideIconImages ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                        <span className={`block w-5 h-5 bg-white rounded-full shadow transition-transform ${epubImgCfg.hideIconImages ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                    </button>
+                                </label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div><div className="text-[10px] text-slate-400 mb-1">正文最大宽</div><input type="number" min={160} max={1200} value={epubImgCfg.maxContentWidth} onChange={(e) => { const v = { ...epubImgCfg, maxContentWidth: Math.max(160, Math.min(1200, Number(e.target.value) || 520)) }; setEpubImgCfg(v); saveEpubImageConfig(v); }} className="w-full bg-white rounded-lg p-2 text-xs" /></div>
+                                    <div><div className="text-[10px] text-slate-400 mb-1">注释图高</div><input type="number" min={12} max={96} value={epubImgCfg.noteImageHeight} onChange={(e) => { const v = { ...epubImgCfg, noteImageHeight: Math.max(12, Math.min(96, Number(e.target.value) || 32)) }; setEpubImgCfg(v); saveEpubImageConfig(v); }} className="w-full bg-white rounded-lg p-2 text-xs" /></div>
+                                    <div><div className="text-[10px] text-slate-400 mb-1">小图阈值</div><input type="number" min={16} max={256} value={epubImgCfg.smallImageThreshold} onChange={(e) => { const v = { ...epubImgCfg, smallImageThreshold: Math.max(16, Math.min(256, Number(e.target.value) || 64)) }; setEpubImgCfg(v); saveEpubImageConfig(v); }} className="w-full bg-white rounded-lg p-2 text-xs" /></div>
+                                </div>
+                                <div className="text-[10px] text-slate-400">引注 / 小图保持原文位置行内显示，不放大居中</div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">课堂配色</h4>
+                            <div className="flex gap-2">
+                                {CLASSROOM_THEMES.map((t) => (<button key={t.id} onClick={() => { setClassroomTheme(t.id); saveClassroomTheme(t.id); }} className={`flex flex-col items-center gap-1 p-2 rounded-xl border ${classroomTheme === t.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
+                                    <span style={{ width: 28, height: 28, borderRadius: 9, background: t.swatchBg, border: '1px solid rgba(0,0,0,0.1)', display: 'block' }} />
+                                    <span className="text-[10px] font-bold text-slate-500">{t.label}</span>
+                                </button>))}
+                            </div>
+                        </div>
                     </div>
                 </Modal>
 
@@ -2011,7 +2143,8 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         <div className="w-64 bg-slate-900 border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right">
                             <h3 className="text-white font-bold text-sm mb-4 uppercase tracking-widest">课程目录</h3>
                             <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-                                {activeCourse.chapters.map((ch, idx) => (
+                                <StudyTocTree nodes={tocForCourse(activeCourse)} currentIdx={readerIdx} collapsed={tocCollapsed} onToggle={(id) => setTocCollapsed((p) => ({ ...p, [id]: !p[id] }))} onJump={(idx) => { gotoChapter(idx); setShowChapterMenu(false); }} chapters={activeCourse.chapters} onToggleMemory={(idx) => { const cc = { ...activeCourse, chapters: activeCourse.chapters.map((c, i) => i === idx ? { ...c, memoryEnabled: !(c as unknown as { memoryEnabled?: boolean }).memoryEnabled } : c) }; setActiveCourse(cc); DB.saveCourse(cc); setCourses((prev) => prev.map((c) => c.id === cc.id ? cc : c)); }} />
+                                <div style={{ display: 'none' }}>{activeCourse.chapters.map((ch, idx) => (
                                     <button
                                         key={ch.id}
                                         onClick={() => { gotoChapter(idx); setShowChapterMenu(false); }}
@@ -2023,25 +2156,27 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                         </div>
                                     </button>
                                 ))}
+                                </div>
                             </div>
                         </div>
                     </div>
                 )}
 
                 {/* 正文 */}
-                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pt-20 pb-8 relative z-10">
+                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pt-20 relative z-10" style={{ paddingBottom: readerPad }}>
                     <div className="max-w-2xl mx-auto">
                         <h2 className="text-base font-bold text-emerald-300/90 mb-4">{readerChapter?.title}</h2>
                         <EpubReaderContent
                             html={readerChapter?.rawHtml || ''}
                             textOnly={readerChapter?.textOnly}
                             fallbackText={readerChapter?.plainText || readerChapter?.summary || ''}
+                            imageConfig={epubImgCfg}
                         />
                     </div>
                 </div>
 
                 {/* Controls Bar */}
-                <div className="epub-r-controls absolute bottom-0 w-full backdrop-blur-xl border-t p-4 z-30 pb-safe">
+                <div ref={readerBarRef} className="epub-r-controls absolute bottom-0 w-full backdrop-blur-xl border-t p-4 z-30 pb-safe">
                     <div className="flex gap-2">
                         <button
                             disabled={readerIdx <= 0}
@@ -2088,6 +2223,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     theme={readerTheme}
                     onClose={() => setShowSummaryPanel(false)}
                     onRetry={openChapterSummary}
+                    layers={summaryLayers}
                 />
 
                 <EpubThemeMenu
@@ -2102,7 +2238,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
     // CLASSROOM VIEW
     return (
-        <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans">
+        <div className="study-classroom h-full w-full flex flex-col relative overflow-hidden font-sans" data-theme={classroomTheme}>
             
             {/* Background Texture - Board */}
             <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
@@ -2117,6 +2253,17 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         <span className="truncate max-w-[150px]">{activeCourse?.chapters[activeCourse.currentChapterIndex]?.title}</span>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                     </div>
+                    <button onClick={() => setShowClassThemeMenu((v) => !v)} className="bg-black/30 p-2 rounded-full backdrop-blur-md border border-white/10 pointer-events-auto transition-colors text-white/80" title="class-theme">
+                        <span style={{ display: 'inline-flex', gap: 2 }}>{CLASSROOM_THEMES.slice(0, 3).map((t) => (<span key={t.id} style={{ width: 8, height: 8, borderRadius: 4, background: t.swatchBg, border: '1px solid rgba(255,255,255,0.4)', display: 'inline-block' }} />))}</span>
+                    </button>
+                    {showClassThemeMenu && (<div className="absolute top-14 right-4 z-50 cc-panel rounded-2xl border p-3 shadow-2xl pointer-events-auto" style={{ background: 'var(--cc-panel)' }}>
+                        <div className="flex gap-2">
+                            {CLASSROOM_THEMES.map((t) => (<button key={t.id} onClick={() => { setClassroomTheme(t.id); saveClassroomTheme(t.id); setShowClassThemeMenu(false); }} className="flex flex-col items-center gap-1 p-2 rounded-xl border" style={{ borderColor: classroomTheme === t.id ? 'var(--cc-accent)' : 'var(--cc-border)' }}>
+                                <span style={{ width: 24, height: 24, borderRadius: 8, background: t.swatchBg, border: '1px solid var(--cc-border)', display: 'block' }} />
+                                <span className="text-[10px] font-bold cc-text">{t.label}</span>
+                            </button>))}
+                        </div>
+                    </div>)}
                     {/* Character Visibility Toggle */}
                     <button onClick={() => setShowAssistant(!showAssistant)} className={`bg-black/30 p-2 rounded-full backdrop-blur-md border border-white/10 pointer-events-auto transition-colors ${showAssistant ? 'text-emerald-400' : 'text-white/40'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" /></svg>
@@ -2131,7 +2278,8 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     <div className="w-64 bg-slate-900 border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right">
                         <h3 className="text-white font-bold text-sm mb-4 uppercase tracking-widest">课程目录</h3>
                         <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-                            {activeCourse?.chapters.map((ch, idx) => (
+                            {activeCourse && (<StudyTocTree nodes={tocForCourse(activeCourse)} currentIdx={activeCourse.currentChapterIndex} collapsed={tocCollapsed} onToggle={(id) => setTocCollapsed((p) => ({ ...p, [id]: !p[id] }))} onJump={(idx) => jumpToChapter(idx)} chapters={activeCourse.chapters} onToggleMemory={(idx) => { const cc = { ...activeCourse, chapters: activeCourse.chapters.map((c, i) => i === idx ? { ...c, memoryEnabled: !(c as unknown as { memoryEnabled?: boolean }).memoryEnabled } : c) }; setActiveCourse(cc); DB.saveCourse(cc); setCourses((prev) => prev.map((c) => c.id === cc.id ? cc : c)); }} />)}
+                            <div style={{ display: 'none' }}>{activeCourse?.chapters.map((ch, idx) => (
                                 <button 
                                     key={ch.id} 
                                     onClick={() => jumpToChapter(idx)}
@@ -2143,13 +2291,14 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                     </div>
                                 </button>
                             ))}
+                                </div>
                         </div>
                     </div>
                 </div>
             )}
 
             {/* Main Text Content - Layout Optimized (Removed padding-right to allow full width) */}
-            <div className="flex-1 overflow-y-auto no-scrollbar p-6 pt-20 pb-32 relative z-10">
+            <div className="flex-1 overflow-y-auto no-scrollbar p-6 pt-20 relative z-10" style={{ paddingBottom: classPad }}>
                 <div className="max-w-[100%]">
                     <BlackboardRenderer text={displayedText} isTyping={isTyping} katexRenderer={katexRenderer} />
                 </div>
@@ -2166,7 +2315,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
             )}
 
             {/* Controls Bar */}
-            <div className="absolute bottom-0 w-full bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe">
+            <div ref={classroomBarRef} className="cc-panel absolute bottom-0 w-full backdrop-blur-xl border-t p-4 z-30 pb-safe" style={{ background: "var(--cc-panel)" }}>
                 <div className="flex gap-3">
                     {classroomState === 'teaching' || isTyping ? (
                         <div className="w-full h-12 flex items-center justify-center text-white/50 text-sm animate-pulse font-mono tracking-widest">

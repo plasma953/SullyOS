@@ -7,6 +7,7 @@
  */
 import JSZip from 'jszip';
 import { putImageBlob } from './blobRef';
+import type { StudyTocNode } from '../types';
 
 const EPUB_MIME = 'application/epub+zip';
 
@@ -28,6 +29,8 @@ export interface EpubParseResult {
     chapters: EpubChapterData[];
     /** 封面 blobref 令牌（若识别到）。 */
     coverImageRef?: string;
+    /** Hierarchical TOC (nav/NCX recursion; fallback flat). */
+    toc?: StudyTocNode[];
     /** 各章纯文本按 spine 顺序拼接（以空行分隔），供 AI 讲课/刷题均分取段。 */
     rawText: string;
 }
@@ -158,6 +161,16 @@ async function persistImages(
         // eslint-disable-next-line no-await-in-loop
         const token = await putImageBlob(blob);
         el.setAttribute(attr, token);
+        try {
+            const host = el as Element;
+            const inNote = !!(host.closest && (host.closest('blockquote') || host.closest('figcaption') || host.closest('figure')));
+            const wAttr = Number(host.getAttribute('width') || '0');
+            const hAttr = Number(host.getAttribute('height') || '0');
+            let role = 'content';
+            if (inNote) role = 'note';
+            else if (wAttr > 0 && hAttr > 0 && wAttr <= 64 && hAttr <= 64) role = 'icon';
+            host.setAttribute('data-epub-img-role', role);
+        } catch { /* role marking is best-effort */ }
         onProgress({ phase: 'image', message: `存储图片 ${i + 1}/${imgs.length}` });
     }
 }
@@ -258,6 +271,116 @@ async function buildTocTitles(
     return titles;
 }
 
+
+/** Hierarchical TOC builders (Stage 8): nav li>ol recursion + NCX navPoint recursion. */
+let __tocSeq = 0;
+function __nextTocId(): string { __tocSeq += 1; return `toc-${Date.now()}-${__tocSeq}`; }
+function __spineIndexOf(spinePaths: string[], hrefPath: string | null): number | undefined {
+    if (!hrefPath) return undefined;
+    const norm = (v: string) => v.replace(/^\/+/, '');
+    const target = norm(hrefPath).toLowerCase();
+    for (let i = 0; i < spinePaths.length; i++) {
+        const sp = norm(spinePaths[i]).toLowerCase();
+        if (sp === target) return i;
+        if (sp.endsWith('/' + target) || target.endsWith('/' + sp)) return i;
+    }
+    return undefined;
+}
+function __walkNavOl(ol: Element, level: number, baseDir: string, spinePaths: string[]): StudyTocNode[] {
+    const out: StudyTocNode[] = [];
+    const items = Array.from(ol.children).filter((c) => c.tagName && c.tagName.toLowerCase() === 'li');
+    for (const li of items) {
+        const a = li.querySelector(':scope > a[href]') || li.querySelector('a[href]');
+        const label = (a?.textContent || li.textContent || '').replace(/\s+/g, ' ').trim() || `Section ${out.length + 1}`;
+        const hrefPath = a ? zipPathFromHref(a.getAttribute('href'), baseDir) : null;
+        const chapterIndex = hrefPath ? __spineIndexOf(spinePaths, hrefPath) : undefined;
+        const nested = li.querySelector(':scope > ol') || li.querySelector('ol');
+        const children = nested ? __walkNavOl(nested as Element, level + 1, baseDir, spinePaths) : [];
+        // Drop pure wrapper with no label and single child to avoid empty levels.
+        out.push({ id: __nextTocId(), title: label, level, chapterIndex, children });
+    }
+    return out;
+}
+function __walkNcxPoints(points: Element[], level: number, baseDir: string, spinePaths: string[]): StudyTocNode[] {
+    const out: StudyTocNode[] = [];
+    for (const pt of points) {
+        const labelEl = Array.from(pt.getElementsByTagName('*')).find((x) => x.localName === 'text');
+        const contentEl = Array.from(pt.children || []).find((x) => (x as Element).localName === 'content') as Element | undefined;
+        const label = (labelEl?.textContent || '').replace(/\s+/g, ' ').trim() || `Section ${out.length + 1}`;
+        const hrefPath = contentEl ? zipPathFromHref(contentEl.getAttribute('src'), baseDir) : null;
+        const chapterIndex = hrefPath ? __spineIndexOf(spinePaths, hrefPath) : undefined;
+        const kids = Array.from(pt.children || []).filter((x) => (x as Element).localName === 'navPoint') as Element[];
+        out.push({ id: __nextTocId(), title: label, level, chapterIndex, children: __walkNcxPoints(kids, level + 1, baseDir, spinePaths) });
+    }
+    return out;
+}
+async function buildTocTree(
+    resources: BookResources,
+    opfDoc: Document,
+    manifest: Map<string, ManifestItem>,
+    opfDir: string,
+    spinePaths: string[],
+): Promise<StudyTocNode[]> {
+    // EPUB3 nav
+    try {
+        const navItem = [...manifest.values()].find((it) => it.props && /\bnav\b/.test(it.props));
+        if (navItem) {
+            const navPath = zipPathFromHref(navItem.href, opfDir);
+            const file = navPath ? resolveResource(resources, navPath) : undefined;
+            if (file) {
+                const doc = new DOMParser().parseFromString(await file.text(), 'text/html');
+                const navs = Array.from(doc.getElementsByTagName('nav'));
+                const tocNav = navs.find((n) => /toc/i.test(n.getAttribute('epub:type') || '')) || navs[0];
+                const navDir = navPath && navPath.includes('/') ? navPath.slice(0, navPath.lastIndexOf('/') + 1) : '';
+                const rootOl = tocNav?.querySelector('ol');
+                if (rootOl) {
+                    const tree = __walkNavOl(rootOl as Element, 0, navDir, spinePaths);
+                    if (tree.length > 0) return tree;
+                }
+            }
+        }
+    } catch { /* fall through to NCX */ }
+    // EPUB2 NCX
+    try {
+        const spineEl = Array.from(opfDoc.getElementsByTagName('*')).find((el) => el.localName === 'spine');
+        const tocId = spineEl?.getAttribute('toc') || '';
+        const ncxItem = manifest.get(tocId) || [...manifest.values()].find((it) => it.mediaType === 'application/x-dtbncx+xml');
+        if (ncxItem) {
+            const ncxPath = zipPathFromHref(ncxItem.href, opfDir);
+            const file = ncxPath ? resolveResource(resources, ncxPath) : undefined;
+            if (file) {
+                const doc = new DOMParser().parseFromString(await file.text(), 'text/xml');
+                const ncxDir = ncxPath && ncxPath.includes('/') ? ncxPath.slice(0, ncxPath.lastIndexOf('/') + 1) : '';
+                const navMap = Array.from(doc.getElementsByTagName('*')).find((el) => el.localName === 'navMap');
+                const tops = navMap ? Array.from(navMap.children || []).filter((x) => (x as Element).localName === 'navPoint') as Element[] : [];
+                if (tops.length > 0) {
+                    const tree = __walkNcxPoints(tops, 0, ncxDir, spinePaths);
+                    if (tree.length > 0) return tree;
+                }
+            }
+        }
+    } catch { /* fall through */ }
+    return [];
+}
+function buildHeadingFallbackToc(chapters: { title: string; rawHtml: string }[]): StudyTocNode[] {
+    const out: StudyTocNode[] = [];
+    try {
+        chapters.forEach((c, i) => {
+            const node: StudyTocNode = { id: `toc-fb-${i}`, title: c.title, level: 0, chapterIndex: i, children: [] };
+            if (c.rawHtml) {
+                const doc = new DOMParser().parseFromString(`<div>${c.rawHtml}</div>`, 'text/html');
+                const heads = Array.from(doc.querySelectorAll('h2, h3')).slice(0, 12);
+                heads.forEach((h, j) => {
+                    const t = (h.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!t) return;
+                    node.children.push({ id: `toc-fb-${i}-${j}`, title: t, level: 1, chapterIndex: i, children: [] });
+                });
+            }
+            out.push(node);
+        });
+    } catch { /* DOM unavailable */ }
+    return out;
+}
 /** 串行解析 spine 章节列表。 */
 async function parseChapters(
     resources: BookResources,
@@ -398,6 +521,19 @@ export async function parseEpubFile(file: File, onProgress?: EpubProgressCallbac
 
     progress({ phase: 'done', message: '导入完成' });
     const rawText = chapters.map(c => c.plainText).filter(Boolean).join('\n\n');
+    let toc: StudyTocNode[] | undefined;
+    try {
+        const opfEntry2 = zip.file(opfPath);
+        if (opfEntry2) {
+            const opfDoc2 = new DOMParser().parseFromString(await opfEntry2.async('text'), 'text/xml');
+            const manifest2 = buildManifest(opfDoc2);
+            const spineEl2 = Array.from(opfDoc2.getElementsByTagName('*')).find((el) => el.localName === 'spine');
+            const spineIds2 = spineEl2 ? Array.from(spineEl2.getElementsByTagName('*')).filter((el) => el.localName === 'itemref').map((el) => el.getAttribute('idref')).filter((v): v is string => !!v) : [];
+            const spinePaths2 = spineIds2.map((id) => { const it = manifest2.get(id); return it ? zipPathFromHref(it.href, opfDir) : null; }).filter((v): v is string => !!v);
+            const tree = await buildTocTree(resources, opfDoc2, manifest2, opfDir, spinePaths2);
+            toc = tree.length > 0 ? tree : buildHeadingFallbackToc(chapters);
+        }
+    } catch { toc = buildHeadingFallbackToc(chapters); }
 
-    return { title, chapters, coverImageRef, rawText };
+    return { title, chapters, coverImageRef, rawText, toc };
 }

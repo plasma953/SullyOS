@@ -9,6 +9,8 @@ import React from 'react';
 import { useBlobRefUrl } from '../../../utils/blobRef';
 import { X, ArrowsClockwise, WarningCircle, Palette } from '@phosphor-icons/react';
 import './EpubReader.css';
+import type { EpubImageConfig } from '../../../utils/studyEpubImageConfig';
+import { loadEpubImageConfig } from '../../../utils/studyEpubImageConfig';
 
 /* ============================== 配色主题 ============================== */
 
@@ -44,12 +46,20 @@ export function useReaderTheme(): { theme: ReadingThemeId; setTheme: (t: Reading
 
 /** 解析 blobref 令牌后渲染；首帧未解析完成时占位，避免闪破图。
  *  small=true：引用上下文内的标注图，压缩为行内小尺寸，避免大图霸屏打断阅读。 */
-const BlobImg: React.FC<{ src: string; small?: boolean }> = ({ src, small }) => {
+let __activeImgCfg: EpubImageConfig | null = null;
+const BlobImg: React.FC<{ src: string; small?: boolean; role?: string; widthAttr?: string | null }> = ({ src, small, role }) => {
     const resolved = useBlobRefUrl(src);
+    const cfg = __activeImgCfg || loadEpubImageConfig();
+    const effRole = role || (small ? 'note' : 'content');
+    if (effRole === 'icon' && cfg.hideIconImages) return null;
     if (!resolved) {
-        return <span className={`epub-r-img-ph ${small ? 'h-10' : 'h-32'} block my-3 rounded-xl animate-pulse`} aria-label="图片加载中" />;
+        return <span className={`epub-r-img-ph ${effRole !== 'content' ? 'h-10' : 'h-32'} block my-3 rounded-xl animate-pulse`} aria-label="图片加载中" />;
     }
-    return <img src={resolved} loading="lazy" alt="" className={small ? 'epub-r-img-s' : 'epub-r-img-l'} />;
+    if (effRole === 'note' || effRole === 'icon') {
+        const h = effRole === 'note' ? cfg.noteImageHeight : Math.min(cfg.noteImageHeight, cfg.smallImageThreshold);
+        return <img src={resolved} loading="lazy" alt="" className="epub-r-img-s" style={{ maxHeight: h, width: 'auto' }} />;
+    }
+    return <img src={resolved} loading="lazy" alt="" className="epub-r-img-l" style={{ maxWidth: '100%', width: cfg.maxContentWidth ? Math.min(cfg.maxContentWidth, 800) : undefined }} />;
 };
 
 /** 允许渲染的标签白名单。 */
@@ -91,9 +101,18 @@ function renderNode(node: Node, keyPrefix: string): React.ReactNode {
         case 'img': {
             const src = el.getAttribute('src');
             if (!src) return null;
-            // 引用（blockquote）内的图片视为「引用标注图」：统一压缩为行内小图，杜绝大图霸屏
-            const inQuote = !!(el.closest && el.closest('blockquote'));
-            return <BlobImg key={keyPrefix} src={src} small={inQuote} />;
+            const roleAttr = el.getAttribute('data-epub-img-role') || '';
+            const inQuote = !!(el.closest && (el.closest('blockquote') || el.closest('figcaption') || el.closest('figure')));
+            const wA = Number((el as HTMLElement).getAttribute?.('width') || '0');
+            const hA = Number((el as HTMLElement).getAttribute?.('height') || '0');
+            let role = roleAttr;
+            if (!role) {
+                if (inQuote) role = 'note';
+                else if (wA > 0 && hA > 0 && __activeImgCfg && wA <= __activeImgCfg.smallImageThreshold && hA <= __activeImgCfg.smallImageThreshold) role = 'icon';
+                else if (wA > 0 && hA > 0 && wA <= 64 && hA <= 64) role = 'icon';
+                else role = 'content';
+            }
+            return <BlobImg key={keyPrefix} src={src} small={inQuote} role={role} />;
         }
         case 'br': return <br key={keyPrefix} />;
         case 'hr': return <hr key={keyPrefix} className="er-line my-5" />;
@@ -140,7 +159,9 @@ function renderNode(node: Node, keyPrefix: string): React.ReactNode {
 }
 
 /** EPUB 原文渲染主体。html 为空且给出 fallbackText 时降级为纯文本模式。 */
-export const EpubReaderContent: React.FC<{ html: string; textOnly?: boolean; fallbackText?: string }> = ({ html, textOnly, fallbackText }) => {
+export const EpubReaderContent: React.FC<{ html: string; textOnly?: boolean; fallbackText?: string; imageConfig?: EpubImageConfig }> = ({ html, textOnly, fallbackText, imageConfig }) => {
+    __activeImgCfg = imageConfig || null;
+    try { if (!__activeImgCfg) __activeImgCfg = loadEpubImageConfig(); } catch { __activeImgCfg = null; }
     const tree = React.useMemo(() => {
         if (!html) return null;
         try {
@@ -196,7 +217,10 @@ export const SummaryPanel: React.FC<{
     theme?: ReadingThemeId;
     onClose: () => void;
     onRetry: () => void;
-}> = ({ open, state, content, error, theme = 'dark', onClose, onRetry }) => {
+    layers?: { range: string; summary: string }[];
+}> = ({ open, state, content, error, theme = 'dark', onClose, onRetry, layers }) => {
+    const [sumView, setSumView] = React.useState<'big' | 'small'>(('big' as 'big' | 'small'));
+    const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
     if (!open) return null;
     return (
         <div className="epub-r absolute inset-0 z-50 flex" data-theme={theme}>
@@ -224,7 +248,35 @@ export const SummaryPanel: React.FC<{
                             </button>
                         </div>
                     )}
-                    {state === 'done' && <div>{renderRichText(content)}</div>}
+                    {state === 'done' && (
+                        <div>
+                            {layers && layers.length > 0 ? (
+                                <div>
+                                    <div className="flex gap-2 mb-3">
+                                        <button onClick={() => setSumView('big')} className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border ${sumView === 'big' ? 'bg-emerald-600 text-white border-emerald-500' : 'er-line border er-tx-dim'}`}>大总结</button>
+                                        <button onClick={() => setSumView('small')} className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border ${sumView === 'small' ? 'bg-emerald-600 text-white border-emerald-500' : 'er-line border er-tx-dim'}`}>分段小结 ({layers.length})</button>
+                                    </div>
+                                    {sumView === 'big' ? <div>{renderRichText(content)}</div> : (
+                                        <div className="space-y-2">
+                                            {layers.map((l, i) => {
+                                                const k = `${i}:${l.range}`;
+                                                const open2 = !!expanded[k];
+                                                return (
+                                                    <div key={k} className="er-line border rounded-xl overflow-hidden">
+                                                        <button onClick={() => setExpanded((p) => ({ ...p, [k]: !p[k] }))} className="w-full flex items-center justify-between px-3 py-2 text-left">
+                                                            <span className="er-tx-strong text-[11px] font-bold">第 {l.range} 段</span>
+                                                            <span className="er-tx-dim text-[11px]">{open2 ? '▾' : '▸'}</span>
+                                                        </button>
+                                                        {open2 && <div className="px-3 pb-3">{renderRichText(l.summary)}</div>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : <div>{renderRichText(content)}</div>}
+                        </div>
+                    )}
                     {state === 'idle' && (
                         <div className="h-full min-h-40 flex items-center justify-center text-xs er-tx-dim">尚未生成总结</div>
                     )}

@@ -1,0 +1,9 @@
+.study-classroom { --cc-bg: #2b2b2b; --cc-panel: #1a1a1a; --cc-text: #ffffff; --cc-text-dim: rgba(255,255,255,0.55); --cc-accent: #34d399; --cc-border: rgba(255,255,255,0.1); --cc-code-bg: rgba(0,0,0,0.6); --cc-code-text: #a7f3d0; }
+.study-classroom[data-theme='day'] { --cc-bg: #ffffff; --cc-panel: #f8fafc; --cc-text: #1f2937; --cc-text-dim: #6b7280; --cc-accent: #0f766e; --cc-border: rgba(15,23,42,0.1); --cc-code-bg: rgba(15,23,42,0.05); --cc-code-text: #92400e; }
+.study-classroom[data-theme='sepia'] { --cc-bg: #f4ecd8; --cc-panel: #efe5cc; --cc-text: #3f3428; --cc-text-dim: #6b5d49; --cc-accent: #0f766e; --cc-border: rgba(120,90,40,0.18); --cc-code-bg: rgba(120,90,40,0.1); --cc-code-text: #7c5a1d; }
+.study-classroom[data-theme='midnight'] { --cc-bg: #0f172a; --cc-panel: #020617; --cc-text: #e2e8f0; --cc-text-dim: #94a3b8; --cc-accent: #60a5fa; --cc-border: rgba(148,163,184,0.18); --cc-code-bg: rgba(0,0,0,0.5); --cc-code-text: #bfdbfe; }
+.study-classroom[data-theme='minimal'] { --cc-bg: #f8fafc; --cc-panel: #ffffff; --cc-text: #334155; --cc-text-dim: #94a3b8; --cc-accent: #64748b; --cc-border: rgba(100,116,139,0.18); --cc-code-bg: #f1f5f9; --cc-code-text: #475569; }
+.study-classroom { background: var(--cc-bg); color: var(--cc-text); }
+.study-classroom .cc-panel { background: var(--cc-panel); border-color: var(--cc-border); }
+.study-classroom .cc-text { color: var(--cc-text); }
+.study-classroom .cc-dim { color: var(--cc-text-dim); }

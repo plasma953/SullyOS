@@ -3815,6 +3815,19 @@ export interface SocialAppProfile {
     bio: string;
 }
 
+export interface StudyTocNode {
+    id: string;
+    title: string;
+    level: number;
+    chapterIndex?: number;
+    children: StudyTocNode[];
+}
+
+export interface StudySummaryLayer {
+    range: string;
+    summary: string;
+}
+
 export interface StudyChapter {
     id: string;
     title: string;
@@ -3833,6 +3846,10 @@ export interface StudyChapter {
     plainText?: string;
     /** EPUB：true 表示该章体积超限已降级为纯文本模式。 */
     textOnly?: boolean;
+    /** Layered summaries (small chunks). */
+    aiSummaryLayers?: StudySummaryLayer[];
+    /** Per-chapter memory opt-in override (undefined = inherit course/global). */
+    memoryEnabled?: boolean;
 }
 
 export interface StudyCourse {
@@ -3849,6 +3866,10 @@ export interface StudyCourse {
     sourceType?: 'pdf' | 'epub';
     /** EPUB 封面 blobref 令牌（可选）。 */
     coverImageRef?: string;
+    /** Hierarchical TOC (EPUB nav/NCX; fallback flat). */
+    toc?: StudyTocNode[];
+    /** Course-level memory opt-in (undefined = inherit global). */
+    memoryEnabled?: boolean;
 }
 
 export interface StudyTutorPreset {
