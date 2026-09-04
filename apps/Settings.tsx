@@ -43,6 +43,7 @@ import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
 import StatusBadge from '../components/StatusBadge';
 import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers, probePerspective } from '../utils/statusPanel';
+import { classifyFetchFailure, probeOriginReachability, describeReachabilityProbe, parseTargetUrl } from '../utils/networkFailureDiagnosis';
 import { PERCEPTION_CAPABILITIES, perceptionRenderState } from '../utils/perceptionRegistry';
 import { readAgentRoutingConfig } from '../utils/agentRouting';
 import type { APIConfig, BridgeConfig, TtsProvider } from '../types';
@@ -2689,7 +2690,28 @@ const Settings: React.FC = () => {
                                 else if (probe.ok) setAgentTestResult('✅ 中转可用：鉴权通过，可以保存了');
                                 else setAgentTestResult('HTTP ' + probe.status + '：服务异常，请检查 VPS 服务状态');
                             } catch (err: any) {
-                                setAgentTestResult('连接失败：' + (err?.message || '网络异常') + '（检查域名/代理/防火墙）');
+                                setAgentTestResult(await (async () => {
+                                    let msg = '连接失败：' + (err?.message || '网络异常');
+                                    const NL = String.fromCharCode(10);
+                                    try {
+                                        const healthUrl = base + '/agent/health';
+                                        const kind = classifyFetchFailure({ url: healthUrl, error: err });
+                                        if (kind === 'offline') {
+                                            msg += NL + '浏览器报离线，先查网络/梯子是否掉线。';
+                                        } else if (kind === 'mixed-content' || kind === 'bad-url') {
+                                            msg += NL + '地址填错';
+                                        } else {
+                                            const verdict = await probeOriginReachability(healthUrl, fetch, { timeoutMs: 6000 });
+                                            const host = parseTargetUrl(healthUrl).host;
+                                            const line = describeReachabilityProbe(verdict, host);
+                                            if (line) msg += NL + line;
+                                            else msg += NL + '检查域名/代理/防火墙';
+                                        }
+                                    } catch {
+                                        msg += NL + '检查域名/代理/防火墙';
+                                    }
+                                    return msg;
+                                })());
                             } finally {
                                 setAgentTestPending(false);
                             }

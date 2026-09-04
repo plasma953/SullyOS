@@ -18,6 +18,7 @@ import { queryPerspectiveEvents } from './perspective';
 import { getEffectiveBridges } from './bridgeRegistry';
 import { ActiveMsgStore } from './activeMsgStore';
 import { loadMcpServers } from './mcpClient';
+import { classifyFetchFailure, probeOriginReachability } from './networkFailureDiagnosis';
 
 export type BridgeProbeStatus = 'ok' | 'warn' | 'err' | 'off' | 'checking';
 
@@ -42,6 +43,28 @@ const fetchWithTimeout = async (url: string, ms: number, init?: RequestInit): Pr
 
 /** 毫秒数 → 「xxx ms」，探测耗时展示。 */
 const fmtMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
+
+const shortNetworkFailureDetail = async (url: string, err: any): Promise<string> => {
+    try {
+        const nm = (err as any)?.name;
+        if (nm === 'AbortError' || nm === 'TimeoutError') return '超时';
+        const kind = classifyFetchFailure({ url, error: err });
+        if (kind === 'offline') return '离线';
+        if (kind === 'mixed-content') return '混合内容';
+        if (kind === 'bad-url') return '地址有误';
+        try {
+            const verdict = await probeOriginReachability(url, fetch, { timeoutMs: 6000 });
+            if (verdict === 'unreachable') return '不可达·查分流/DNS';
+            if (verdict === 'timeout') return '超时·换节点试';
+            if (verdict === 'reachable') return '拦截·查扩展/CORS';
+            return '不可达';
+        } catch {
+            return '不可达';
+        }
+    } catch {
+        return '不可达';
+    }
+};
 
 /** 提取 JSON 错误体里的 message 字段（主代理 /agent/v1 的 4xx 都带）。 */
 const errMessage = (body: unknown): string | undefined => {
@@ -101,7 +124,7 @@ export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => 
         }
         return { ...entry, status: 'err', detail: `HTTP ${res.status}` };
     } catch (e: any) {
-        return { ...entry, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
+        return { ...entry, status: 'err', detail: await shortNetworkFailureDetail(`${base}/agent/health`, e) };
     }
 };
 
@@ -149,7 +172,7 @@ export const probeAmsgWorker = async (): Promise<StatusEntry> => {
         try {
             res = await fetchWithTimeout(`${base}/health`, 5000);
         } catch (e: any) {
-            return { ...entry, status: 'err', detail: e?.name === 'AbortError' ? '超时' : '不可达' };
+            return { ...entry, status: 'err', detail: await shortNetworkFailureDetail(`${base}/health`, e) };
         }
         const ms = fmtMs(performance.now() - t0);
         if (res.ok) return { ...entry, status: 'ok', detail: ms };
