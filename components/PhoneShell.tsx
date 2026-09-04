@@ -31,6 +31,7 @@ const RoomApp = lazyApp(() => import('../apps/RoomApp'));
 const CheckPhone = lazyApp(() => import('../apps/CheckPhone'));
 const SocialApp = lazyApp(() => import('../apps/SocialApp'));
 const StudyApp = lazyApp(() => import('../apps/StudyApp'));
+const PomodoroApp = lazyApp(() => import('../apps/PomodoroApp'));
 const FAQApp = lazyApp(() => import('../apps/FAQApp'));
 const GameApp = lazyApp(() => import('../apps/GameApp'));
 const WorldbookApp = lazyApp(() => import('../apps/WorldbookApp'));
@@ -62,7 +63,7 @@ const SpecialMomentsApp = lazyApp(() => import('./ValentineEvent').then(m => ({ 
 const APP_IDLE_PRELOAD_ORDER: PreloadableLazy[] = [
   Chat, Character, Settings, Appearance, GroupChat, RoomApp, CheckPhone,
   JournalApp, ScheduleApp, SocialApp, MusicApp, CallApp, Gallery, DateApp, UserApp,
-  StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, MemoryPalaceApp, HandbookApp,
+  StudyApp, PomodoroApp, GameApp, NovelApp, BankApp, WorldbookApp, MemoryPalaceApp, HandbookApp,
   VRWorldApp, WorldHomeApp, LifeSimApp, SongwritingApp, GuidebookApp, FAQApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
   SpecialMomentsApp, CharCreatorDevApp,
@@ -80,6 +81,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Gallery]: Gallery, [AppID.Date]: DateApp, [AppID.User]: UserApp,
   [AppID.Journal]: JournalApp, [AppID.Schedule]: ScheduleApp, [AppID.Room]: RoomApp,
   [AppID.CheckPhone]: CheckPhone, [AppID.Social]: SocialApp, [AppID.Study]: StudyApp,
+  [AppID.Pomodoro]: PomodoroApp,
   [AppID.FAQ]: FAQApp, [AppID.Game]: GameApp, [AppID.Worldbook]: WorldbookApp,
   [AppID.Novel]: NovelApp, [AppID.Bank]: BankApp, [AppID.XhsStock]: XhsStockApp,
   [AppID.XhsFreeRoam]: XhsFreeRoamApp, [AppID.Browser]: BrowserApp, [AppID.Songwriting]: SongwritingApp,
@@ -923,7 +925,8 @@ const PhoneShell: React.FC = () => {
       case AppID.Room: return <RoomApp />; 
       case AppID.CheckPhone: return <CheckPhone />;
       case AppID.Social: return <SocialApp />;
-      case AppID.Study: return <StudyApp />; 
+      case AppID.Study: return <StudyApp />;  
+      case AppID.Pomodoro: return <PomodoroApp />;
       case AppID.FAQ: return <FAQApp />; 
       case AppID.Game: return <GameApp />; 
       case AppID.Worldbook: return <WorldbookApp />;

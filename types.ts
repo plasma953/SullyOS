@@ -40,6 +40,7 @@ export enum AppID {
   Preset = 'preset', // 预设 — 提示词段落预设管理（内容/顺序/启停，注入聊天 system prompt）
   Shopping = 'shopping', // 购物 — 淘宝式电商（OSM 真实商家 + 品牌真实商品，模拟下单不真实支付）
   Takeout = 'takeout',   // 外卖 — 美团式点单（OSM 真实店面 + 品牌 SKU，模拟下单不真实支付）
+  Pomodoro = 'pomodoro', // 番茄钟 — 自定义主题与时长的水波纹专注陪伴（打开才计时）
 }
 
 export interface SystemLog {

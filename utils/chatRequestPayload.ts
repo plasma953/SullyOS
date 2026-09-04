@@ -24,6 +24,7 @@ import type { DeepEngagementAnalysis } from './memoryPalace/deepEngagement';
 import { buildHtmlPrompt } from './htmlPrompt';
 import { buildThinkingChainPrompt } from './thinkingChainPrompt';
 import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
+import { buildPomodoroContextBlock } from './pomodoroContextBlock';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import { buildLuckinMiniAppContextBlock, buildLuckinChatSystemBlock } from './luckinToolBridge';
 import type { LuckinMiniAppSnapshot, LuckinChatState } from './luckinToolBridge';
@@ -412,6 +413,16 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     const luckinChatActive = !!luckinChat?.active;
     if (luckinChatActive) {
         const block = buildLuckinChatSystemBlock(luckinChat, recentMsgsHint, userProfile?.name || '用户');
+        if (block) {
+            volatileTail += block;
+        }
+    }
+
+    // ── 9c2. 番茄钟进行中状态（易变尾段，与麦当劳/瑞幸同级） ──
+    // 正常聊天 / amsg 主动消息 / emotion eval 三条路都走这里组装，char 的任何发言都
+    // 自动知道用户正在专注什么，不会和番茄钟 App 的陪伴线打架。无进行中会话时返回空串。
+    {
+        const block = buildPomodoroContextBlock(userProfile?.name || '用户');
         if (block) {
             volatileTail += block;
         }
