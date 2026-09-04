@@ -581,22 +581,28 @@ const Launcher: React.FC = () => {
       return launcherDockOrder.map(id => byId.get(id as AppID)).filter(Boolean) as typeof INSTALLED_APPS;
   }, [launcherDockOrder]);
 
-  // Split apps: page 0 = 16 (4x4), pinwheel consumes 8, rest 16 per page.
-  // Pages: 0 = clock+chat+grid 4x4 (original), 1 = pinwheel (8), 2 = widget images + grid 4x4,
-  //        3+ = plain grid 4x4. Pad to at least 3 slots so the pinwheel/widget pages always exist.
-  const APPS_PER_PAGE = 16;
+  // Split apps: pages with widgets keep 4x2 (8), pure grid pages use 4x4 (16).
+  // Pages: 0 = clock+chat+grid (8, original), 1 = pinwheel (8), 2 = widget images + grid (8, original),
+  //        3+ = plain grid only -> 16 per page. Pad to at least 3 slots so pinwheel/widget pages exist.
+  const FIRST_PAGE_SIZE = 8;
   const PINWHEEL_PAGE_SIZE = 8;
+  const WIDGET_PAGE_SIZE = 8;
+  const PURE_PAGE_SIZE = 16;
   const appPages = useMemo(() => {
       const pages: typeof INSTALLED_APPS[] = [];
       if (gridApps.length === 0) {
           while (pages.length < 3) pages.push([]);
           return pages;
       }
-      pages.push(gridApps.slice(0, APPS_PER_PAGE));
-      if (gridApps.length > APPS_PER_PAGE) {
-          pages.push(gridApps.slice(APPS_PER_PAGE, APPS_PER_PAGE + PINWHEEL_PAGE_SIZE));
-          for (let i = APPS_PER_PAGE + PINWHEEL_PAGE_SIZE; i < gridApps.length; i += APPS_PER_PAGE) {
-              pages.push(gridApps.slice(i, i + APPS_PER_PAGE));
+      pages.push(gridApps.slice(0, FIRST_PAGE_SIZE));
+      if (gridApps.length > FIRST_PAGE_SIZE) {
+          pages.push(gridApps.slice(FIRST_PAGE_SIZE, FIRST_PAGE_SIZE + PINWHEEL_PAGE_SIZE));
+          const widgetStart = FIRST_PAGE_SIZE + PINWHEEL_PAGE_SIZE;
+          if (gridApps.length > widgetStart) {
+              pages.push(gridApps.slice(widgetStart, widgetStart + WIDGET_PAGE_SIZE));
+              for (let i = widgetStart + WIDGET_PAGE_SIZE; i < gridApps.length; i += PURE_PAGE_SIZE) {
+                  pages.push(gridApps.slice(i, i + PURE_PAGE_SIZE));
+              }
           }
       }
       while (pages.length < 3) pages.push([]);
@@ -1038,7 +1044,7 @@ const Launcher: React.FC = () => {
                 style={{ contentVisibility: 'auto', contain: 'layout paint', transform: 'translateZ(0)' }}
               >
                   {idx === 0 ? (
-                      // Page 1 (original): Clock + Chat + 4x4 App Grid
+                      // Page 1 (original): Clock + Chat + 4x2 App Grid (keep)
                       <>
                         <DesktopClock />
                         <CharacterWidget
