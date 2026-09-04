@@ -47,14 +47,25 @@ export function classifyEpubImgRole(opts: { inNoteContext: boolean; width?: numb
 }
 
 export interface DuplicateImageInfo {
+  hash: string;
   ref: string;
   count: number;
   role: EpubImgRole;
 }
 
+export function isImageHash(v: unknown): v is string {
+  return typeof v === 'string' && /^[0-9a-f]{64}$/i.test(v);
+}
+
+export function cleanLegacyHiddenRefs(refs: unknown): string[] {
+  if (!Array.isArray(refs)) return [];
+  return (refs as unknown[]).filter((r): r is string => isImageHash(r)).map((r) => r.toLowerCase());
+}
+
 const TAG_RE = /<(img|image)\b[^>]*>/gi;
 const REF_RE = /blobref:[A-Za-z0-9_]+/;
 const ROLE_RE = /data-epub-img-role="([^"]*)"/;
+const HASH_RE = /data-epub-img-hash="([0-9a-f]{64})"/i;
 
 function roleOfTag(tag: string): EpubImgRole {
   const m = ROLE_RE.exec(tag);
@@ -82,25 +93,46 @@ export function extractImageRefsFromHtml(html: string): Map<string, { count: num
   return out;
 }
 
+/** Aggregate by content hash; images without hash fall back to ref-keyed counting. */
+export function extractImageHashesFromHtml(html: string): Map<string, { count: number; role: EpubImgRole; ref: string }> {
+  const out = new Map<string, { count: number; role: EpubImgRole; ref: string }>();
+  if (!html) return out;
+  TAG_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = TAG_RE.exec(html)) !== null) {
+    const tag = m[0];
+    const rm = REF_RE.exec(tag);
+    if (!rm) continue;
+    const ref = rm[0];
+    const hm = HASH_RE.exec(tag);
+    const key = hm ? hm[1].toLowerCase() : ('ref:' + ref);
+    const role = roleOfTag(tag);
+    const prev = out.get(key);
+    if (prev) prev.count += 1;
+    else out.set(key, { count: 1, role, ref });
+  }
+  return out;
+}
+
 /** Aggregate chapters and return refs with count >= threshold, sorted desc. */
 export function findDuplicateImages(
   chapters: Array<{ rawHtml?: string }>,
   threshold: number,
 ): DuplicateImageInfo[] {
   const th = clampDupThreshold(threshold, 3);
-  const agg = new Map<string, { count: number; role: EpubImgRole }>();
+  const agg = new Map<string, { count: number; role: EpubImgRole; ref: string }>();
   for (const ch of chapters || []) {
-    const per = extractImageRefsFromHtml(ch.rawHtml || "");
+    const per = extractImageHashesFromHtml(ch.rawHtml || "");
     per.forEach((v, k) => {
       const prev = agg.get(k);
       if (prev) prev.count += v.count;
-      else agg.set(k, { count: v.count, role: v.role });
+      else agg.set(k, { count: v.count, role: v.role, ref: v.ref });
     });
   }
   const list: DuplicateImageInfo[] = [];
   agg.forEach((v, k) => {
-    if (v.count >= th) list.push({ ref: k, count: v.count, role: v.role });
+    if (v.count >= th) list.push({ hash: k, ref: v.ref, count: v.count, role: v.role });
   });
-  list.sort((a, b) => b.count - a.count || (a.ref < b.ref ? -1 : 1));
+  list.sort((a, b) => b.count - a.count || (a.hash < b.hash ? -1 : 1));
   return list;
 }

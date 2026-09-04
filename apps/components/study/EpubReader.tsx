@@ -48,12 +48,12 @@ export function useReaderTheme(): { theme: ReadingThemeId; setTheme: (t: Reading
  *  small=true：引用上下文内的标注图，压缩为行内小尺寸，避免大图霸屏打断阅读。 */
 let __activeImgCfg: EpubImageConfig | null = null;
 let __activeHidden: Set<string> | null = null;
-const BlobImg: React.FC<{ src: string; small?: boolean; role?: string; widthAttr?: string | null; hidden?: boolean }> = ({ src, small, role, hidden }) => {
+const BlobImg: React.FC<{ src: string; small?: boolean; role?: string; widthAttr?: string | null; hidden?: boolean; hash?: string }> = ({ src, small, role, hidden, hash }) => {
     const resolved = useBlobRefUrl(src);
     const cfg = __activeImgCfg || loadEpubImageConfig();
     const effRole = role || (small ? 'note' : 'content');
     if (effRole === 'icon' && cfg.hideIconImages) return null;
-    if (hidden || (__activeHidden && __activeHidden.has(src))) return <span className={`epub-r-img-hidden ${effRole !== 'content' ? 'h-10' : 'h-16'} block my-3 rounded-xl border border-dashed flex items-center justify-center text-[10px] opacity-60`}>已隐藏重复图片</span>;
+    if (hidden || (__activeHidden && ((hash && __activeHidden.has(hash)) || __activeHidden.has(src)))) return <span className={`epub-r-img-hidden ${effRole !== 'content' ? 'h-10' : 'h-16'} block my-3 rounded-xl border border-dashed flex items-center justify-center text-[10px] opacity-60`}>已隐藏重复图片</span>;
     if (!resolved) {
         return <span className={`epub-r-img-ph ${effRole !== 'content' ? 'h-10' : 'h-32'} block my-3 rounded-xl animate-pulse`} aria-label="图片加载中" />;
     }
@@ -104,6 +104,7 @@ function renderNode(node: Node, keyPrefix: string): React.ReactNode {
             const src = el.getAttribute('src');
             if (!src) return null;
             const roleAttr = el.getAttribute('data-epub-img-role') || '';
+            const hashAttr = el.getAttribute('data-epub-img-hash') || '';
             const inQuote = !!(el.closest && (el.closest('blockquote') || el.closest('figcaption') || el.closest('figure')));
             const wA = Number((el as HTMLElement).getAttribute?.('width') || '0');
             const hA = Number((el as HTMLElement).getAttribute?.('height') || '0');
@@ -114,7 +115,8 @@ function renderNode(node: Node, keyPrefix: string): React.ReactNode {
                 else if (wA > 0 && hA > 0 && wA <= 64 && hA <= 64) role = 'icon';
                 else role = 'content';
             }
-            return <BlobImg key={keyPrefix} src={src} small={inQuote} role={role} hidden={__activeHidden ? __activeHidden.has(src) : false} />;
+            const hashLower = hashAttr ? hashAttr.toLowerCase() : '';
+            return <BlobImg key={keyPrefix} src={src} small={inQuote} role={role} hash={hashLower || undefined} hidden={__activeHidden ? ((hashLower && __activeHidden.has(hashLower)) || __activeHidden.has(src)) : false} />;
         }
         case 'br': return <br key={keyPrefix} />;
         case 'hr': return <hr key={keyPrefix} className="er-line my-5" />;
@@ -224,11 +226,10 @@ export const SummaryPanel: React.FC<{
 }> = ({ open, state, content, error, theme = 'dark', onClose, onRetry, layers }) => {
     const [sumView, setSumView] = React.useState<'big' | 'small'>(('big' as 'big' | 'small'));
     const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
-    if (!open) return null;
     return (
-        <div className="epub-r absolute inset-0 z-50 flex" data-theme={theme}>
-            <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={onClose}></div>
-            <div className="epub-r-panel er-line border-l w-80 max-w-[85%] h-full flex flex-col animate-slide-in-right shadow-2xl">
+        <div className={"epub-r absolute inset-0 z-50 flex transition-opacity duration-300 ease-out " + (open ? "opacity-100" : "opacity-0 pointer-events-none")} data-theme={theme} aria-hidden={!open}>
+            <div className={"flex-1 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ease-out " + (open ? "opacity-100" : "opacity-0")} onClick={onClose}></div>
+            <div className={"epub-r-panel er-line border-l w-80 max-w-[85%] h-full flex flex-col shadow-2xl transition-transform duration-300 ease-out " + (open ? "translate-x-0" : "translate-x-full")}>
                 <div className="er-line flex items-center justify-between px-4 py-3 border-b">
                     <h3 className="er-tx-strong font-bold text-sm uppercase tracking-widest">AI 章节总结</h3>
                     <button onClick={onClose} className="epub-r-btn p-1.5 rounded-full transition-colors">

@@ -7,6 +7,7 @@
  */
 import JSZip from 'jszip';
 import { putImageBlob } from './blobRef';
+import { sha256Hex } from './imageHash';
 import type { StudyTocNode } from '../types';
 
 const EPUB_MIME = 'application/epub+zip';
@@ -161,6 +162,10 @@ async function persistImages(
         // eslint-disable-next-line no-await-in-loop
         const token = await putImageBlob(blob);
         el.setAttribute(attr, token);
+        try {
+            const __h = await sha256Hex(blob);
+            if (__h) el.setAttribute('data-epub-img-hash', __h);
+        } catch { /* hash marking is best-effort */ }
         try {
             const host = el as Element;
             const inNote = !!(host.closest && (host.closest('blockquote') || host.closest('figcaption') || host.closest('figure')));

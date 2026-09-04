@@ -13,6 +13,8 @@ import { trackEvent } from '../utils/analytics';
 import { extractPdfText, isPdfFile } from '../utils/pdfText';
 import { isEpubFile, parseEpubFile } from '../utils/epub';
 import { deleteBlobRef } from '../utils/blobRef';
+import { getBlobForRef } from '../utils/blobRef';
+import { sha256Hex } from '../utils/imageHash';
 import { EpubReaderContent, SummaryPanel, EpubThemeMenu, useReaderTheme, ReadingThemeId, SummaryState } from './components/study/EpubReader';
 import './components/study/StudyClassroom.css';
 import type { StudyTocNode } from '../types';
@@ -20,7 +22,7 @@ import { tocForCourse } from '../utils/studyToc';
 import { loadStudyPromptConfig, saveStudyPromptConfig, resetStudyPromptConfig, renderStudyPrompt, type StudyPromptConfig } from '../utils/studyPrompts';
 import { splitChapterText, buildMergeInput, lectureSourceForChapter, topKChunksForQuery, loadSummaryThreshold, saveSummaryThreshold } from '../utils/studySummary';
 import { CLASSROOM_THEMES, loadClassroomTheme, saveClassroomTheme, type ClassroomThemeId } from '../utils/studyClassroomTheme';
-import { loadEpubImageConfig, saveEpubImageConfig, findDuplicateImages, type EpubImageConfig, type DuplicateImageInfo } from '../utils/studyEpubImageConfig';
+import { loadEpubImageConfig, saveEpubImageConfig, findDuplicateImages, cleanLegacyHiddenRefs, type EpubImageConfig, type DuplicateImageInfo } from '../utils/studyEpubImageConfig';
 import { loadStudyMemoryDefault, saveStudyMemoryDefault, loadStudyVectorEnabled, saveStudyVectorEnabled, isChapterMemoryEnabled } from '../utils/studyMemory';
 
 type KatexLike = {
@@ -396,11 +398,17 @@ const StudyApp: React.FC = () => {
     const [dupList, setDupList] = useState<DuplicateImageInfo[]>([]);
     const [dupSelected, setDupSelected] = useState<string[]>([]);
     const [dupScanned, setDupScanned] = useState(false);
+    const [floatChatOpen, setFloatChatOpen] = useState(false);
+    const [floatPos, setFloatPos] = useState<{ x: number; y: number } | null>(null);
+    const [floatInput, setFloatInput] = useState('');
+    const [floatBusy, setFloatBusy] = useState(false);
+    const [floatLog, setFloatLog] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
+    const floatDragRef = useRef<{ sx: number; sy: number; ox: number; oy: number; t: number; moved: boolean } | null>(null);
     const scanDupImages = () => {
         if (!activeCourse) { addToast('请先打开一本书再扫描', 'info'); return; }
         const list = findDuplicateImages(activeCourse.chapters || [], epubImgCfg.dupThreshold);
         setDupList(list);
-        setDupSelected(activeCourse.hiddenImageRefs || []);
+        setDupSelected(cleanLegacyHiddenRefs(activeCourse.hiddenImageRefs));
         setDupScanned(true);
         setShowDupModal(true);
         trackEvent('扫描重复图片', { count: String(list.length) });
@@ -545,6 +553,53 @@ const StudyApp: React.FC = () => {
         const t = setTimeout(measure, 300);
         return () => { window.removeEventListener('resize', measure); clearTimeout(t); };
     }, [mode, activeCourse?.id]);
+
+    const backfilledRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const course = activeCourse;
+        if (!course || course.sourceType !== 'epub') return;
+        if (backfilledRef.current.has(course.id)) return;
+        backfilledRef.current.add(course.id);
+        (async () => {
+            try {
+                const cleaned = cleanLegacyHiddenRefs(course.hiddenImageRefs);
+                const legacyDirty = (course.hiddenImageRefs || []).length !== cleaned.length;
+                let htmlDirty = false;
+                const nextChapters: StudyChapter[] = [];
+                for (const ch of course.chapters || []) {
+                    const html = ch.rawHtml || '';
+                    if (!html || html.indexOf('blobref:') < 0) { nextChapters.push(ch); continue; }
+                    try {
+                        const tmp = document.createElement('div');
+                        tmp.innerHTML = html;
+                        const imgs = Array.from(tmp.querySelectorAll('img[src^="blobref:"]')) as HTMLImageElement[];
+                        let changed = false;
+                        for (const img of imgs) {
+                            if (img.getAttribute('data-epub-img-hash')) continue;
+                            const src = img.getAttribute('src') || '';
+                            if (!src) continue;
+                            try {
+                                const blob = await getBlobForRef(src);
+                                if (!blob) continue;
+                                const h = await sha256Hex(blob);
+                                if (h) { img.setAttribute('data-epub-img-hash', h); changed = true; }
+                            } catch { /* per-image best-effort */ }
+                        }
+                        if (changed) { htmlDirty = true; nextChapters.push({ ...ch, rawHtml: tmp.innerHTML }); }
+                        else nextChapters.push(ch);
+                        tmp.remove();
+                    } catch { nextChapters.push(ch); }
+                }
+                if (htmlDirty || legacyDirty) {
+                    const target = courses.find(c => c.id === course.id) || course;
+                    const updated = { ...target, chapters: htmlDirty ? nextChapters : target.chapters, hiddenImageRefs: cleaned.length ? cleaned : undefined };
+                    setActiveCourse(updated as StudyCourse);
+                    setCourses(prev => prev.map(c => c.id === updated.id ? (updated as StudyCourse) : c));
+                    await DB.saveCourse(updated as StudyCourse);
+                }
+            } catch { /* backfill best-effort */ }
+        })();
+    }, [activeCourse?.id]);
 
     const loadCourses = async () => {
         const list = await DB.getAllCourses();
@@ -1117,6 +1172,34 @@ Answer the question based on the source material. Be helpful and encouraging (in
         } catch (e) {
             setCurrentText("脑壳痛... 回答不出来了。");
             setClassroomState('idle');
+        }
+    };
+
+    const handleFloatAsk = async () => {
+        if (!floatInput.trim() || !activeCourse || !selectedChar || floatBusy) return;
+        const question = floatInput.trim();
+        setFloatInput('');
+        setFloatLog(prev => [...prev, { role: 'user', content: question }]);
+        setFloatBusy(true);
+        try {
+            const chunkText = getChapterSourceText(activeCourse, activeCourse.currentChapterIndex);
+            let src = lectureSourceForChapter(chunkText, '').sourceText;
+            try { if (vectorEnabled) { const qc = splitChapterText(chunkText, loadSummaryThreshold()); const qt = topKChunksForQuery(qc, question, 3); if (qt.length > 0) src = qt.map((c) => c.text).join('\n\n'); } } catch { /* keep */ }
+            let baseContext = ContextBuilder.buildCoreContext(selectedChar, userProfile, true);
+            baseContext += '\n### [System: Study Mode Floating Q&A]\nUser asks from reader floating window.\n- **Maintain Personality**: Answer in character.\n';
+            const prompt = baseContext + '\n### Source Material\n' + src + '\n\n### User Question\n"' + question + '"\n\n### Task\nAnswer briefly based on source (in character). Use Markdown.\n';
+            const response = await fetch(effectiveApi.baseUrl.replace(/\/+$/, '') + '/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + effectiveApi.apiKey },
+                body: JSON.stringify({ model: effectiveApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 4000 })
+            });
+            const data = await safeResponseJson(response);
+            const text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '(empty)';
+            setFloatLog(prev => [...prev, { role: 'assistant', content: text }]);
+        } catch {
+            setFloatLog(prev => [...prev, { role: 'assistant', content: 'request failed, try again' }]);
+        } finally {
+            setFloatBusy(false);
         }
     };
 
@@ -2119,15 +2202,6 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                 </div>
                             </div>
                         </div>
-                        <div>
-                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">课堂配色</h4>
-                            <div className="flex gap-2">
-                                {CLASSROOM_THEMES.map((t) => (<button key={t.id} onClick={() => { setClassroomTheme(t.id); saveClassroomTheme(t.id); }} className={`flex flex-col items-center gap-1 p-2 rounded-xl border ${classroomTheme === t.id ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
-                                    <span style={{ width: 28, height: 28, borderRadius: 9, background: t.swatchBg, border: '1px solid rgba(0,0,0,0.1)', display: 'block' }} />
-                                    <span className="text-[10px] font-bold text-slate-500">{t.label}</span>
-                                </button>))}
-                            </div>
-                        </div>
                     </div>
                 </Modal>
 
@@ -2149,17 +2223,17 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                             <div className="flex items-center justify-between px-1">
                                 <span className="text-[11px] text-slate-400">共 {dupList.length} 张图片出现 ≥ {epubImgCfg.dupThreshold} 次，勾选后隐藏</span>
-                                <button onClick={() => setDupSelected(dupSelected.length === dupList.length ? [] : dupList.map(d => d.ref))} className="text-[11px] font-bold text-emerald-600">全选/取消</button>
+                                <button onClick={() => setDupSelected(dupSelected.length === dupList.length ? [] : dupList.map(d => d.hash))} className="text-[11px] font-bold text-emerald-600">全选/取消</button>
                             </div>
                             {dupList.map(item => {
-                                const checked = dupSelected.includes(item.ref);
+                                const checked = dupSelected.includes(item.hash);
                                 const roleLabel = item.role === 'note' ? '引注图' : item.role === 'icon' ? '小图标' : '正文图';
                                 return (
-                                    <button key={item.ref} onClick={() => setDupSelected(prev => prev.includes(item.ref) ? prev.filter(r => r !== item.ref) : [...prev, item.ref])}
+                                    <button key={item.hash} onClick={() => setDupSelected(prev => prev.includes(item.hash) ? prev.filter(r => r !== item.hash) : [...prev, item.hash])}
                                         className={`w-full flex items-center gap-3 rounded-2xl border p-2.5 text-left transition ${checked ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white'}`} >
                                         <TokenImg value={item.ref} className="w-12 h-12 rounded-lg object-cover shrink-0" />
                                         <span className="flex-1 min-w-0">
-                                            <span className="block text-[11px] font-mono truncate text-slate-600">{item.ref}</span>
+                                            <span className="block text-[11px] font-mono truncate text-slate-600">{item.hash.slice(0, 12)}</span>
                                             <span className="block text-[10px] text-slate-400">出现 {item.count} 次 · {roleLabel}</span>
                                         </span>
                                         <span className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 text-[11px] font-bold transition ${checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-transparent'}`}>✓</span>
@@ -2301,6 +2375,61 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     </div>
                 </div>
 
+                    {/* Floating tutor (draggable avatar + Q&A, follows reader theme) */}
+                    {selectedChar && (
+                        <div className="absolute z-40" style={floatPos ? { left: floatPos.x, top: floatPos.y } : { right: 16, bottom: 110 }}>
+                            <button
+                                onPointerDown={(e) => { try { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); } catch { /* ignore */ } floatDragRef.current = { sx: e.clientX, sy: e.clientY, ox: floatPos?.x ?? 0, oy: floatPos?.y ?? 0, t: Date.now(), moved: false }; }}
+                                onPointerMove={(e) => {
+                                    const d = floatDragRef.current;
+                                    if (!d) return;
+                                    const dx = e.clientX - d.sx;
+                                    const dy = e.clientY - d.sy;
+                                    if (Math.abs(dx) + Math.abs(dy) > 8) d.moved = true;
+                                    if (!d.moved) return;
+                                    if (!floatPos) {
+                                        const host = (e.currentTarget.closest('.epub-r') as HTMLElement)?.getBoundingClientRect();
+                                        const rect = (e.currentTarget.parentElement as HTMLElement)?.getBoundingClientRect();
+                                        const sx = rect && host ? rect.left - host.left : 300;
+                                        const sy = rect && host ? rect.top - host.top : 400;
+                                        setFloatPos({ x: Math.max(8, sx + dx), y: Math.max(8, sy + dy) });
+                                    } else {
+                                        setFloatPos({ x: Math.max(8, d.ox + dx), y: Math.max(8, d.oy + dy) });
+                                    }
+                                }}
+                                onPointerUp={() => {
+                                    const d = floatDragRef.current;
+                                    floatDragRef.current = null;
+                                    if (!d) return;
+                                    if (Date.now() - d.t < 300 && !d.moved) setFloatChatOpen(v => !v);
+                                }}
+                                className="w-14 h-14 rounded-full overflow-hidden border-2 active:scale-95 transition-transform touch-none select-none"
+                                style={{ borderColor: 'var(--er-accent, #10b981)', boxShadow: '0 4px 20px rgba(0,0,0,0.35)' }}
+                                title="tutor"
+                            >
+                                <TokenImg value={currentSprite} className="w-full h-full object-cover pointer-events-none" />
+                            </button>
+                        </div>
+                    )}
+                    <div className={"epub-r absolute z-40 right-4 bottom-32 w-80 max-w-[86%] rounded-2xl border shadow-2xl overflow-hidden transition-all duration-300 ease-out origin-bottom-right " + (floatChatOpen ? "opacity-100 scale-100" : "opacity-0 scale-90 pointer-events-none")} data-theme={readerTheme} style={{ background: 'var(--er-panel)', borderColor: 'var(--er-border)' }}>
+                        <div className="er-line flex items-center justify-between px-3 py-2 border-b">
+                            <span className="er-tx-strong text-xs font-bold truncate">{selectedChar?.name || ''} · 讲课问答</span>
+                            <button onClick={() => setFloatChatOpen(false)} className="epub-r-btn p-1 rounded-full"><X size={14} /></button>
+                        </div>
+                        <div className="h-56 overflow-y-auto no-scrollbar p-3 space-y-2">
+                            {floatLog.length === 0 && (<div className="er-tx-dim text-[11px] text-center py-8">向TA提问当前章节内容</div>)}
+                            {floatLog.map((m, i) => (
+                                <div key={i} className={"flex " + (m.role === 'user' ? "justify-end" : "justify-start")}>
+                                    <div className={"max-w-[85%] px-2.5 py-1.5 rounded-xl text-xs leading-5 whitespace-pre-wrap " + (m.role === 'user' ? "bg-emerald-600 text-white" : "er-line border er-tx")}>{m.content}</div>
+                                </div>
+                            ))}
+                            {floatBusy && (<div className="flex justify-start"><span className="inline-flex items-center gap-1 px-2 py-1"><span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" /><span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: '0.15s' }} /><span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: '0.3s' }} /></span></div>)}
+                        </div>
+                        <div className="er-line flex items-center gap-1.5 p-2 border-t">
+                            <input value={floatInput} onChange={e => setFloatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleFloatAsk(); }} placeholder="输入问题..." className="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-xs outline-none er-tx placeholder:opacity-50" />
+                            <button onClick={handleFloatAsk} disabled={floatBusy || !floatInput.trim()} className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-40 active:scale-95 transition">发送</button>
+                        </div>
+                    </div>
                 <SummaryPanel
                     open={showSummaryPanel}
                     state={summaryState}
