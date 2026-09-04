@@ -2773,6 +2773,39 @@ ${olderText}
                         : <button onClick={() => setShowContactModal(true)} className="text-white/80 active:scale-90 transition"><UserPlus size={20} weight="bold" /></button>} />
                 {/* 约束开关：是否允许虚构 NPC */}
                 <div className="px-4 pt-1 pb-2 shrink-0">
+                    {/* 定时自动更新（原 API 设置弹窗迁移至此：选人界面下 targetChar 为空导致开关静默失效） */}
+                    <div className="w-full rounded-xl px-3 py-2.5 bg-white/[0.04] border border-white/[0.07] mb-1.5">
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setAutoRefresh(!(targetChar?.phoneState?.autoRefresh))} className="flex-1 min-w-0 text-left active:scale-[0.99] transition">
+                                <span className="text-[11px] font-semibold text-white/80">自动更新 TA 的手机</span>
+                                <span className="block text-[10px] text-white/40 mt-0.5">按间隔自动生成新的聊天记录，无需手动刷新。后台写入手机，不往私聊塞卡片。</span>
+                            </button>
+                            <button onClick={() => setAutoRefresh(!(targetChar?.phoneState?.autoRefresh))} aria-label="切换自动更新" className="relative w-9 h-5 rounded-full transition shrink-0" style={{ background: targetChar?.phoneState?.autoRefresh ? '#a78bfa' : 'rgba(255,255,255,0.15)' }}>
+                                <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all" style={{ left: targetChar?.phoneState?.autoRefresh ? '18px' : '2px' }} />
+                            </button>
+                        </div>
+                        {targetChar?.phoneState?.autoRefresh && (
+                            <div className="mt-2 pt-2 border-t border-white/[0.06]">
+                                <div className="text-[10px] text-white/40 mb-1.5">更新间隔</div>
+                                <div className="flex gap-1.5">
+                                    {[15, 30, 60, 120].map(mins => {
+                                        const active = (targetChar?.phoneState?.autoRefreshIntervalMin || 30) === mins;
+                                        return (
+                                            <button key={mins} onClick={() => setAutoRefresh(true, mins)}
+                                                className={`flex-1 py-1.5 rounded-xl text-[10.5px] font-bold transition ${active ? 'bg-violet-500 text-white shadow-sm' : 'bg-white/[0.07] text-white/50 active:scale-95'}`}>
+                                                {mins < 60 ? `${mins} 分钟` : `${mins / 60} 小时`}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {targetChar?.phoneState?.lastAutoRefreshAt ? (
+                                    <div className="text-[10px] text-white/35 mt-1.5">
+                                        上次自动更新：{new Date(targetChar.phoneState.lastAutoRefreshAt).toLocaleString()}
+                                    </div>
+                                ) : null}
+                            </div>
+                        )}
+                    </div>
                     <div className="w-full flex items-center gap-2 rounded-xl px-3 py-2 bg-white/[0.04] border border-white/[0.07]">
                         <button onClick={toggleAllowFictional} className="flex-1 min-w-0 text-left active:scale-[0.99] transition">
                             <span className="text-[11px] text-white/55">{allowFictional ? '允许 TA 结交虚构 NPC' : '只与神经链接里的真实角色来往'}</span>
@@ -3939,43 +3972,8 @@ ${olderText}
                         </div>
 
                         <div className="text-[10px] tracking-[0.18em] text-slate-400 px-1">定时自动更新</div>
-                        <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                            <div className="flex items-center justify-between">
-                                <div className="min-w-0 pr-2">
-                                    <div className="text-[12px] font-bold text-slate-800">自动更新 TA 的手机</div>
-                                    <div className="text-[10px] text-slate-400 leading-relaxed mt-0.5">
-                                        按间隔自动生成新的聊天记录与联系人动态，无需手动点刷新。更新只在后台写入手机，不会往私聊塞卡片。
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setAutoRefresh(!(targetChar?.phoneState?.autoRefresh))}
-                                    className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${targetChar?.phoneState?.autoRefresh ? 'bg-violet-500' : 'bg-slate-200'}`}
-                                    aria-label="切换自动更新"
-                                >
-                                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${targetChar?.phoneState?.autoRefresh ? 'left-[22px]' : 'left-0.5'}`}></span>
-                                </button>
-                            </div>
-                            {targetChar?.phoneState?.autoRefresh && (
-                                <div className="mt-3 pt-3 border-t border-slate-100">
-                                    <div className="text-[10px] text-slate-400 mb-1.5">更新间隔</div>
-                                    <div className="flex gap-1.5">
-                                        {[15, 30, 60, 120].map(mins => {
-                                            const active = (targetChar?.phoneState?.autoRefreshIntervalMin || 30) === mins;
-                                            return (
-                                                <button key={mins} onClick={() => setAutoRefresh(true, mins)}
-                                                    className={`flex-1 py-1.5 rounded-xl text-[10.5px] font-bold transition ${active ? 'bg-violet-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500 active:scale-95'}`}>
-                                                    {mins < 60 ? `${mins} 分钟` : `${mins / 60} 小时`}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                    {targetChar?.phoneState?.lastAutoRefreshAt ? (
-                                        <div className="text-[10px] text-slate-400 mt-2">
-                                            上次自动更新：{new Date(targetChar.phoneState.lastAutoRefreshAt).toLocaleString()}
-                                        </div>
-                                    ) : null}
-                                </div>
-                            )}
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
+                            <div className="text-[11px] text-slate-500 leading-relaxed">定时自动更新设置已移至 手机 → 联系人 页顶部（进入某台手机后设置，按角色分别开关）。</div>
                         </div>
 
                         <div className="text-[10px] tracking-[0.18em] text-slate-400 px-1">选择 API</div>
