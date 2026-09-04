@@ -14,6 +14,7 @@ import GoodsSvg from '../components/GoodsSvg';
 import { buildShoppingOrderTag, sanitizeOrderField } from '../utils/shoppingFormat';
 import { roundMoney, sumMoney } from '../utils/format';
 import { trackEvent } from '../utils/analytics';
+import { LoaderDots } from '../utils/appLoaderDots';
 import { CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
 
 // ── 视图状态 ──
@@ -62,6 +63,8 @@ export default function TakeoutApp() {
   const [loadErr, setLoadErr] = useState(false);
   const [query, setQuery] = useState('');
   const [activeCat, setActiveCat] = useState<ShopCategory | 'all'>('all');
+  const [visibleCount, setVisibleCount] = useState(12);
+  const shopSentinelRef = useRef<HTMLDivElement | null>(null);
   const [activeShop, setActiveShop] = useState<ShoppingShop | null>(null);
   const [carts, setCarts] = useState<Record<string, ShoppingCart>>({});
   const [orders, setOrders] = useState<ShoppingOrder[]>([]);
@@ -209,6 +212,17 @@ export default function TakeoutApp() {
     }
     return sorted;
   }, [ds, activeCat, target, q, dishHitShopIds]);
+  useEffect(() => { setVisibleCount(12); }, [activeCat, q]);
+  const pagedShops = useMemo(() => visibleShops.slice(0, visibleCount), [visibleShops, visibleCount]);
+  useEffect(() => {
+    const el = shopSentinelRef.current;
+    if (!el) return;
+    const ob = new IntersectionObserver((es) => {
+      if (es.some(e => e.isIntersecting)) setVisibleCount(v => Math.min(visibleShops.length, v + 12));
+    }, { rootMargin: '200px' });
+    ob.observe(el);
+    return () => ob.disconnect();
+  }, [pagedShops.length, visibleShops.length]);
 
   const shopMenu = useMemo(() => {
     if (!ds || !activeShop) return [];
@@ -361,7 +375,7 @@ export default function TakeoutApp() {
     return <div className="h-full flex items-center justify-center text-sm text-slate-400">数据加载失败，请稍后重试</div>;
   }
   if (!ds || !target) {
-    return <div className="h-full flex items-center justify-center text-sm text-slate-400 animate-pulse">加载中…</div>;
+    return <div className="h-full flex items-center justify-center text-slate-400"><LoaderDots /></div>;
   }
 
   // ════════ 渲染 ════════
@@ -460,7 +474,7 @@ export default function TakeoutApp() {
             {q && visibleShops.length === 0 && dishHits.length === 0 && (
               <div className="text-center text-[12px] text-slate-400 py-10">没找到「{query}」相关的店铺或商品</div>
             )}
-            {visibleShops.map(s => (
+            {pagedShops.map(s => (
               <div key={s.id} onClick={() => { setActiveShop(s); setView('shop'); }}
                 className="flex gap-3 bg-white rounded-2xl p-3 shadow-sm active:scale-[0.99] transition-transform cursor-pointer">
                 <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center text-2xl shrink-0">
@@ -480,6 +494,11 @@ export default function TakeoutApp() {
               </div>
             ))}
             {visibleShops.length === 0 && <div className="text-center text-[12px] text-slate-400 py-10">该品类暂无店铺</div>}
+            {pagedShops.length < visibleShops.length ? (
+              <div ref={shopSentinelRef} className="flex items-center justify-center py-4 text-slate-400"><LoaderDots /></div>
+            ) : (
+              visibleShops.length > 0 && <div className="text-center text-[11px] text-slate-400 py-3">已全部加载</div>
+            )}
           </div>
           {/* 底部：购物车条 + 订单入口 */}
           <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">

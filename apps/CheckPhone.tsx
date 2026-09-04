@@ -241,11 +241,11 @@ const HomeCard: React.FC<{
     badge?: number; onClick: () => void; spanFull?: boolean;
 }> = ({ icon, label, sub, accent, badge, onClick, spanFull }) => (
     <button onClick={onClick}
-        className={`relative ${spanFull ? 'col-span-2' : ''} rounded-[24px] p-4 text-left overflow-hidden border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl active:scale-[0.98] transition-transform duration-300 min-h-[140px] flex flex-col justify-between group`}>
+        className={`relative ${spanFull ? 'col-span-2' : ''} rounded-[24px] p-4 text-left overflow-hidden border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl active:scale-[0.98] transition-transform duration-300 min-h-[96px] flex flex-col justify-between group`}>
         <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full blur-2xl pointer-events-none opacity-50"
             style={{ background: `radial-gradient(circle, ${accent}, transparent 70%)` }} />
         <div className="flex items-start justify-between relative z-10">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center border border-white/[0.08]"
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center border border-white/[0.08]"
                 style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}0a)`, color: accent, boxShadow: `inset 0 0 16px ${accent}22` }}>
                 {icon}
             </div>
@@ -254,8 +254,8 @@ const HomeCard: React.FC<{
             ) : null}
         </div>
         <div className="relative z-10">
-            <div className="text-[15px] font-semibold tracking-[0.18em] text-white uppercase">{label}</div>
-            <div className="text-[11px] text-white/45 mt-1">{sub}</div>
+            <div className="text-[12px] font-semibold tracking-[0.12em] text-white uppercase">{label}</div>
+            <div className="text-[10px] text-white/45 mt-1 truncate">{sub}</div>
             <div className="h-[3px] w-9 rounded-full mt-2.5" style={{ background: `linear-gradient(90deg, ${accent}, transparent)` }} />
         </div>
     </button>
@@ -3665,7 +3665,7 @@ ${olderText}
             </button>
 
             {/* App cards —— 「联系人」占据原 Message 的主位（Message 已废弃，收进联系人里做不起眼入口） */}
-            <div className="grid grid-cols-2 gap-3.5 mb-3.5">
+            <div className="grid grid-cols-4 gap-3 mb-3.5">
                 <HomeCard icon={<UsersThree size={24} weight="light" />} label="联系人" sub={contactsSub} accent="#f472b6"
                     onClick={() => { setActiveAppId('contacts'); trackEvent('打开查手机子应用', { subApp: 'contacts' }); }} />
                 <HomeCard icon={<ImagesSquare size={24} weight="light" />} label="Moments" sub={momentsSub} accent="#c084fc"
@@ -3696,7 +3696,7 @@ ${olderText}
             </button>
 
             {/* Add app + my apps row */}
-            <div className="grid grid-cols-2 gap-3.5 mb-7">
+            <div className="grid grid-cols-4 gap-3 mb-7">
                 <button onClick={() => setShowCreateModal(true)}
                     className={`${customApps.length ? '' : 'col-span-2'} rounded-[20px] p-4 border border-dashed border-white/15 bg-white/[0.02] flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition min-h-[90px]`}>
                     <Plus size={22} weight="light" className="text-white/60" />
@@ -3765,17 +3765,17 @@ ${olderText}
                 <span className="text-[11px] tracking-[0.3em] uppercase text-white/45">Installed Apps</span>
                 <div className="w-12" />
             </div>
-            <div className="grid grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-4 gap-3">
                 {customApps.map(app => {
                     const accent = app.color || '#8b9cff';
                     const count = records.filter(r => r.type === app.id).length;
                     return (
                         <div key={app.id} className="relative group">
                             <button onClick={() => setActiveAppId(app.id)}
-                                className="w-full rounded-[24px] p-4 text-left overflow-hidden border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl active:scale-[0.98] transition min-h-[130px] flex flex-col justify-between">
+                                className="w-full rounded-[24px] p-4 text-left overflow-hidden border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl active:scale-[0.98] transition min-h-[96px] flex flex-col justify-between">
                                 <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full blur-2xl opacity-50 pointer-events-none"
                                     style={{ background: `radial-gradient(circle, ${accent}, transparent 70%)` }} />
-                                <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl border border-white/[0.08] relative z-10"
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-2xl border border-white/[0.08] relative z-10"
                                     style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}0a)`, boxShadow: `inset 0 0 16px ${accent}22` }}>
                                     {app.icon}
                                 </div>
@@ -3791,7 +3791,7 @@ ${olderText}
                     );
                 })}
                 <button onClick={() => setShowCreateModal(true)}
-                    className="rounded-[24px] p-4 border border-dashed border-white/15 bg-white/[0.02] flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition min-h-[130px]">
+                    className="rounded-[24px] p-4 border border-dashed border-white/15 bg-white/[0.02] flex flex-col items-center justify-center gap-2 active:scale-[0.98] transition min-h-[96px]">
                     <Plus size={24} weight="light" className="text-white/60" />
                     <span className="text-[11px] tracking-[0.2em] uppercase text-white/50">Add App</span>
                 </button>
@@ -3904,7 +3904,7 @@ ${olderText}
                     </button>
                 </div>
                 {(() => {
-                    const PER_PAGE = 6;
+                    const PER_PAGE = 16;
                     const groupChars = filterCharactersByGroup(characters, characterGroups, selectGroupId);
                     const pageCount = Math.max(1, Math.ceil(groupChars.length / PER_PAGE));
                     const cur = Math.min(selectPage, pageCount - 1);
@@ -3914,12 +3914,12 @@ ${olderText}
                             <CharacterGroupFilterBar characters={characters} groups={characterGroups} dark
                                 value={selectGroupId} onChange={(id) => { setSelectGroupId(id); setSelectPage(0); }}
                                 className="px-5 pt-1 shrink-0" />
-                            <div className="flex-1 min-h-0 px-5 grid grid-cols-2 grid-rows-3 gap-4 content-center pb-4 pt-2">
+                            <div className="flex-1 min-h-0 px-5 grid grid-cols-4 gap-3 content-center pb-4 pt-2">
                                 {pageChars.map(c => (
                                     <div key={c.id} onClick={() => handleSelectChar(c)}
-                                        className="min-h-0 rounded-3xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl p-4 flex flex-col items-center justify-center gap-3 cursor-pointer active:scale-95 transition group hover:border-violet-400/50 hover:shadow-[0_0_24px_rgba(157,124,255,0.25)] relative overflow-hidden">
+                                        className="min-h-0 rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl p-3 flex flex-col items-center justify-center gap-3 cursor-pointer active:scale-95 transition group hover:border-violet-400/50 hover:shadow-[0_0_24px_rgba(157,124,255,0.25)] relative overflow-hidden">
                                         <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full blur-3xl bg-violet-500/0 group-hover:bg-violet-500/20 transition" />
-                                        <div className="w-20 h-20 rounded-full p-[2px] border-2 border-white/15 group-hover:border-violet-400/70 transition-colors relative z-10 shrink-0">
+                                        <div className="w-12 h-12 rounded-full p-[2px] border-2 border-white/15 group-hover:border-violet-400/70 transition-colors relative z-10 shrink-0">
                                             <TokenImg value={c.avatar} className="w-full h-full rounded-full object-cover grayscale group-hover:grayscale-0 transition-all" />
                                         </div>
                                         <div className="text-center relative z-10">
