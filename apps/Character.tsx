@@ -19,6 +19,8 @@ import { safeFetchJson, extractContent } from '../utils/safeApi';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { generateRelationshipProfiles, REL_PERSONA_MAX_CHARS } from '../utils/relationshipGen';
+import { ensureRelationLink, listJoinableHomes } from '../utils/relationshipHomeLink';
+import type { WorldProfile } from '../types';
 import { normalizeElevenLabsVoiceId, synthesizeSpeechElevenLabsDetailed } from '../utils/elevenLabsTts';
 import { normalizeUserImpression } from '../utils/impression';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -388,6 +390,46 @@ const Character: React.FC = () => {
   const [isGeneratingRels, setIsGeneratingRels] = useState(false);
   const [editingRelId, setEditingRelId] = useState<string | null>(null);
   const [relDraft, setRelDraft] = useState<{ name: string; persona: string; relation: string }>({ name: '', persona: '', relation: '' });
+  const [relHomeTarget, setRelHomeTarget] = useState<string | null>(null);
+  const [homeChoices, setHomeChoices] = useState<WorldProfile[]>([]);
+  const openRelHomePicker = async (relId: string) => {
+    setRelHomeTarget(relId);
+    try {
+      const all = await DB.getWorlds();
+      setHomeChoices(listJoinableHomes(formData?.id || '', all));
+    } catch { setHomeChoices([]); }
+  };
+  const chooseRelHome = async (relId: string, homeId: string | undefined) => {
+    if (!formData) return;
+    const prev = formData.relationshipProfiles || [];
+    const target = prev.find(r => r.id === relId);
+    const prevHome = target?.homeId;
+    const next = ensureRelationLink(prev, relId, homeId);
+    handleChange('relationshipProfiles', next);
+    setRelHomeTarget(null);
+    try {
+      const ownerId = formData.id;
+      if (!ownerId) return;
+      if (prevHome && prevHome !== homeId) {
+        try {
+          const wPrev = await DB.getWorld(prevHome);
+          if (wPrev && (wPrev.memberIds || []).includes(ownerId)) {
+            const stillNeeded = next.some(r => r.homeId === prevHome);
+            if (!stillNeeded) {
+              await DB.saveWorld({ ...wPrev, memberIds: (wPrev.memberIds || []).filter(m => m !== ownerId), houses: (wPrev.houses || []).map(h => ({ ...h, residentIds: (h.residentIds || []).filter(rid => rid !== ownerId) })) });
+            }
+          }
+        } catch { /* ignore */ }
+      }
+      if (homeId) {
+        const w = await DB.getWorld(homeId);
+        if (w && !(w.memberIds || []).includes(ownerId)) {
+          await DB.saveWorld({ ...w, memberIds: [...(w.memberIds || []), ownerId] });
+        }
+      }
+    } catch { /* ignore */ }
+    trackEvent('update relationship home link');
+  };
 
   /** 生成人物关系：要求留空 = 自然发散；单次 LLM 调用批量产出，落库自动保存 */
   const handleGenerateRelationships = async () => {
@@ -2023,7 +2065,7 @@ ${isInitialGeneration ? `
                                                            </button>
                                                        </div>
                                                    </div>
-                                                   <p className="text-[11px] leading-relaxed text-slate-500 mt-1.5 whitespace-pre-wrap">{rel.persona}</p>
+                                                   <p className="text-[11px] leading-relaxed text-slate-500 mt-1.5 whitespace-pre-wrap">{rel.persona}</p><div className="flex items-center gap-2 mt-2"><span className="text-[10px] px-2 py-0.5 rounded-full border border-violet-200 bg-violet-50 text-violet-600 font-bold truncate max-w-[140px]">{rel.homeId ? (homeChoices.find(w => w.id === rel.homeId)?.name || rel.homeId.slice(0, 6)) : "未选家园"}</span><button onClick={() => openRelHomePicker(rel.id)} className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-500 font-bold active:scale-95 transition-transform">{"选择家园"}</button></div>{relHomeTarget === rel.id && (<Modal isOpen={true} title="选择加入的家园" onClose={() => setRelHomeTarget(null)}><div className="space-y-2 max-h-[40vh] overflow-y-auto">{homeChoices.length === 0 && (<div className="text-xs text-slate-400 text-center py-4">{"暂无家园"}</div>)}{homeChoices.map(w => (<button key={w.id} onClick={() => chooseRelHome(rel.id, w.id)} className={"w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left " + (rel.homeId === w.id ? "border-violet-400 bg-violet-50" : "border-slate-200 bg-white")}><span className="text-xs font-bold text-slate-700 truncate">{w.name}</span><span className="text-[10px] text-slate-400 shrink-0">{w.memberIds.length}{"成员"}{rel.homeId === w.id ? " · 已加入" : ""}</span></button>))}{rel.homeId && (<button onClick={() => chooseRelHome(rel.id, undefined)} className="w-full px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-500 text-xs font-bold">{"移除家园"}</button>)}</div></Modal>)}
                                                </div>
                                            )}
                                        </div>

@@ -31,6 +31,7 @@ import {
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import { createQixiChatMessagePair } from '../utils/qixiChatCard';
+import StoryTheater from './date/story/StoryTheater';
 
 // ============================================================
 // 情人节立绘 Sprite 映射 (占位 emoji，等图片整理好后替换为图床URL)
@@ -1331,6 +1332,7 @@ const THEME_VALENTINE: EventCardTheme = {
 export const SpecialMomentsApp: React.FC = () => {
     const { closeApp, openApp, characters, setActiveCharacterId, addToast, updateCharacter, apiConfig, userProfile } = useOS();
     const [showSession, setShowSession] = useState(false);
+    const [showCustomTheater, setShowCustomTheater] = useState(false);
     const [selectedCharId, setSelectedCharId] = useState<string>('');
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
@@ -1485,6 +1487,11 @@ export const SpecialMomentsApp: React.FC = () => {
         openQixiSession(charId, 'fresh');
     };
 
+    if (showCustomTheater) {
+        return (
+            <StoryTheater onSwitchCompanion={() => setShowCustomTheater(false)} onClose={() => setShowCustomTheater(false)} />
+        );
+    }
     const qixiChar = characters.find(c => c.id === qixiCharId);
     if (showQixiSession && qixiChar) {
         return (
@@ -1621,6 +1628,21 @@ export const SpecialMomentsApp: React.FC = () => {
                         pendingDeleteId={deleteTargetId}
                     />
                 )}
+                {/* 自定义小剧场 */}
+                <div className="mb-6" style={{ contain: 'layout paint' }}>
+                    <div className="rounded-3xl p-6 text-white relative overflow-hidden bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-500 shadow-xl shadow-purple-200">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-bl-full pointer-events-none" />
+                        <div className="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-tr-full pointer-events-none" />
+                        <div className="relative">
+                            <div className="text-3xl mb-2">🎬</div>
+                            <h2 className="text-xl font-bold mb-1">自定义小剧场</h2>
+                            <p className="text-purple-100/90 text-xs mb-2">自由输入生成内容、选择角色与世界书条目</p>
+                            <p className="text-purple-100/90 text-xs mb-4">喜欢的可收藏回顾</p>
+                            <button onClick={() => setShowCustomTheater(true)} className="px-4 py-2 rounded-2xl bg-white/20 border border-white/30 text-sm font-bold active:scale-95 transition-transform">打开小剧场</button>
+                            <p className="text-[10px] text-purple-100/60 mt-3 text-center">独立存档，不影响其他特别时光</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {qixiChoiceCharId && (

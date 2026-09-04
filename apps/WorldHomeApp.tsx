@@ -590,7 +590,7 @@ const WorldEditor: React.FC<{
     const [w, setW] = useState<WorldProfile>(draft);
     const upd = (updates: Partial<WorldProfile>) => setW(prev => ({ ...prev, ...updates }));
     // 「住进这个世界的角色」多选的分组筛选（只影响显示哪些可选项，已选成员不受影响）
-    const { characterGroups } = useOS();
+    const { characterGroups, updateCharacter } = useOS();
     const [memberGroupId, setMemberGroupId] = useState<string>(GROUP_FILTER_ALL);
     const members = useMemo(() => w.memberIds.map(id => characters.find(c => c.id === id)).filter(Boolean) as CharacterProfile[], [w.memberIds, characters]);
 
@@ -650,9 +650,27 @@ const WorldEditor: React.FC<{
                 houses: w.houses.map(h => ({ ...h, residentIds: h.residentIds.filter(r => r !== id) })),
                 relationships: w.relationships.filter(r => r.fromId !== id && r.toId !== id),
             });
+            try {
+                const target = characters.find(c => c.id === id);
+                const rels = target?.relationshipProfiles || [];
+                if (rels.some(r => r.homeId === w.id)) {
+                    updateCharacter(id, { relationshipProfiles: rels.map(r => (r.homeId === w.id ? { ...r, homeId: undefined } : r)) });
+                }
+            } catch { /* ignore */ }
         } else {
             upd({ memberIds: [...w.memberIds, id] });
         }
+    };
+    const linkRelationToWorld = (ownerId: string, relId: string, join: boolean) => {
+        try {
+            const target = characters.find(c => c.id === ownerId);
+            if (!target) return;
+            const rels = target.relationshipProfiles || [];
+            updateCharacter(ownerId, { relationshipProfiles: rels.map(r => (r.id === relId ? { ...r, homeId: join ? w.id : undefined } : r)) });
+            if (join && !w.memberIds.includes(ownerId)) {
+                upd({ memberIds: [...w.memberIds, ownerId] });
+            }
+        } catch { /* ignore */ }
     };
 
     const toggleResident = (houseId: string, charId: string) => {
@@ -853,13 +871,31 @@ const WorldEditor: React.FC<{
                         <button key={c.id} onClick={() => toggleMember(c.id)}
                             className={`flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full border transition-all ${w.memberIds.includes(c.id) ? 'bg-stone-900 border-stone-900 text-white shadow-md' : 'bg-white border-stone-200 text-stone-700'}`}>
                             <TokenImg value={c.avatar} className="w-6 h-6 rounded-full object-cover" alt="" />
-                            <span className="text-[12px] font-semibold">{c.name}</span>
+                            <span className="text-[12px] font-semibold">{c.name}</span>{(c.relationshipProfiles || []).some(r => r.homeId === w.id) && (<span className="text-[9px] px-1.5 py-px rounded-full bg-violet-600 text-white font-bold shrink-0">链</span>)}
                         </button>
                     ))}
                 </div>
                 {characters.length === 0 && <div className="text-[11px] text-stone-400">还没有角色，先去「神经链接」创建</div>}
                 {characters.length > 0 && filterCharactersByGroup(characters, characterGroups, memberGroupId).length === 0 &&
                     <div className="text-[11px] text-stone-400">该分组下没有角色</div>}
+            </div>
+
+            <div className={sectionCls}>
+                <div className={labelCls}>来自人物关系的候选</div>
+                <div className="text-[10px] text-stone-400">把已选角色的人物关系直接拉进本家园</div>
+                <div className="flex flex-wrap gap-2">
+                    {characters.flatMap((c) => ((c.relationshipProfiles || []).map((r) => ({ owner: c, rel: r })))).map(({ owner, rel }) => {
+                        const joined = rel.homeId === w.id;
+                        return (
+                            <button key={owner.id + ':' + rel.id} onClick={() => linkRelationToWorld(owner.id, rel.id, !joined)}
+                                className={`flex items-center gap-1.5 pl-2 pr-2.5 py-1 rounded-full border transition-all ${joined ? 'bg-violet-600 border-violet-600 text-white shadow-md' : 'bg-white border-stone-200 text-stone-700'}`}>
+                                <span className="text-[12px] font-semibold">{owner.name} · {rel.name}</span>
+                                <span className={`text-[9px] px-1.5 py-px rounded-full font-bold shrink-0 ${joined ? 'bg-white/20 text-white' : 'bg-violet-100 text-violet-700'}`}>{joined ? '已加入' : '加入'}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+                {characters.every((c) => !(c.relationshipProfiles || []).length) && (<div className="text-[11px] text-stone-400">暂无人物关系</div>)}
             </div>
 
             <div className={sectionCls}>

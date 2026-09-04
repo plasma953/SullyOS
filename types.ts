@@ -1027,6 +1027,8 @@ export interface RelationshipProfile {
     /** 来源：directed=用户给了定向要求；divergent=自然发散 */
     generatedFrom: 'directed' | 'divergent';
     createdAt: number;
+    /** linked home (WorldProfile.id). Owner char joins this home. */
+    homeId?: string;
 }
 
 export interface PhoneContact {
