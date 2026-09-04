@@ -47,11 +47,13 @@ export function useReaderTheme(): { theme: ReadingThemeId; setTheme: (t: Reading
 /** 解析 blobref 令牌后渲染；首帧未解析完成时占位，避免闪破图。
  *  small=true：引用上下文内的标注图，压缩为行内小尺寸，避免大图霸屏打断阅读。 */
 let __activeImgCfg: EpubImageConfig | null = null;
-const BlobImg: React.FC<{ src: string; small?: boolean; role?: string; widthAttr?: string | null }> = ({ src, small, role }) => {
+let __activeHidden: Set<string> | null = null;
+const BlobImg: React.FC<{ src: string; small?: boolean; role?: string; widthAttr?: string | null; hidden?: boolean }> = ({ src, small, role, hidden }) => {
     const resolved = useBlobRefUrl(src);
     const cfg = __activeImgCfg || loadEpubImageConfig();
     const effRole = role || (small ? 'note' : 'content');
     if (effRole === 'icon' && cfg.hideIconImages) return null;
+    if (hidden || (__activeHidden && __activeHidden.has(src))) return <span className={`epub-r-img-hidden ${effRole !== 'content' ? 'h-10' : 'h-16'} block my-3 rounded-xl border border-dashed flex items-center justify-center text-[10px] opacity-60`}>已隐藏重复图片</span>;
     if (!resolved) {
         return <span className={`epub-r-img-ph ${effRole !== 'content' ? 'h-10' : 'h-32'} block my-3 rounded-xl animate-pulse`} aria-label="图片加载中" />;
     }
@@ -112,7 +114,7 @@ function renderNode(node: Node, keyPrefix: string): React.ReactNode {
                 else if (wA > 0 && hA > 0 && wA <= 64 && hA <= 64) role = 'icon';
                 else role = 'content';
             }
-            return <BlobImg key={keyPrefix} src={src} small={inQuote} role={role} />;
+            return <BlobImg key={keyPrefix} src={src} small={inQuote} role={role} hidden={__activeHidden ? __activeHidden.has(src) : false} />;
         }
         case 'br': return <br key={keyPrefix} />;
         case 'hr': return <hr key={keyPrefix} className="er-line my-5" />;
@@ -159,8 +161,9 @@ function renderNode(node: Node, keyPrefix: string): React.ReactNode {
 }
 
 /** EPUB 原文渲染主体。html 为空且给出 fallbackText 时降级为纯文本模式。 */
-export const EpubReaderContent: React.FC<{ html: string; textOnly?: boolean; fallbackText?: string; imageConfig?: EpubImageConfig }> = ({ html, textOnly, fallbackText, imageConfig }) => {
+export const EpubReaderContent: React.FC<{ html: string; textOnly?: boolean; fallbackText?: string; imageConfig?: EpubImageConfig; hiddenImageRefs?: string[] }> = ({ html, textOnly, fallbackText, imageConfig, hiddenImageRefs }) => {
     __activeImgCfg = imageConfig || null;
+    __activeHidden = hiddenImageRefs && hiddenImageRefs.length ? new Set(hiddenImageRefs) : null;
     try { if (!__activeImgCfg) __activeImgCfg = loadEpubImageConfig(); } catch { __activeImgCfg = null; }
     const tree = React.useMemo(() => {
         if (!html) return null;

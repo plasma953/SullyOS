@@ -3870,6 +3870,8 @@ export interface StudyCourse {
     toc?: StudyTocNode[];
     /** Course-level memory opt-in (undefined = inherit global). */
     memoryEnabled?: boolean;
+    /** EPUB duplicate-image hide list: user-selected blobref tokens (undefined = hide none). */
+    hiddenImageRefs?: string[];
 }
 
 export interface StudyTutorPreset {

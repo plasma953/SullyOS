@@ -20,7 +20,7 @@ import { tocForCourse } from '../utils/studyToc';
 import { loadStudyPromptConfig, saveStudyPromptConfig, resetStudyPromptConfig, renderStudyPrompt, type StudyPromptConfig } from '../utils/studyPrompts';
 import { splitChapterText, buildMergeInput, lectureSourceForChapter, topKChunksForQuery, loadSummaryThreshold, saveSummaryThreshold } from '../utils/studySummary';
 import { CLASSROOM_THEMES, loadClassroomTheme, saveClassroomTheme, type ClassroomThemeId } from '../utils/studyClassroomTheme';
-import { loadEpubImageConfig, saveEpubImageConfig, type EpubImageConfig } from '../utils/studyEpubImageConfig';
+import { loadEpubImageConfig, saveEpubImageConfig, findDuplicateImages, type EpubImageConfig, type DuplicateImageInfo } from '../utils/studyEpubImageConfig';
 import { loadStudyMemoryDefault, saveStudyMemoryDefault, loadStudyVectorEnabled, saveStudyVectorEnabled, isChapterMemoryEnabled } from '../utils/studyMemory';
 
 type KatexLike = {
@@ -392,6 +392,39 @@ const StudyApp: React.FC = () => {
     const [vectorEnabled, setVectorEnabled] = useState<boolean>(() => loadStudyVectorEnabled());
     const [memoryDefault, setMemoryDefault] = useState<boolean>(() => loadStudyMemoryDefault());
     const [epubImgCfg, setEpubImgCfg] = useState<EpubImageConfig>(() => loadEpubImageConfig());
+    const [showDupModal, setShowDupModal] = useState(false);
+    const [dupList, setDupList] = useState<DuplicateImageInfo[]>([]);
+    const [dupSelected, setDupSelected] = useState<string[]>([]);
+    const [dupScanned, setDupScanned] = useState(false);
+    const scanDupImages = () => {
+        if (!activeCourse) { addToast('请先打开一本书再扫描', 'info'); return; }
+        const list = findDuplicateImages(activeCourse.chapters || [], epubImgCfg.dupThreshold);
+        setDupList(list);
+        setDupSelected(activeCourse.hiddenImageRefs || []);
+        setDupScanned(true);
+        setShowDupModal(true);
+        trackEvent('扫描重复图片', { count: String(list.length) });
+    };
+    const confirmDupHide = async () => {
+        if (!activeCourse) return;
+        const target = courses.find(c => c.id === activeCourse.id) || activeCourse;
+        const updated = { ...target, hiddenImageRefs: dupSelected.length ? [...dupSelected] : undefined };
+        setActiveCourse(updated);
+        setCourses(prev => prev.map(c => c.id === updated.id ? updated : c));
+        await DB.saveCourse(updated);
+        setShowDupModal(false);
+        addToast(dupSelected.length ? '已隐藏 ' + dupSelected.length + ' 张图片' : '已清除隐藏', 'success');
+    };
+    const clearDupHide = async () => {
+        if (!activeCourse) return;
+        const target = courses.find(c => c.id === activeCourse.id) || activeCourse;
+        const updated = { ...target, hiddenImageRefs: undefined };
+        setActiveCourse(updated);
+        setCourses(prev => prev.map(c => c.id === updated.id ? updated : c));
+        await DB.saveCourse(updated);
+        setDupSelected([]);
+        addToast('已清除隐藏', 'success');
+    };
     const [summaryLayers, setSummaryLayers] = useState<{ range: string; summary: string }[]>([]);
     const [showClassThemeMenu, setShowClassThemeMenu] = useState(false);
     const readerBarRef = useRef<HTMLDivElement | null>(null);
@@ -2070,6 +2103,20 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                     <div><div className="text-[10px] text-slate-400 mb-1">小图阈值</div><input type="number" min={16} max={256} value={epubImgCfg.smallImageThreshold} onChange={(e) => { const v = { ...epubImgCfg, smallImageThreshold: Math.max(16, Math.min(256, Number(e.target.value) || 64)) }; setEpubImgCfg(v); saveEpubImageConfig(v); }} className="w-full bg-white rounded-lg p-2 text-xs" /></div>
                                 </div>
                                 <div className="text-[10px] text-slate-400">引注 / 小图保持原文位置行内显示，不放大居中</div>
+                                <label className="flex items-center justify-between text-xs text-slate-600 font-bold">
+                                    <span>重复图片检测</span>
+                                    <button onClick={() => { const v = { ...epubImgCfg, dupDetectEnabled: !epubImgCfg.dupDetectEnabled }; setEpubImgCfg(v); saveEpubImageConfig(v); }} className={`w-10 h-6 rounded-full transition-colors ${epubImgCfg.dupDetectEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`} >
+                                        <span className={`block w-5 h-5 bg-white rounded-full shadow transition-transform ${epubImgCfg.dupDetectEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                    </button>
+                                </label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div><div className="text-[10px] text-slate-400 mb-1">重复次数阈值</div><input type="number" min={2} max={10} value={epubImgCfg.dupThreshold} onChange={(e) => { const v = { ...epubImgCfg, dupThreshold: Math.max(2, Math.min(10, Math.round(Number(e.target.value) || 3))) }; setEpubImgCfg(v); saveEpubImageConfig(v); }} className="w-full bg-white rounded-lg p-2 text-xs" /></div>
+                                    <div className="flex items-end"><button onClick={scanDupImages} className="w-full py-2 bg-emerald-500 text-white text-xs font-bold rounded-xl active:scale-95 transition">扫描本书重复图片</button></div>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                    <span>全书出现 ≥ N 次的图片会列出，由你勾选隐藏（含正文大图）</span>
+                                    {activeCourse?.hiddenImageRefs?.length ? (<button onClick={clearDupHide} className="text-rose-500 font-bold shrink-0 ml-2">清除隐藏({activeCourse.hiddenImageRefs.length})</button>) : null}
+                                </div>
                             </div>
                         </div>
                         <div>
@@ -2082,6 +2129,45 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             </div>
                         </div>
                     </div>
+                </Modal>
+
+                                {/* 重复图片列表 Modal */}
+                <Modal
+                    isOpen={showDupModal}
+                    title="重复图片"
+                    onClose={() => setShowDupModal(false)}
+                    footer={
+                        <div className="flex gap-2 w-full">
+                            <button onClick={() => setShowDupModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
+                            <button onClick={confirmDupHide} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-200">确认隐藏({dupSelected.length})</button>
+                        </div>
+                    }
+                >
+                    {dupList.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-slate-400">本书没有出现 ≥ {epubImgCfg.dupThreshold} 次的重复图片</div>
+                    ) : (
+                        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                            <div className="flex items-center justify-between px-1">
+                                <span className="text-[11px] text-slate-400">共 {dupList.length} 张图片出现 ≥ {epubImgCfg.dupThreshold} 次，勾选后隐藏</span>
+                                <button onClick={() => setDupSelected(dupSelected.length === dupList.length ? [] : dupList.map(d => d.ref))} className="text-[11px] font-bold text-emerald-600">全选/取消</button>
+                            </div>
+                            {dupList.map(item => {
+                                const checked = dupSelected.includes(item.ref);
+                                const roleLabel = item.role === 'note' ? '引注图' : item.role === 'icon' ? '小图标' : '正文图';
+                                return (
+                                    <button key={item.ref} onClick={() => setDupSelected(prev => prev.includes(item.ref) ? prev.filter(r => r !== item.ref) : [...prev, item.ref])}
+                                        className={`w-full flex items-center gap-3 rounded-2xl border p-2.5 text-left transition ${checked ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-white'}`} >
+                                        <TokenImg value={item.ref} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                                        <span className="flex-1 min-w-0">
+                                            <span className="block text-[11px] font-mono truncate text-slate-600">{item.ref}</span>
+                                            <span className="block text-[10px] text-slate-400">出现 {item.count} 次 · {roleLabel}</span>
+                                        </span>
+                                        <span className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 text-[11px] font-bold transition ${checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-transparent'}`}>✓</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </Modal>
 
                 {/* Delete Confirmation Modal */}
@@ -2170,7 +2256,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             html={readerChapter?.rawHtml || ''}
                             textOnly={readerChapter?.textOnly}
                             fallbackText={readerChapter?.plainText || readerChapter?.summary || ''}
-                            imageConfig={epubImgCfg}
+                            imageConfig={epubImgCfg} hiddenImageRefs={activeCourse?.hiddenImageRefs}
                         />
                     </div>
                 </div>

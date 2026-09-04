@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildFlatToc, flattenToc, mapTocToChapters, tocForCourse } from "./studyToc";
 import { defaultStudyPromptConfig, renderStudyPrompt, listPromptVars } from "./studyPrompts";
 import { splitChapterText, buildMergeInput, lectureSourceForChapter, topKChunksForQuery } from "./studySummary";
-import { classifyEpubImgRole } from "./studyEpubImageConfig";
+import { classifyEpubImgRole, extractImageRefsFromHtml, findDuplicateImages } from "./studyEpubImageConfig";
 import { isChapterMemoryEnabled } from "./studyMemory";
 
 describe("studyToc", () => {
@@ -87,5 +87,25 @@ describe("study memory switch", () => {
     expect(isChapterMemoryEnabled({ courseEnabled: true, chapterEnabled: false, globalDefault: true })).toBe(false);
     expect(isChapterMemoryEnabled({ courseEnabled: false, chapterEnabled: undefined, globalDefault: true })).toBe(false);
     expect(isChapterMemoryEnabled({ courseEnabled: undefined, chapterEnabled: undefined, globalDefault: true })).toBe(true);
+  });
+});
+
+describe("epub duplicate images", () => {
+  const H1 = '<p>a<img src="blobref:b_1" data-epub-img-role="content"></p><p>b<img src="blobref:b_1" data-epub-img-role="content"><img src="blobref:b_2" data-epub-img-role="note"></p>';
+  it("counts refs per html", () => {
+    const m = extractImageRefsFromHtml(H1);
+    expect(m.get("blobref:b_1")?.count).toBe(2);
+    expect(m.get("blobref:b_2")?.role).toBe("note");
+  });
+  it("finds duplicates across chapters with threshold", () => {
+    const chs = [{ rawHtml: '<img src="blobref:b_1"><img src="blobref:b_1"><img src="blobref:b_1">' }, { rawHtml: '<img src="blobref:b_1"><img src="blobref:b_2">' }];
+    const dup = findDuplicateImages(chs as never, 3);
+    expect(dup.length).toBe(1);
+    expect(dup[0].ref).toBe("blobref:b_1");
+    expect(dup[0].count).toBe(4);
+  });
+  it("returns empty when below threshold", () => {
+    const chs = [{ rawHtml: '<img src="blobref:b_9">' }];
+    expect(findDuplicateImages(chs as never, 3)).toEqual([]);
   });
 });
