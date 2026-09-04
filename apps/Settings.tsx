@@ -2665,6 +2665,31 @@ const Settings: React.FC = () => {
                     <input type="password" value={localAgentToken} onChange={(e) => setLocalAgentToken(e.target.value)} placeholder="X-Client-Token（VPS 的 AMSG_CLIENT_TOKEN）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                     <p className="text-[9px] text-slate-400 mt-1 pl-1">VPS 没开鉴权就留空；填错会连不上中转。</p>
                 </div>
+                <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">中转用模型（手机预设直传）</label>
+                        <span className="text-[9px] text-slate-300">换预设即时生效</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed">VPS 不存模型：每次经中转聊天都把当前手机预设的 URL/Key/Model 打包进 llm 字段随请求直传，不用改 VPS .env。</p>
+                    <p className="text-[10px] text-slate-600 leading-relaxed mt-1.5">当前中转用：{activePresetId ? (apiPresets.find(p => p.id === activePresetId)?.name || '') + ' - ' + (apiConfig.model || '') : '未选预设（先在上方 API 配置选一条）'}</p>
+                    {apiPresets.length > 0 ? (
+                        <div className="flex gap-2 flex-wrap mt-2">
+                            {apiPresets.map(preset => (
+                                <button
+                                    key={preset.id}
+                                    type="button"
+                                    onClick={() => applyPreset(preset)}
+                                    className={`max-w-full px-3 py-1.5 rounded-lg border text-[11px] font-medium truncate transition-colors ${activePresetId === preset.id ? 'bg-violet-100 border-violet-200 text-violet-700' : 'bg-white border-slate-200 text-slate-500 hover:border-violet-200'}`}
+                                    title={`${preset.name} · ${preset.config.model || ''}`}
+                                >
+                                    {preset.name}
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-[10px] text-slate-400 leading-relaxed mt-1.5">还没有模型预设；先在上方 API 配置里新建一条，回来点一下即可经 VPS 用它聊天。</p>
+                    )}
+                </div>
                 <div className="flex gap-2">
                     <button
                         type="button"
