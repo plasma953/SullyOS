@@ -3,6 +3,14 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/agent/:path*",
+      "destination": "https://43451695.xyz/agent/:path*"
+    },
+    {
+      "source": "/amsg/:path*",
+      "destination": "https://43451695.xyz/amsg/:path*"
+    },
+    {
       "source": "/((?!api/|.*\\..*).*)",
       "destination": "/index.html"
     }

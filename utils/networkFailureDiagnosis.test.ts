@@ -22,6 +22,7 @@ import {
     resetReachabilityProbeCooldown,
     shouldProbeReachability,
     summarizeFetchRequestBody,
+    toSameOriginProxyUrl,
 } from './networkFailureDiagnosis';
 
 const failedToFetch = () => new TypeError('Failed to fetch');
@@ -473,3 +474,24 @@ describe('parseTargetUrl / 自查清单', () => {
         expect(NETWORK_SELF_CHECK_STEPS[0]).toContain('梯子');
     });
 });
+
+ describe('toSameOriginProxyUrl', () => {
+    const PAGE = 'https://sully-os-gamma.vercel.app';
+    it('maps VPS agent health to same-origin proxy path', () => {
+        expect(toSameOriginProxyUrl('https://43451695.xyz/agent/health', PAGE)).toBe(PAGE + '/agent/health');
+    });
+    it('maps VPS amsg URL preserving query string', () => {
+        expect(toSameOriginProxyUrl('https://43451695.xyz/amsg/v1/tools?x=1', PAGE)).toBe(PAGE + '/amsg/v1/tools?x=1');
+    });
+    it('returns null for non-VPS hosts (third-party must not be rerouted)', () => {
+        expect(toSameOriginProxyUrl('https://api.example.com/agent/health', PAGE)).toBeNull();
+    });
+    it('returns null when page is already on the backend origin', () => {
+        expect(toSameOriginProxyUrl('https://43451695.xyz/agent/health', 'https://43451695.xyz')).toBeNull();
+    });
+    it('returns null for non-https pages and non-proxied paths', () => {
+        expect(toSameOriginProxyUrl('https://43451695.xyz/agent/health', 'http://localhost:5173')).toBeNull();
+        expect(toSameOriginProxyUrl('https://43451695.xyz/', PAGE)).toBeNull();
+        expect(toSameOriginProxyUrl('not a url', PAGE)).toBeNull();
+    });
+ });

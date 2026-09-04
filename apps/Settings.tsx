@@ -43,7 +43,7 @@ import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
 import StatusBadge from '../components/StatusBadge';
 import { probeApiConfig, probeAgent, probeBridge, probeAmsgWorker, probeVisionApi, probeCloudBackup, probeRealtime, probeMcpServers, probePerspective } from '../utils/statusPanel';
-import { classifyFetchFailure, probeOriginReachability, describeReachabilityProbe, parseTargetUrl } from '../utils/networkFailureDiagnosis';
+import { classifyFetchFailure, probeOriginReachability, describeReachabilityProbe, parseTargetUrl, toSameOriginProxyUrl } from '../utils/networkFailureDiagnosis';
 import { PERCEPTION_CAPABILITIES, perceptionRenderState } from '../utils/perceptionRegistry';
 import { readAgentRoutingConfig } from '../utils/agentRouting';
 import type { APIConfig, BridgeConfig, TtsProvider } from '../types';
@@ -2690,6 +2690,18 @@ const Settings: React.FC = () => {
                                 else if (probe.ok) setAgentTestResult('✅ 中转可用：鉴权通过，可以保存了');
                                 else setAgentTestResult('HTTP ' + probe.status + '：服务异常，请检查 VPS 服务状态');
                             } catch (err: any) {
+                                const healthUrl0 = base + '/agent/health';
+                                try {
+                                    const proxyUrl0 = toSameOriginProxyUrl(healthUrl0);
+                                    if (proxyUrl0) {
+                                        const pr0 = await fetch(proxyUrl0, { method: 'GET' });
+                                        if (pr0.ok) {
+                                            try { setLocalAgentUrl(location.origin); } catch { /* noop */ }
+                                            setAgentTestResult('直连失败，但站内中转可用。已帮你填入站内地址，点保存即可经 Vercel 中转使用。');
+                                            return;
+                                        }
+                                    }
+                                } catch { /* proxy unavailable, fall through to direct-failure diagnosis */ }
                                 setAgentTestResult(await (async () => {
                                     let msg = '连接失败：' + (err?.message || '网络异常');
                                     const NL = String.fromCharCode(10);

@@ -18,7 +18,7 @@ import { queryPerspectiveEvents } from './perspective';
 import { getEffectiveBridges } from './bridgeRegistry';
 import { ActiveMsgStore } from './activeMsgStore';
 import { loadMcpServers } from './mcpClient';
-import { classifyFetchFailure, probeOriginReachability } from './networkFailureDiagnosis';
+import { classifyFetchFailure, probeOriginReachability, toSameOriginProxyUrl } from './networkFailureDiagnosis';
 
 export type BridgeProbeStatus = 'ok' | 'warn' | 'err' | 'off' | 'checking';
 
@@ -124,6 +124,13 @@ export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => 
         }
         return { ...entry, status: 'err', detail: `HTTP ${res.status}` };
     } catch (e: any) {
+        const proxyAgentUrl = toSameOriginProxyUrl(`${base}/agent/health`);
+        if (proxyAgentUrl) {
+            try {
+                const proxyRes = await fetchWithTimeout(proxyAgentUrl, 6000);
+                if (proxyRes.ok) return { ...entry, status: 'warn', detail: '直连不通·中转可用' };
+            } catch { /* proxy path unavailable, fall through */ }
+        }
         return { ...entry, status: 'err', detail: await shortNetworkFailureDetail(`${base}/agent/health`, e) };
     }
 };
@@ -172,6 +179,13 @@ export const probeAmsgWorker = async (): Promise<StatusEntry> => {
         try {
             res = await fetchWithTimeout(`${base}/health`, 5000);
         } catch (e: any) {
+            const proxyAmsgUrl = toSameOriginProxyUrl(`${base}/health`);
+            try {
+                if (proxyAmsgUrl) {
+                    const proxyRes = await fetchWithTimeout(proxyAmsgUrl, 6000);
+                    if (proxyRes.ok) return { ...entry, status: 'warn', detail: '直连不通·中转可用' };
+                }
+            } catch { /* proxy path unavailable, fall through */ }
             return { ...entry, status: 'err', detail: await shortNetworkFailureDetail(`${base}/health`, e) };
         }
         const ms = fmtMs(performance.now() - t0);

@@ -401,3 +401,33 @@ export const NETWORK_SELF_CHECK_STEPS: string[] = [
     '换一个浏览器或换手机热点各试一次，能定位到是「这台设备」还是「这个网络」',
     '如果只有部分功能报错，去设置里看对应的服务地址是不是填错了（少 https://、多空格、多结尾斜杠）',
 ];
+
+/** VPS backend host. The same-origin proxy (vercel.json rewrites) only covers this host. */
+const VPS_BACKEND_HOST = '43451695.xyz';
+
+/**
+ * Map a direct VPS backend URL to its same-origin proxy URL.
+ *
+ * Background: some networks block the direct TLS path to the VPS (RST within
+ * tens of ms) while the hosting origin itself (e.g. *.vercel.app) stays
+ * reachable. vercel.json rewrites `/agent/:path*` and `/amsg/:path*` to the
+ * VPS, so the edge relays server-side and the browser never dials the VPS.
+ *
+ * Returns null when proxying is impossible or pointless: non-https page,
+ * non-VPS host, path outside the two proxied prefixes, page already on the
+ * backend origin, or unparsable URL. Pure function (pageOrigin injectable).
+ */
+export const toSameOriginProxyUrl = (directUrl: string, pageOrigin?: string): string | null => {
+    try {
+        const raw = (pageOrigin ?? (typeof location !== 'undefined' ? location.origin : '')).replace(/\/+$/, '');
+        if (!/^https:\/\/[^/]+$/.test(raw)) return null;
+        const u = new URL(directUrl);
+        if (u.host !== VPS_BACKEND_HOST) return null;
+        if (raw === u.origin) return null;
+        const path = u.pathname + u.search;
+        if (path.startsWith('/agent/') || path.startsWith('/amsg/')) return raw + path;
+        return null;
+    } catch {
+        return null;
+    }
+};
