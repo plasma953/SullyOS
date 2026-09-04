@@ -32,6 +32,7 @@ import {
   describeMultipartFailure,
   handleInstantErrorPushMessage,
   startLateEmotionPoll,
+  sweepLocalInbox,
   shouldRenderInstantly,
   isOutboxBackfill,
 } from './activeMsgRuntime';
@@ -445,6 +446,65 @@ describe('shouldRenderInstantly（这条要不要跳过打字慢放）', () => {
     expect(isOutboxBackfill({ amsgOutboxBackfill: true })).toBe(true);
     expect(isOutboxBackfill({ sessionId: 'sess-1' })).toBe(false);
     expect(isOutboxBackfill(undefined)).toBe(false);
+  });
+});
+
+/**
+ * 这一组守的是线上那条「消息早就在手机里了，页面却白等几十秒」。
+ *
+ * iOS 上 App 不在最前台时，Service Worker 拿到的「当前有哪些页面」名单是空的，存完消息
+ * 喊了也没人听见（实测一轮 8 条推送 8 次全空）。所以页面不能等人喊，得自己隔几秒数一眼
+ * 收件箱——但这趟巡查几秒就跑一次，空表时必须什么都不做，否则光是空转的记录就能把排障
+ * 要看的东西全顶出缓冲区。
+ */
+describe('本地收件箱守望', () => {
+  it('库里没货：不动收件箱，也不留下冲刷记录', async () => {
+    await ActiveMsgStore.consumeInboxMessages();  // 先清干净
+    const before = readAllInstantTraces().length;
+    const consume = vi.spyOn(ActiveMsgStore, 'consumeInboxMessages');
+
+    await sweepLocalInbox();
+
+    expect(consume, '空表就该在数完个数之后收手').not.toHaveBeenCalled();
+    expect(readAllInstantTraces().length, '空转不许写进 trace 缓冲').toBe(before);
+    consume.mockRestore();
+  });
+
+  it('库里有货：自己就接着冲刷，不用等任何人来喊', async () => {
+    await ActiveMsgStore.consumeInboxMessages();
+    await ActiveMsgStore.saveInboxMessage({
+      messageId: 'msg-sweep-1',
+      charId: 'char-sweep',
+      charName: '小明',
+      body: '在吗',
+      messageType: 'text',
+      receivedAt: Date.now(),
+      sentAt: Date.now(),
+      metadata: { charId: 'char-sweep' },
+    } as any);
+    // 取空这一步换成空实现：这条守的是「数出有货就往下走」，冲刷内部怎么处理有它自己
+    // 的用例，不该在这里连带跑一遍真管线（还会往后面的用例里漏重试定时器）。
+    const consume = vi.spyOn(ActiveMsgStore, 'consumeInboxMessages').mockResolvedValue([]);
+    try {
+      await sweepLocalInbox();
+      expect(consume, '数出有货就该接着冲刷').toHaveBeenCalled();
+    } finally {
+      consume.mockRestore();
+      await ActiveMsgStore.consumeInboxMessages();  // 别把这条留给后面的用例
+    }
+  });
+
+  it('页面不可见时连数都不数（后台数了也做不了什么）', async () => {
+    const hadDocument = 'document' in globalThis;
+    (globalThis as any).document = { visibilityState: 'hidden' };
+    const count = vi.spyOn(ActiveMsgStore, 'countInboxMessages');
+    try {
+      await sweepLocalInbox();
+      expect(count).not.toHaveBeenCalled();
+    } finally {
+      if (!hadDocument) delete (globalThis as any).document;
+      count.mockRestore();
+    }
   });
 });
 
