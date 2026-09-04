@@ -32,6 +32,8 @@ import {
   describeMultipartFailure,
   handleInstantErrorPushMessage,
   startLateEmotionPoll,
+  shouldRenderInstantly,
+  isOutboxBackfill,
 } from './activeMsgRuntime';
 import { MULTIPART_FAILURE_REASON } from '@rei-standard/amsg-shared';
 import * as Analytics from './analytics';
@@ -405,6 +407,47 @@ describe('isFreshInboxDelivery（决定要不要慢放打字节奏）', () => {
 // 的话被一个字一个字重演一遍。慢放的意义是「角色正在你眼前打字」，人不在场时它只剩等待。
 //
 // 反过来，用户本来就开着聊天界面时收到的消息要保留慢放：那才是它想要的场景。
+/**
+ * 这一组守的是线上那条「补收回来的消息还在一条条演打字」。
+ *
+ * 补收在写库时会把整批消息的到达时间统一改写成「现在」，于是原来那两条判据（是不是刚
+ * 到的、送达时人在不在场）问的全是同一个已经被改坏的值，双双得出「刚到、用户在场」，
+ * 补收就把自己伪装成了实时消息。判据必须认补收路径自己盖的标记。
+ */
+describe('shouldRenderInstantly（这条要不要跳过打字慢放）', () => {
+  const NOW = 1_700_000_000_000;
+
+  it('补收回来的：哪怕到达时间被改成现在、用户也算在场，照样一次性回填', () => {
+    const rewritten = NOW;               // 被补收改写过的到达时间
+    const visibleSince = NOW - 60_000;   // 用户一分钟前就在前台 → 会被判成「在场」
+
+    // 先钉死「另外两条判据在这个场景下确实指望不上」——它们俩都投了「保留慢放」：
+    expect(isFreshInboxDelivery(rewritten, NOW)).toBe(true);
+    expect(wasDeliveredWhileAway(rewritten, visibleSince)).toBe(false);
+
+    // 认标记就不会被骗。
+    expect(shouldRenderInstantly({ amsgOutboxBackfill: true }, rewritten, NOW, visibleSince)).toBe(true);
+  });
+
+  it('SW 直送、用户就在前台看着的：保留打字节奏', () => {
+    expect(shouldRenderInstantly({ sessionId: 'sess-1' }, NOW - 3_000, NOW, NOW - 60_000)).toBe(false);
+  });
+
+  it('在收件箱里躺了十分钟才被捞出来的：一次性回填', () => {
+    expect(shouldRenderInstantly(undefined, NOW - 10 * 60_000, NOW, NOW - 60_000)).toBe(true);
+  });
+
+  it('送达时人不在场（系统通知已经念过一遍）：一次性回填', () => {
+    expect(shouldRenderInstantly(undefined, NOW - 3_000, NOW, NOW - 1_000)).toBe(true);
+  });
+
+  it('补收标记只认真的 true，SW 直送那份不带这个键', () => {
+    expect(isOutboxBackfill({ amsgOutboxBackfill: true })).toBe(true);
+    expect(isOutboxBackfill({ sessionId: 'sess-1' })).toBe(false);
+    expect(isOutboxBackfill(undefined)).toBe(false);
+  });
+});
+
 describe('wasDeliveredWhileAway（送达时用户在不在场）', () => {
   const NOW = 1_700_000_000_000;
 

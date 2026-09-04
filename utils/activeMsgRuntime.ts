@@ -757,14 +757,15 @@ const processInboxMessageWithPostProcessing = async (
     // 这条 push 拆出的每条气泡共用一个时间戳 (跟降级存原稿路径同口径), 见
     // resolveInboxPersistTimestampForMessage。
     messageTimestamp: persistTimestamp,
-    // 两种情况跳过拟人打字延迟、一次性回填，共同点是「用户已经读过这句话了，再演一遍
+    // 三种情况跳过拟人打字延迟、一次性回填，共同点是「用户已经读过这句话了，再演一遍
     // 打字过程只剩干等」：
     //   1. 补收：内容几小时前就在云端生成完了，慢放期间用户插的话还会把时间戳倒挂的
-    //      口子撑开（见 resolveBackfillTimestamp）。
-    //   2. 送达时人不在场：系统通知已经把整句话完整显示过，他是看着通知点进来的。
+    //      口子撑开（见 resolveBackfillTimestamp）。判据是补收路径盖的标记，**不是**
+    //      到达时间——那个会被补收自己改写（见 isOutboxBackfill 的说明）。
+    //   2. 在收件箱里躺了一阵才被捞出来的。
+    //   3. 送达时人不在场：系统通知已经把整句话完整显示过，他是看着通知点进来的。
     // App 在前台时收到的实时消息照旧慢放——那才是「角色正在你眼前打字」的场景。
-    instantRender: !isFreshInboxDelivery(message.receivedAt, Date.now())
-      || wasDeliveredWhileAway(message.receivedAt),
+    instantRender: shouldRenderInstantly(message.metadata, message.receivedAt, Date.now()),
   });
 
   // ─── 即时对话（amsg2）的情绪评估结果 ───
@@ -1216,6 +1217,19 @@ async function runPushTailPipeline(
 export const INBOX_FRESH_DELIVERY_WINDOW_MS = 2 * 60_000;
 
 /**
+ * 这条消息是不是从云端账本补收回来的（true = 一次性回填，不演打字）。
+ *
+ * **判据是补收路径写库时盖的那个标记，不是消息上的到达时间。** 补收在写库时会把整批
+ * 消息的到达时间统一改写成「现在」（一次 Date.now() 全批共用），所以拿到达时间去问
+ * 「这条是不是刚到的」，答案永远是「刚到」——补收就这么把自己伪装成了实时消息，然后
+ * 一条条演打字，而它的内容其实早就在系统通知里被完整读过了。
+ * 这个标记只有补收路径带，SW 直送的那份刻意不带（见 outboxPushToInbox）。
+ * 纯函数，边界值见 activeMsgRuntime.test.ts。
+ */
+export const isOutboxBackfill = (metadata: Record<string, any> | undefined): boolean =>
+  metadata?.amsgOutboxBackfill === true;
+
+/**
  * 这条 inbox 消息是不是刚落到设备上的（true = 保留打字节奏，false = 一次性回填）。
  *
  * 判据用 receivedAt（消息落到这台设备的时刻）而不是 sentAt：它剔除了云端到设备之间的
@@ -1265,6 +1279,30 @@ export const wasDeliveredWhileAway = (
   if (!Number.isFinite(becameVisibleAt) || becameVisibleAt <= 0) return false;
   return receivedAt < becameVisibleAt;
 };
+
+/**
+ * 这条要不要跳过拟人打字慢放、一次性回填（true = 跳过）。
+ *
+ * 三条判据任一成立就跳过，共同点是「用户已经读过这句话了，再演一遍打字只剩干等」：
+ *   1. 从云端账本补收回来的——内容早就生成完、通知也念过了；
+ *   2. 在收件箱里躺过一阵才被捞出来的；
+ *   3. 送达那会儿人不在页面上，是看着系统通知点进来的。
+ *
+ * 第 1 条**必须单独判**，不能指望第 2、3 条顺带捞到：补收在写库时会把整批消息的到达
+ * 时间统一改写成「现在」，而第 2、3 条问的都是到达时间——于是它们双双得出「刚到的、
+ * 用户还在场」，补收就这么把自己伪装成了实时消息。线上那八条补收回来的消息一条条重演
+ * 打字，就是这么来的。
+ * 纯函数，边界值见 activeMsgRuntime.test.ts。
+ */
+export const shouldRenderInstantly = (
+  metadata: Record<string, any> | undefined,
+  receivedAt: number | undefined,
+  now: number,
+  becameVisibleAt?: number,
+): boolean =>
+  isOutboxBackfill(metadata)
+  || !isFreshInboxDelivery(receivedAt, now)
+  || wasDeliveredWhileAway(receivedAt, becameVisibleAt);
 
 /**
  * 算一条 inbox 消息落库该用的时间戳：一律取 sentAt（云端真正把这句话发出去的那一刻）。
