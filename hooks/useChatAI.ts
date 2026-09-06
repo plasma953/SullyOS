@@ -51,6 +51,8 @@ import { announceInstantChatRoute, getInstantChatPending, resolveInstantChatRead
 import { INSTANT_TOTAL_TIMEOUT_MS } from '../worker/amsg/src/instantChat';
 import { appendInstantTraceEntry } from '../utils/instantTraceLog';
 import { AMSG2_TOOLS, AMSG2_TOOL_NAMES, createAmsg2ToolSession, executeAmsg2Tool, isAmsg2GlobalReady } from '../utils/amsg2ToolBridge';
+import { bleEngine } from '../utils/bleEngine';
+import { BT_TOOL_NAMES, BT_TOOLS, executeBleSendCommand } from '../utils/bleToolBridge';
 import { shouldSendThinkingParams } from '../utils/thinkingGate';
 import { buildClaudeProxyCompatibilityBody, shouldRetryClaudeProxyCompatibility } from '../utils/claudeProxyCompat';
 import { routeMiniAppToolCall } from '../utils/miniAppToolRoute';
@@ -972,10 +974,12 @@ export const useChatAI = ({
             // 拼进 tools，但参数取舍必须现在就定）。角色级开关关掉的不注入——否则被用户显式
             // 关掉的功能会被角色一次工具调用重新打开。
             const amsg2ToolsInjected = isAmsg2EnabledForChar(char) && await isAmsg2GlobalReady();
+            const btToolsInjected = bleEngine.hasConnectedDevice();
             if (shouldSendThinkingParams({
                 thinkingActive: !!payload.flags.thinkingActive,
                 legacyToolModeActive: !!toolModeActive,
                 amsg2ToolsInjected,
+                btToolsInjected,
                 model: baseReqBody.model || '',
             })) {
                 const m: string = baseReqBody.model || '';
@@ -1061,6 +1065,11 @@ export const useChatAI = ({
                     // 照常渲染——角色至少知道自己名下有哪些任务，不至于一问三不知再排一条。
                     console.warn('[amsg2] 作废回执检出失败，本轮只带进行中清单', e);
                 }
+            }
+            // 蓝牙工具：真有已连接的 BLE 设备时才注入，零成本保持沉默。
+            if (btToolsInjected) {
+                baseReqBody.tools = [...(baseReqBody.tools || []), ...BT_TOOLS];
+                if (!baseReqBody.tool_choice) baseReqBody.tool_choice = 'auto';
             }
 
             /**
@@ -1599,7 +1608,7 @@ export const useChatAI = ({
             //       createOrder 被拦截 —— 下单付款必须用户在结账卡上点。
             //     · 通用 MCP: 工具名命中 mcpToolResolve 映射就分发给对应服务器 (utils/mcpClient),
             //       结果只回填循环不落卡片。两类工具可同时在场, 按名字各走各的。
-            if ((payload.flags.luckinChatActive || mcpToolResolve || amsg2ToolsInjected) && data.choices?.[0]?.message?.tool_calls?.length) {
+            if ((payload.flags.luckinChatActive || mcpToolResolve || amsg2ToolsInjected || btToolsInjected) && data.choices?.[0]?.message?.tool_calls?.length) {
                 // 每轮工具轮数上限：优先用户设置；接通用 MCP 时取两者较大值，保证 master 侧 12 轮预算。
                 const MAX_LOOPS = mcpToolResolve ? Math.max(mcpSettings.maxToolLoops, MCP_CHAT_MAX_TOOL_LOOPS) : mcpSettings.maxToolLoops;
                 // 懒加载展开重填（二次请求）的预算：与主循环共享 maxToolLoops 上限，防死循环
@@ -1754,6 +1763,12 @@ export const useChatAI = ({
                         // 主动消息 2.0 工具
                         if (AMSG2_TOOL_NAMES.has(fname)) {
                             await runAmsg2ToolCall(tc, fname, args, loopMessages);
+                            continue;
+                        }
+                        // 蓝牙外设工具
+                        if (BT_TOOL_NAMES.has(fname)) {
+                            const btText = await executeBleSendCommand(args as { device?: string; command?: string });
+                            loopMessages.push(buildToolResultMessage(tc, btText) as any);
                             continue;
                         }
                         // 只开了 MCP 没开瑞幸时, 幻觉出的未知工具名直接回错误让模型自我纠正
