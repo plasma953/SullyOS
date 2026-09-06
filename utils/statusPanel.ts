@@ -124,7 +124,7 @@ export const probeAgent = async (apiConfig: APIConfig): Promise<StatusEntry> => 
         }
         return { ...entry, status: 'err', detail: `HTTP ${res.status}` };
     } catch (e: any) {
-        const proxyAgentUrl = toSameOriginProxyUrl(`${base}/agent/health`);
+        const proxyAgentUrl = toSameOriginProxyUrl(`${base}/agent/health`, base);
         if (proxyAgentUrl) {
             try {
                 const proxyRes = await fetchWithTimeout(proxyAgentUrl, 6000);
@@ -179,7 +179,7 @@ export const probeAmsgWorker = async (): Promise<StatusEntry> => {
         try {
             res = await fetchWithTimeout(`${base}/health`, 5000);
         } catch (e: any) {
-            const proxyAmsgUrl = toSameOriginProxyUrl(`${base}/health`);
+            const proxyAmsgUrl = toSameOriginProxyUrl(`${base}/health`, base);
             try {
                 if (proxyAmsgUrl) {
                     const proxyRes = await fetchWithTimeout(proxyAmsgUrl, 6000);

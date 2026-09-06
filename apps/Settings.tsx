@@ -2764,7 +2764,7 @@ const Settings: React.FC = () => {
                 </p>
                 <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">中转地址</label>
-                    <input type="text" value={localAgentUrl} onChange={(e) => setLocalAgentUrl(e.target.value)} placeholder="https://43451695.xyz" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <input type="text" value={localAgentUrl} onChange={(e) => setLocalAgentUrl(e.target.value)} placeholder="https://your-backend.example.com" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
                 </div>
                 <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">客户端令牌</label>
@@ -2823,7 +2823,7 @@ const Settings: React.FC = () => {
                             } catch (err: any) {
                                 const healthUrl0 = base + '/agent/health';
                                 try {
-                                    const proxyUrl0 = toSameOriginProxyUrl(healthUrl0);
+                                    const proxyUrl0 = toSameOriginProxyUrl(healthUrl0, base);
                                     if (proxyUrl0) {
                                         const pr0 = await fetch(proxyUrl0, { method: 'GET' });
                                         if (pr0.ok) {
@@ -2869,7 +2869,7 @@ const Settings: React.FC = () => {
                     <p className="text-[10px] px-1 leading-relaxed text-slate-500 whitespace-pre-wrap">{agentTestResult}</p>
                 )}
                 <p className="text-[9px] text-slate-300 px-1 leading-relaxed">
-                    地址只填域名根（如 https://43451695.xyz，不带 /agent 后缀）；Token 为 VPS .env 的 AMSG_CLIENT_TOKEN（完整 64 位）。
+                    地址只填域名根（如 https://your-backend.example.com，不带 /agent 后缀）；Token 为后端 .env 的 AMSG_CLIENT_TOKEN（完整 64 位）。
                 </p>
             </div>
         </SettingsSection>

@@ -33,21 +33,11 @@ type KvRecord<T = unknown> = {
 const capacitorDefaultWorkerUrl = import.meta.env.VITE_AMSG_NATIVE_PUSH === 'true'
   ? String(import.meta.env.VITE_AMSG_DEFAULT_WORKER_URL || '').trim()
   : '';
-// 官方 VPS 后端：主动消息 2.0 已整体迁移到 VPS 宿主，网页端也默认指向它——
-// 不再要求每个用户自己部署一份 amsg Worker。自建用户改这个值（或设置页地址框）即可。
-const vpsDefaultWorkerUrl = 'https://43451695.xyz/amsg';
-// 官方 VPS 后端的默认共享密钥（AMSG_CLIENT_TOKEN）。只在连官方地址且用户没自己填密钥时兜底：
-// 新用户存下来的配置里 serverToken 为空，不兜底的话请求不带 X-Client-Token，后端回「共享密钥无效或缺失」。
-// 自建实例不受影响（地址不是官方地址时不注入）。
-const vpsDefaultServerToken = '2857e95a07e0b728b3dce8d8ce84f5e090f05d5699a73fd617d2b9f608dd72c6';
-
-
-/** 官方 VPS 默认地址/密钥（导出给设置弹窗，运行时兜底与界面展示用同一份值）。 */
-export const VPS_DEFAULT_WORKER_URL = vpsDefaultWorkerUrl;
-export const VPS_DEFAULT_SERVER_TOKEN = vpsDefaultServerToken;
+// 注意：这里故意不放任何默认后端地址/共享密钥。后端地址与密钥是部署者资产，
+// 写进仓库等于公开；新用户在设置页填自己的后端地址即可（地址框有示例格式）。
 const defaultGlobalConfig: ActiveMsg2GlobalConfig = {
   userId: '',
-  workerUrl: capacitorDefaultWorkerUrl || vpsDefaultWorkerUrl,
+  workerUrl: capacitorDefaultWorkerUrl,
 };
 
 // 单例连接缓存。同 utils/db.ts 的根因: 原本每个 op 都新开一条 ActiveMsg 连接且从不
@@ -205,10 +195,6 @@ export const ActiveMsgStore = {
     // that empty value in the private build; an explicit non-empty URL wins.
     if (!config.workerUrl?.trim() && capacitorDefaultWorkerUrl) {
       config.workerUrl = capacitorDefaultWorkerUrl;
-    }
-    // 官方 VPS 默认密钥兜底：只有连官方地址时才注入，自建实例留空/自定义不受影响。
-    if ((!config.serverToken || !String(config.serverToken).trim()) && config.workerUrl === vpsDefaultWorkerUrl) {
-      config.serverToken = vpsDefaultServerToken;
     }
 
 

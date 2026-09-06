@@ -4,11 +4,11 @@
   "rewrites": [
     {
       "source": "/agent/:path*",
-      "destination": "https://43451695.xyz/agent/:path*"
+      "destination": "/api/backend-proxy?ns=agent&rest=:path*"
     },
     {
       "source": "/amsg/:path*",
-      "destination": "https://43451695.xyz/amsg/:path*"
+      "destination": "/api/backend-proxy?ns=amsg&rest=:path*"
     },
     {
       "source": "/((?!api/|.*\\..*).*)",

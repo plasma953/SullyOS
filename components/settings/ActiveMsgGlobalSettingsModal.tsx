@@ -11,7 +11,7 @@ import {
   INSTANT_CHAT_BLOCKER_HINTS, INSTANT_CHAT_VPS_NOTICE, resolveInstantChatBlocker,
   type InstantChatGateInput,
 } from '../../utils/amsgDiagnostics';
-import { ActiveMsgStore, maskActiveMsgUserId, VPS_DEFAULT_WORKER_URL, VPS_DEFAULT_SERVER_TOKEN } from '../../utils/activeMsgStore';
+import { ActiveMsgStore, maskActiveMsgUserId } from '../../utils/activeMsgStore';
 import { cancelAllRemoteAmsgTasks, isWorkerUrlCleared, wipeAmsgCloudData } from '../../utils/amsgStateSync';
 import {
   isInstantConfigReady,
@@ -20,15 +20,12 @@ import {
 } from '../../utils/instantPushClient';
 import { trackEvent } from '../../utils/analytics';
 
-// 主动消息的后端自 VPS 迁移完成后即由 VPS 宿主统一承载：前端默认指向
-// 官方 VPS 端点，普通用户填一个用户 ID 就能用，不再有「自部署 Worker」这一步。
-// 想自建的用户仍可把地址换成自己的实例（协议与原 amsg worker 完全一致）。
-// 默认地址/密钥统一从 activeMsgStore 取（运行时兜底与界面展示用同一份值）。
-const DEFAULT_VPS_WORKER_URL = VPS_DEFAULT_WORKER_URL;
-const DEFAULT_VPS_SERVER_TOKEN = VPS_DEFAULT_SERVER_TOKEN;
+// 主动消息需要一个 amsg 后端（地址填下面，协议与原 amsg worker 完全一致）。
+// 后端地址与共享密钥是部署者资产，不在仓库里放默认值；在设置页填你自己的。
+// 地址框的占位只是格式示例，不是可用地址。
+const WORKER_URL_PLACEHOLDER = 'https://your-backend.example.com/amsg';
 // 版本门槛：旧版 amsg 后端会静默缺席新特性（自述回写不落盘、任务重复推、时区错位等），
-// 不比版本的话问题全在后端侧静默发生。官方 VPS 由宿主统一升级，普通用户无感；
-// 自建实例停在旧版时，体检区会亮出升级提示。
+// 不比版本的话问题全在后端侧静默发生。后端升级后无需用户操作；停在旧版时亮牌。
 const REQUIRED_WORKER_VERSION = '2.6.0-next.23';
 const REQUIRED_WORKER_FEATURES = [
   'client-state',
@@ -147,8 +144,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   };
 
   /**
-   * 版本门槛探测（VPS 化后的等价守卫）：旧版后端会静默缺席新特性，用户不会来报，
-   * 这条提示是唯一出口。官方 VPS 升级后无需用户操作；自建实例停在旧版时亮牌。
+   * 版本门槛探测：旧版后端会静默缺席新特性，用户不会来报，
+   * 这条提示是唯一出口。后端升级后无需用户操作；停在旧版时亮牌。
    */
   const probeServerVersion = async () => {
     const shouldReport = !workerCapsReported.current;
@@ -490,7 +487,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
           {serverOutdated ? (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs leading-relaxed text-amber-700">
               后端跑的还是旧版代码，缺少新特性（大上下文云端存储、服务端工具循环等）。
-              官方 VPS 会自动保持最新；若你把地址换成了自建实例，请把它升级到
+              请把后端升级到
               <strong> amsg-server {REQUIRED_WORKER_VERSION}</strong> 或以上。已有数据和任务不受影响。
             </div>
           ) : null}
@@ -502,11 +499,11 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
               type="text"
               value={config.workerUrl}
               onChange={(event) => patchConfig({ workerUrl: event.target.value })}
-              placeholder={DEFAULT_VPS_WORKER_URL}
+              placeholder={WORKER_URL_PLACEHOLDER}
               className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono"
             />
             <p className="mt-1.5 text-[11px] text-slate-400">
-              默认指向官方 VPS 后端，一般不用改。想自建的话，任何实现同套 amsg 协议的地址都能填。
+              填你的 amsg 后端地址。任何实现同套 amsg 协议的地址都能填。
             </p>
           </div>
           <div>
@@ -516,14 +513,14 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             <div className="flex gap-2">
               <input
                 type="password"
-                value={config.serverToken || DEFAULT_VPS_SERVER_TOKEN}
+                value={config.serverToken || ''}
                 onChange={(event) => patchConfig({ serverToken: event.target.value })}
-                placeholder={DEFAULT_VPS_SERVER_TOKEN}
+                placeholder="与后端约定的共享密钥"
                 className="flex-1 bg-white/70 border border-slate-200 rounded-2xl px-4 py-3 text-sm"
               />
             </div>
             <p className="mt-1.5 text-[11px] text-slate-400">
-              官方后端的默认密钥已填好；自建实例才需要换成你自己的。
+              与后端约定的共享密钥（后端没设则留空，但地址一旦公开等于所有人可读写）。
             </p>
           </div>
           <button
@@ -625,7 +622,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
         <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs leading-relaxed text-amber-700 space-y-2">
           <div className="font-bold text-amber-800">风险说明</div>
           <p>开了主动消息以后，主动消息内容、提示词、相关配置，都会进入后端服务及其数据库。</p>
-          <p>自建后端的话那是你自己的库；连官方后端的话，能碰到这台服务器的人（服务运营者）就能看到这些内容。项目本身不会额外接一个中心服务器之外的中转。</p>
+            <p>自建后端的话那是你自己的库；总之能碰到这台服务器的人（服务运营者）就能看到这些内容。项目本身不会额外接一个中心服务器之外的中转。</p>
           <p>如果你不接受把私密提示词、API Key 放进后端服务，就不要开主动消息。</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">

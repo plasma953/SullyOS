@@ -499,7 +499,7 @@ export interface ActiveMsg2ApiConfig {
 
 export interface ActiveMsg2GlobalConfig {
   userId: string;
-  /** 主动消息 2.0 后端地址（VPS 宿主或自建实例），例如 https://43451695.xyz/amsg */
+  /** 主动消息 2.0 后端地址（VPS 宿主或自建实例），例如 https://your-backend.example.com/amsg */
   workerUrl: string;
   /** 与后端约定的共享密钥；配了就每次请求带 X-Client-Token，缺/错后端返回 401 */
   serverToken?: string;
