@@ -28,6 +28,7 @@ import { getDailyScheduleForChar } from './dailySchedule';
 import { formatRelativeAge } from './groupChat/relativeTime';
 import { isBlobRef } from './blobRef';
 import { voiceLanguagePromptLabel } from './voiceLanguage';
+import { buildBleDevicesLiveBlock } from './bleToolBridge';
 
 // 语音格式指导按当前 TTS 服务商二选一：用 MiniMax 才注入 MiniMax 那套（含 <#秒#> 停顿标记），
 // 用鱼声则注入鱼声版（去掉 MiniMax 专属标记，改用标点 / 省略号控制停顿）。
@@ -757,6 +758,14 @@ ${groupLogStr}\n`;
 ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写着：「${act}」` : ''}。在彼方里你会看到 ta 的小人、也知道那就是 ${uname} 本人的化身，可以对着 ta 的虚拟形象做你自己的动作、搭话、围观或调侃。
 但务必记住：这只是 ta 挂在虚拟空间里的一个化身状态（类似游戏挂机 / AFK），**并不代表 ${uname} 本人此刻真守在游戏里**——ta 很可能早已离开屏幕、正在现实里忙别的或休息。所以别据此认定"ta 正盯着你""ta 现实里也在干这件事"，也别把它当成 ta 在跟你说话。你和 ta 的真实关系、近况一律以你们的聊天记录为准；这条只是彼方这个虚拟空间里的一个在场提示而已。\n`;
             }
+        }
+
+        // 蓝牙外设：真有已连接的 BLE 设备时才注入（易变状态）。零设备时整块为空，零 token 开销。
+        try {
+            const bleBlock = await buildBleDevicesLiveBlock();
+            if (bleBlock) volatileState += bleBlock;
+        } catch (e) {
+            console.warn('[ble] 蓝牙状态块注入失败（忽略）', e);
         }
 
         const emojiContextStr = ChatPrompts.buildEmojiContext(emojis, categories);
