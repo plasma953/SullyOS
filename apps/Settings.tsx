@@ -36,6 +36,7 @@ import VersionInfo from '../components/settings/VersionInfo';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
 import StorageUsagePanel from '../components/settings/StorageUsagePanel';
 import McpConnectionConsole from '../components/settings/McpConnectionConsole';
+import OpencodeConnectionConsole from '../components/settings/OpencodeConnectionConsole';
 import { DB } from '../utils/db';
 import { getBackupReminderState, setBackupReminderIntervalDays, daysSinceLastBackup, BACKUP_REMINDER_MIN_DAYS, BACKUP_REMINDER_MAX_DAYS } from '../utils/backupReminder';
 import {
@@ -689,6 +690,7 @@ const Settings: React.FC = () => {
   const [showRealtimeModal, setShowRealtimeModal] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [showMcpHelp, setShowMcpHelp] = useState(false);
+  const [showOpencodeModal, setShowOpencodeModal] = useState(false);
   const [showBleModal, setShowBleModal] = useState(false);
   const [bleSavedCount, setBleSavedCount] = useState(0);
   const [bleConnectedCount, setBleConnectedCount] = useState(0);
@@ -3551,6 +3553,28 @@ const Settings: React.FC = () => {
             })()}
         </SettingsSection>
 
+        {/* 终端：本机 opencode 远程控制台的连接 */}
+        <SettingsSection
+            title="终端 · 我的电脑"
+            icon={
+                <div className="p-2 bg-emerald-100/60 rounded-xl text-emerald-600">
+                    <PlugsConnected size={16} weight="fill" />
+                </div>
+            }
+            actions={
+                <button onClick={() => setShowOpencodeModal(true)} className="text-[10px] bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform">
+                    连接
+                </button>
+            }
+        >
+            <p className="text-xs text-slate-500 leading-relaxed">
+                连上你电脑上的 opencode，桌面「终端」App 就能远程遥控它：发任务、看改动、跑命令。
+            </p>
+            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed border-l-2 border-emerald-200 pl-2">
+                只连你自己的一台电脑；地址与密码保存在本机，不碰角色聊天。
+            </p>
+        </SettingsSection>
+
         {/* 蓝牙 BLE 外设：配对 + 指令控制台入口，摘要随 Modal 关闭刷新 */}
         <SettingsSection
             title="蓝牙"
@@ -4805,6 +4829,13 @@ const Settings: React.FC = () => {
                   // 旧 token 去直连它。重试和底账由 syncAmsgToolConfig 负责。
                   scheduleMcpToolConfigSync(() => syncAmsgToolConfig(realtimeConfig));
               }} />
+          </div>
+      </Modal>
+
+      {/* 终端连接管理（本机 opencode，单连接） */}
+      <Modal isOpen={showOpencodeModal} title="终端 · 我的电脑" onClose={() => setShowOpencodeModal(false)}>
+          <div className="space-y-4">
+              <OpencodeConnectionConsole addToast={addToast} />
           </div>
       </Modal>
 

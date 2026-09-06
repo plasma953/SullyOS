@@ -57,6 +57,7 @@ const ShoppingApp = lazyApp(() => import('../apps/ShoppingApp'));
 const TakeoutApp = lazyApp(() => import('../apps/TakeoutApp'));
 const CharCreatorDevApp = lazyApp(() => import('../apps/CharCreatorDevApp'));
 const SpecialMomentsApp = lazyApp(() => import('./ValentineEvent').then(m => ({ default: m.SpecialMomentsApp })));
+const TerminalApp = lazyApp(() => import('../apps/TerminalApp'));
 
 // 仅供「桌面稳定后的空闲串行预热」。严格 await 前一个再取下一个，且任何用户操作都会停止队列。
 // 高频 App 在前；低端设备/省流量/2G 由 shouldUseIdleAppPreload 整体跳过。
@@ -92,6 +93,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.WorldHome]: WorldHomeApp,
   [AppID.Shopping]: ShoppingApp,
   [AppID.Takeout]: TakeoutApp,
+  [AppID.Terminal]: TerminalApp,
 };
 // AppIcon 的 pointerdown 只预取用户正在点的 App；失败时由 preloadableLazy 清缓存，点击可正常重试。
 setAppPayloadWarmer((id: AppID) => APP_BY_ID[id]?.preload());
@@ -927,6 +929,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Social: return <SocialApp />;
       case AppID.Study: return <StudyApp />;  
       case AppID.Pomodoro: return <PomodoroApp />;
+      case AppID.Terminal: return <TerminalApp />;
       case AppID.FAQ: return <FAQApp />; 
       case AppID.Game: return <GameApp />; 
       case AppID.Worldbook: return <WorldbookApp />;

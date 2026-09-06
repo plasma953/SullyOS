@@ -40,6 +40,8 @@ import {
   ToteSimple,
   Hamburger,
   Timer,
+  Cards,
+  TerminalWindow,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -84,6 +86,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="regular" />,
   WorldHome: ({ className }) => <HouseLine className={className} weight="regular" />,
   Pomodoro: ({ className }) => <Timer className={className} weight="regular" />,
+  Terminal: ({ className }) => <TerminalWindow className={className} weight="regular" />,
 };
 
 export const INSTALLED_APPS: AppConfig[] = [
@@ -122,6 +125,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.ThemeMaker, name: '气泡工坊', icon: 'ThemeMaker', color: 'purple' },
   { id: AppID.Appearance, name: '外观', icon: 'Appearance', color: 'slate' },
   { id: AppID.Settings, name: '设置', icon: 'Settings', color: 'slate' },
+  { id: AppID.Terminal, name: '终端', icon: 'Terminal', color: 'emerald' },
   { id: AppID.Guidebook, name: '攻略本', icon: 'Guidebook', color: 'slate' },
   { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },
   { id: AppID.SpecialMoments, name: '特别时光', icon: 'SpecialMoments', color: 'pink' },
