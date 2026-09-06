@@ -50,6 +50,7 @@ const KNOWN: Readonly<Record<string, string>> = {
     xhs_owned_posts: 'xhsOwnedPosts',
     xhs_stock: 'xhsStockImages',
     quizzes: 'quizSessions',
+    tarot_readings: 'tarotReadings',
     guidebook: 'guidebookSessions',
     scheduled_messages: 'scheduledMessages',
     life_sim: 'lifeSimState',

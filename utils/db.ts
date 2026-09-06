@@ -5,7 +5,7 @@ import {
     CharacterProfile, ChatTheme, Message, UserProfile,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
-    BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsOwnedPost, SongSheet, QuizSession, GuidebookSession,
+    BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsOwnedPost, SongSheet, QuizSession, GuidebookSession, TarotReadingRecord,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     LifeRecord, MedPlan, LifeRecordSettings, CharacterGroup,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
@@ -31,7 +31,8 @@ const DB_NAME = 'AetherOS_Data';
 // v71：角色小红书伪主页；发帖归属与可删除的自由活动日志分离。
 // v72：提示词段落预设（Preset App）。独立 store，随备份动态枚举自动带走。
 // v73：购物订单（Shopping App）。独立 store，随备份动态枚举自动带走。
-const DB_VERSION = 73; // v73: 购物订单（Shopping App）
+// v74：塔罗占卜记录（Tarot App）。独立 store，随备份动态枚举自动带走。
+const DB_VERSION = 74; // v74: 塔罗占卜记录（Tarot App）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_CHAR_GROUPS = 'character_groups'; // 角色分组定义（角色通过 groupId 指向；与群聊 groups 无关）
@@ -59,6 +60,7 @@ const STORE_NOVELS = 'novels';
 const STORE_BANK_TX = 'bank_transactions';
 const STORE_BANK_DATA = 'bank_data';
 const STORE_SHOPPING_ORDERS = 'shopping_orders'; // v73: 购物订单
+const STORE_TAROT_READINGS = 'tarot_readings'; // v74: 塔罗占卜记录
 const STORE_XHS_STOCK = 'xhs_stock';
 const STORE_XHS_ACTIVITIES = 'xhs_activities';
 const STORE_XHS_OWNED_POSTS = 'xhs_owned_posts';
@@ -366,6 +368,8 @@ export const openDB = (): Promise<IDBDatabase> => {
       createStore(STORE_PROMPT_PRESETS, { keyPath: 'id' });
       // v73: 购物订单（Shopping App）
       createStore(STORE_SHOPPING_ORDERS, { keyPath: 'id' });
+      // v74: 塔罗占卜记录（Tarot App）
+      createStore(STORE_TAROT_READINGS, { keyPath: 'id' });
 
       // ─── Memory Palace (记忆宫殿) stores ───
       if (!db.objectStoreNames.contains('memory_nodes')) {
@@ -2200,6 +2204,31 @@ export const DB = {
       transaction.objectStore(STORE_QUIZZES).delete(id);
   },
 
+  // --- Tarot readings ---
+  getTarotReadings: async (): Promise<TarotReadingRecord[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TAROT_READINGS)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TAROT_READINGS, 'readonly');
+          const store = transaction.objectStore(STORE_TAROT_READINGS);
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveTarotReading: async (reading: TarotReadingRecord): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TAROT_READINGS, 'readwrite');
+      transaction.objectStore(STORE_TAROT_READINGS).put(reading);
+  },
+
+  deleteTarotReading: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TAROT_READINGS, 'readwrite');
+      transaction.objectStore(STORE_TAROT_READINGS).delete(id);
+  },
+
   getAllGames: async (): Promise<GameSession[]> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_GAMES)) return [];
@@ -3150,7 +3179,7 @@ export const DB = {
           });
       };
 
-      const [characters, characterGroups, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, storyTheaters, storyTheaterPresets, storyTheaterMasks, novels, bankTx, bankData, xhsActivities, xhsOwnedPosts, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, worlds, worldEpisodes, lifeRecords, medPlans, lifeRecordSettings, promptPresets] = await Promise.all([
+      const [characters, characterGroups, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, storyTheaters, storyTheaterPresets, storyTheaterMasks, novels, bankTx, bankData, xhsActivities, xhsOwnedPosts, xhsStockImages, songs, quizzes, tarotReadings, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, worlds, worldEpisodes, lifeRecords, medPlans, lifeRecordSettings, promptPresets] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_CHAR_GROUPS),
           getAllFromStore(STORE_MESSAGES),
@@ -3182,6 +3211,7 @@ export const DB = {
           getAllFromStore(STORE_XHS_STOCK),
           getAllFromStore(STORE_SONGS),
           getAllFromStore(STORE_QUIZZES),
+          getAllFromStore(STORE_TAROT_READINGS),
           getAllFromStore(STORE_GUIDEBOOK),
           getAllFromStore(STORE_SCHEDULED),
           getAllFromStore(STORE_LIFE_SIM),
@@ -3226,6 +3256,7 @@ export const DB = {
           xhsStockImages,
           songs,
           quizSessions: quizzes,
+          tarotReadings,
           guidebookSessions,
           scheduledMessages,
           lifeSimState: lifeSimStates[0] || null,
@@ -3285,6 +3316,7 @@ export const DB = {
           STORE_BANK_TX, STORE_BANK_DATA,
           STORE_XHS_ACTIVITIES, STORE_XHS_OWNED_POSTS, STORE_XHS_STOCK,
           STORE_QUIZZES,
+          STORE_TAROT_READINGS, // v74 塔罗占卜记录（Tarot App）—— importFullData 侧白名单
           STORE_GUIDEBOOK,
           STORE_SCHEDULED,
           STORE_LIFE_SIM,
@@ -3363,6 +3395,7 @@ export const DB = {
           data.novels !== undefined,
           data.songs !== undefined,
           data.quizSessions !== undefined,
+          data.tarotReadings !== undefined,
           data.guidebookSessions !== undefined,
           data.scheduledMessages !== undefined,
           data.lifeSimState !== undefined,
@@ -3749,6 +3782,10 @@ export const DB = {
           await clearAndAdd(STORE_QUIZZES, data.quizSessions, '练习本', false);
           data.quizSessions = undefined as any;
       }, data.quizSessions?.length || 0);
+      await runSection('塔罗', data.tarotReadings !== undefined, async () => {
+          await clearAndAdd(STORE_TAROT_READINGS, data.tarotReadings, '塔罗', false);
+          data.tarotReadings = undefined as any;
+      }, data.tarotReadings?.length || 0);
       await runSection('攻略本', data.guidebookSessions !== undefined, async () => {
           await clearAndAdd(STORE_GUIDEBOOK, data.guidebookSessions, '攻略本', false);
           data.guidebookSessions = undefined as any;

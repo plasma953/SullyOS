@@ -86,6 +86,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="regular" />,
   WorldHome: ({ className }) => <HouseLine className={className} weight="regular" />,
   Pomodoro: ({ className }) => <Timer className={className} weight="regular" />,
+  Tarot: ({ className }) => <Cards className={className} weight="regular" />,
   Terminal: ({ className }) => <TerminalWindow className={className} weight="regular" />,
 };
 
@@ -111,6 +112,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Social, name: 'Spark', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
   { id: AppID.Pomodoro, name: '番茄钟', icon: 'Pomodoro', color: 'orange' },
+  { id: AppID.Tarot, name: '塔罗', icon: 'Tarot', color: 'amber' },
   { id: AppID.Game, name: 'TRPG', icon: 'Game', color: 'orange' },
   { id: AppID.Novel, name: '笔友会', icon: 'Novel', color: 'amber' },
   { id: AppID.Songwriting, name: '写歌', icon: 'Songwriting', color: 'fuchsia' },

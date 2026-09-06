@@ -41,6 +41,7 @@ export enum AppID {
   Shopping = 'shopping', // 购物 — 淘宝式电商（OSM 真实商家 + 品牌真实商品，模拟下单不真实支付）
   Takeout = 'takeout',   // 外卖 — 美团式点单（OSM 真实店面 + 品牌 SKU，模拟下单不真实支付）
   Pomodoro = 'pomodoro', // 番茄钟 — 自定义主题与时长的水波纹专注陪伴（打开才计时）
+  Tarot = 'tarot', // 塔罗 — 每日运势与经典牌阵占卜（RWS 真实牌义，本地速览 + 角色解读）
   Terminal = 'terminal', // 终端 — 本机 opencode serve 远程控制台（直连用户自己电脑上的 opencode）
 }
 
@@ -3974,6 +3975,16 @@ export interface SocialPost {
     bgStyle?: string;
     authorType?: 'user' | 'character' | 'stranger';
     authorCharId?: string;
+    /** 帖子来源：'gen'（默认，AI 生成/用户发布）| 'douban'（豆瓣小组真实帖子） */
+    origin?: 'gen' | 'douban';
+    /** 豆瓣话题 id（origin=douban 时） */
+    sourceId?: string;
+    /** 豆瓣话题链接 */
+    sourceUrl?: string;
+    /** 小组中文名（如「杭州」「美食」），用于展示和 tag */
+    groupTitle?: string;
+    /** 小组 slug，用于回跳拉取 */
+    groupId?: string;
 }
 
 export interface SubAccount {
@@ -4085,6 +4096,32 @@ export interface QuizSession {
     status: 'in_progress' | 'graded';
     createdAt: number;
     gradedAt?: number;
+}
+
+export type TarotReadingKind = 'daily' | 'spread';
+
+export interface TarotSavedCard {
+    cardId: string;
+    reversed: boolean;
+    positionName: string;
+}
+
+/** 塔罗占卜记录：只存牌 id + 正逆，牌义展示时按 id 现查 tarotData（省 token/省空间）。 */
+export interface TarotReadingRecord {
+    id: string;
+    kind: TarotReadingKind;
+    dateKey: string;
+    /** 'user' 或角色 id */
+    targetId: string;
+    targetName: string;
+    spreadId: string;
+    question?: string;
+    cards: TarotSavedCard[];
+    localSummary: string;
+    charReading?: string;
+    readerId?: string;
+    readerName?: string;
+    createdAt: number;
 }
 
 export type GameTheme = 'fantasy' | 'cyber' | 'horror' | 'modern';
@@ -4284,6 +4321,9 @@ export interface FullBackupData {
 
     // Quiz / Practice Book
     quizSessions?: QuizSession[];
+
+    // Tarot (塔罗占卜记录 / tarot_readings store)
+    tarotReadings?: TarotReadingRecord[];
 
     // Guidebook (攻略本)
     guidebookSessions?: GuidebookSession[];
