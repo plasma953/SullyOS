@@ -10,6 +10,9 @@
 export const POMODORO_SESSION_LS_KEY = 'pomodoro_session_v1';
 export const POMODORO_HISTORY_LS_KEY = 'pomodoro_history_v1';
 
+/** 历史上限：喂饱 12 周热力图（单条约 150B，总量可控） */
+export const POMODORO_HISTORY_LIMIT = 500;
+
 export const DEFAULT_AWAY_LIMIT_MS = 5 * 60 * 1000;
 export const DEFAULT_ENCOURAGE_MIN_MS = 3 * 60 * 1000;
 export const DEFAULT_ENCOURAGE_MAX_MS = 7 * 60 * 1000;
@@ -54,6 +57,8 @@ export interface PomodoroHistoryEntry {
   endedAt: number;
   recordedToMemory: boolean;
 }
+
+import { addLocalDays, getLocalDateKey } from './localDate';
 
 export const genSessionKey = (): string =>
   `pomo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -240,13 +245,49 @@ export const loadPomodoroHistory = (): PomodoroHistoryEntry[] => {
 };
 
 export const appendPomodoroHistory = (e: PomodoroHistoryEntry): PomodoroHistoryEntry[] => {
-  const next = [e, ...loadPomodoroHistory()].slice(0, 100);
+  const next = [e, ...loadPomodoroHistory()].slice(0, POMODORO_HISTORY_LIMIT);
   try {
     getStore()?.setItem(POMODORO_HISTORY_LS_KEY, JSON.stringify(next));
   } catch {
     /* ignore */
   }
   return next;
+};
+
+/** 热力图用的每日聚合。口径：当年所有结局的实际专注毫秒都算（真实投入）。 */
+export interface PomodoroDayStat {
+  /** 本地日期 YYYY-MM-DD */
+  dateKey: string;
+  sessions: number;
+  focusedMs: number;
+  completed: number;
+}
+
+/** 近 dayCount 天（含今天）的每日聚合，最老在前；脏条目忽略，空天补零。 */
+export const aggregateFocusByDay = (
+  history: PomodoroHistoryEntry[],
+  dayCount: number,
+  now: number = Date.now(),
+): PomodoroDayStat[] => {
+  const n = Math.max(1, Math.min(365, Math.floor(dayCount) || 12 * 7));
+  const keys: string[] = [];
+  let k: string | null = getLocalDateKey(new Date(now));
+  for (let i = 0; i < n && k; i += 1) {
+    keys.unshift(k);
+    const prev = addLocalDays(k, -1);
+    k = prev || null;
+  }
+  const buckets = new Map<string, PomodoroDayStat>();
+  for (const key of keys) buckets.set(key, { dateKey: key, sessions: 0, focusedMs: 0, completed: 0 });
+  for (const e of history) {
+    if (!e || !Number.isFinite(e.endedAt)) continue;
+    const b = buckets.get(getLocalDateKey(new Date(e.endedAt)));
+    if (!b) continue;
+    b.sessions += 1;
+    b.focusedMs += Number.isFinite(e.focusedMs) ? Math.max(0, e.focusedMs) : 0;
+    if (e.outcome === 'completed') b.completed += 1;
+  }
+  return [...buckets.values()];
 };
 
 export const formatClock = (ms: number): string => {

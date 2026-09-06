@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  aggregateFocusByDay,
   createSession,
   elapsedMs,
   pauseSegment,
@@ -82,5 +83,42 @@ describe('pomodoro session state machine', () => {
   it('formatClock renders mm:ss', () => {
     expect(formatClock(25 * 60_000)).toBe('25:00');
     expect(formatClock(61_000)).toBe('01:01');
+  });
+});
+
+describe('aggregateFocusByDay', () => {
+  const entry = (over: Record<string, unknown>) => ({
+    sessionKey: 'k', charId: 'c', charName: 'n', topic: 't',
+    durationMs: 25 * 60_000, focusedMs: 25 * 60_000,
+    outcome: 'completed' as const, endedAt: Date.now(), recordedToMemory: false,
+    ...over,
+  });
+
+  it('zero-fills empty days, oldest first', () => {
+    const now = new Date(2026, 8, 6, 12, 0, 0).getTime();
+    const stats = aggregateFocusByDay([], 3, now);
+    expect(stats.map((s) => s.dateKey)).toEqual(['2026-09-04', '2026-09-05', '2026-09-06']);
+    expect(stats.every((s) => s.sessions === 0 && s.focusedMs === 0)).toBe(true);
+  });
+
+  it('sums focusedMs across outcomes, counts completed separately', () => {
+    const day = new Date(2026, 8, 6, 10, 0, 0).getTime();
+    const stats = aggregateFocusByDay([
+      entry({ sessionKey: 'a', endedAt: day, focusedMs: 20 * 60_000, outcome: 'completed' }),
+      entry({ sessionKey: 'b', endedAt: day + 3_600_000, focusedMs: 10 * 60_000, outcome: 'quit' }),
+    ], 1, day + 7_200_000);
+    expect(stats).toHaveLength(1);
+    expect(stats[0].sessions).toBe(2);
+    expect(stats[0].focusedMs).toBe(30 * 60_000);
+    expect(stats[0].completed).toBe(1);
+  });
+
+  it('ignores out-of-window and broken entries', () => {
+    const now = new Date(2026, 8, 6, 12, 0, 0).getTime();
+    const stats = aggregateFocusByDay([
+      entry({ sessionKey: 'old', endedAt: now - 30 * 86_400_000 }),
+      entry({ sessionKey: 'bad', endedAt: Number.NaN }),
+    ], 7, now);
+    expect(stats.every((s) => s.sessions === 0)).toBe(true);
   });
 });
