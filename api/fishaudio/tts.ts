@@ -31,10 +31,10 @@ export default async function handler(req: any, res: any) {
 
   try {
     const incomingAuth = typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
-    const envKey = typeof process.env.FISH_API_KEY === 'string' ? process.env.FISH_API_KEY : '';
-    const finalApiKey = normalizeApiKey(incomingAuth) || normalizeApiKey(envKey);
+    // 注意：不要回退到 FISH_API_KEY 环境变量——CORS 全开 + 无鉴权时，部署者的 Key 会被公网任意调用烧掉。
+    const finalApiKey = normalizeApiKey(incomingAuth);
     if (!finalApiKey) {
-      res.status(400).json({ error: 'Missing API key. Provide Authorization or FISH_API_KEY.' });
+      res.status(400).json({ error: 'Missing API key. Provide Authorization header.' });
       return;
     }
 

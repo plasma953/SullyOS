@@ -11,7 +11,7 @@
  *  - 点赞 / 点踩：一台设备一票（可改可撤）。**点踩即举报**，不另设举报。
  *  - 自动删除：一封信点踩数达阈值（PO_DISLIKE_LIMIT，默认 5）即被删除。
  *  - 管理员：纯 API（无前端）。GET /admin/list 看信、POST /admin/delete 删信，
- *           凭 ADMIN_TOKEN（Authorization: Bearer，或 ?token=）。
+ *           凭 ADMIN_TOKEN（只认 Authorization: Bearer 头，?token= 已禁用防泄露）。
  *  - 限流：按客户端 IP 的加盐哈希做固定窗口限流（不存原始 IP）。
  *  - 不主动按时间删：移除了旧的 TTL 清理；信只在 ①踩满 ②管理员删 ③作者删 时消失。
  *
@@ -26,8 +26,8 @@
  *   POST  …/replies       { device, replies:[{letterId,pen,content}] }     上传回信
  *   GET   …/replies?device=X                                               取回我寄出的信上的回复 + 各信的赞踩浏览量
  *   POST  …/release       { device, letterIds:[...] }                      作者删自己的信
- *   GET   …/admin/list?token=&limit=                                       [管理] 列信
- *   POST  …/admin/delete  { letterId }  (+ token)                          [管理] 删信
+ *   GET   …/admin/list?limit=   (+ Authorization: Bearer)                   [管理] 列信
+ *   POST  …/admin/delete  { letterId }  (+ Authorization: Bearer)             [管理] 删信
  *   GET   …/health                                                         健康检查
  *
  *   ── 信号坠落处 / 跨用户接龙诗（复用本后端的匿名 device / 笔名 / 限流）──
@@ -356,13 +356,12 @@ async function rateLimited(db: D1Database, ipHash: string, action: string, limit
     return (row?.count ?? cost) > limit;
 }
 
-/** 校验管理员令牌（Authorization: Bearer 或 ?token=）。 */
-function isAdmin(req: Request, url: URL, env: Env): boolean {
+/** 校验管理员令牌（只认 Authorization: Bearer；?token= 会进日志/Referer/浏览器历史，已禁用）。 */
+function isAdmin(req: Request, _url: URL, env: Env): boolean {
     if (!env.ADMIN_TOKEN) return false;
     const auth = req.headers.get('Authorization') || '';
     const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-    const token = bearer || url.searchParams.get('token') || '';
-    return token === env.ADMIN_TOKEN;
+    return bearer !== '' && bearer === env.ADMIN_TOKEN;
 }
 
 export default {

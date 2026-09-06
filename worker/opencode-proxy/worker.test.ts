@@ -52,11 +52,12 @@ afterEach(() => {
 });
 
 describe('opencode-proxy worker', () => {
+    const ENV = { PROXY_KEY: 'k' };
     it('公网 target → 透传 Authorization 与 method/body，状态码原样回传', async () => {
         const calls = stubUpstream();
-        const res = await callProxy('http://203.0.113.10:4096/global/health', {
+        const res = await callProxyWithEnv('http://203.0.113.10:4096/global/health', ENV, {
             headers: { Authorization: 'Basic b3BlbmNvZGU6eA==' },
-        });
+        }, 'k');
         expect(res.status).toBe(200);
         expect(calls).toHaveLength(1);
         expect(calls[0].url).toBe('http://203.0.113.10:4096/global/health');
@@ -67,8 +68,27 @@ describe('opencode-proxy worker', () => {
 
     it('上游非 200 原样回传', async () => {
         stubUpstream(401, 'unauthorized');
+        const res = await callProxyWithEnv('http://203.0.113.10:4096/global/health', ENV, {}, 'k');
+        expect(res.status).toBe(401);
+    });
+
+    it('未配置 PROXY_KEY → 401 fail-closed，上游不发', async () => {
+        const calls = stubUpstream();
         const res = await callProxy('http://203.0.113.10:4096/global/health');
         expect(res.status).toBe(401);
+        expect(calls).toHaveLength(0);
+    });
+
+    it('OPTIONS 只回显白名单内的请求头', async () => {
+        stubUpstream();
+        const res = await worker.fetch(new Request('https://oc-proxy.test/', {
+            method: 'OPTIONS',
+            headers: { 'access-control-request-headers': 'Authorization, X-Evil-Header' },
+        }), ENV, { waitUntil: () => {} });
+        expect(res.status).toBe(204);
+        const echoed = res.headers.get('Access-Control-Allow-Headers') || '';
+        expect(echoed).toContain('Authorization');
+        expect(echoed).not.toContain('X-Evil-Header');
     });
 
     it('PROXY_KEY 对不上 → 403，上游不发', async () => {
@@ -93,7 +113,7 @@ describe('opencode-proxy worker', () => {
             'http://10.0.0.2:4096/global/health',
             'ftp://203.0.113.10/x',
         ]) {
-            const res = await callProxy(bad);
+            const res = await callProxyWithEnv(bad, ENV, {}, 'k');
             expect(res.status).toBe(400);
         }
         expect(calls).toHaveLength(0);
@@ -101,7 +121,9 @@ describe('opencode-proxy worker', () => {
 
     it('缺 ?target= → 400', async () => {
         const calls = stubUpstream();
-        const res = await callProxy(null);
+        const res = await worker.fetch(new Request('https://oc-proxy.test/', {
+            headers: { 'X-Proxy-Key': 'k' },
+        }), ENV, { waitUntil: () => {} });
         expect(res.status).toBe(400);
         expect(calls).toHaveLength(0);
     });

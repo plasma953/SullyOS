@@ -12,7 +12,7 @@
  *      例如 https://mcp-proxy.<你的子域>.workers.dev
  *      前端会以 <代理URL>?target=<MCP服务器URL> 的形式转发请求。
  *
- * 可选加固（强烈建议，防止别人白嫖你的 Worker 流量）：
+ * 必填加固（防别人白嫖你的 Worker 流量，否则请求会被 401 拒绝）：
  *   在 Worker 的环境变量里设置 PROXY_KEY=<随机字符串>，
  *   然后在 SullyOS 设置的「代理密钥」里填同一个值。
  */
@@ -72,12 +72,24 @@ export default {
     async fetch(request, env) {
         if (request.method === 'OPTIONS') {
             const headers = new Headers(CORS_HEADERS);
+            // 只回显白名单内的请求头：原样回显任意头会让任意站点把自定义头打进预检。
+            const allowed = new Set(
+                String(CORS_HEADERS['Access-Control-Allow-Headers']).split(',').map(s => s.trim().toLowerCase()),
+            );
             const requestedHeaders = request.headers.get('access-control-request-headers');
-            if (requestedHeaders) headers.set('Access-Control-Allow-Headers', requestedHeaders);
+            if (requestedHeaders) {
+                const picked = requestedHeaders.split(',').map(s => s.trim()).filter(s => allowed.has(s.toLowerCase()));
+                if (picked.length) headers.set('Access-Control-Allow-Headers', picked.join(', '));
+            }
             return new Response(null, { status: 204, headers });
         }
 
-        if (env.PROXY_KEY) {
+        // PROXY_KEY 必填（fail-closed）：无鉴权的 ?target= 开放转发等于把 Worker 配额送人。
+        // 部署：在 Worker 环境变量设 PROXY_KEY，并在 SullyOS 设置的「代理密钥」填同一个值。
+        if (!env.PROXY_KEY) {
+            return corsJson(401, { error: '未配置 PROXY_KEY：请在 Worker 环境变量设置后重试（防流量被白嫖）' });
+        }
+        {
             const key = request.headers.get('x-proxy-key') || '';
             if (key !== env.PROXY_KEY) return corsJson(403, { error: '代理密钥错误（X-Proxy-Key）' });
         }
@@ -98,10 +110,13 @@ export default {
         ]);
         const customHeaderNames = (request.headers.get('x-mcp-forward-headers') || '')
             .split(',').map(name => name.trim()).filter(Boolean);
-        for (const name of customHeaderNames) {
+        // 自定义透传头封顶：防 header 炸弹。合法 MCP 服务器要的也就是鉴权类头，
+        // authorization 等常用头已在 FORWARD_REQUEST_HEADERS 里直通。
+        for (const name of customHeaderNames.slice(0, 8)) {
+            if (name.length > 64) continue;
             if (blockedForwardHeaders.has(name.toLowerCase())) continue;
             const value = request.headers.get(name);
-            if (value) fwdHeaders.set(name, value);
+            if (value && value.length <= 4096) fwdHeaders.set(name, value);
         }
 
         let upstream;

@@ -2464,6 +2464,11 @@ export default {
         if (parsedTarget.protocol !== 'https:') {
           return jsonResponse({ error: 'Only HTTPS URLs allowed' }, { status: 400, origin });
         }
+        // SSRF：公共实例可被任意网站借用，内网/回环/link-local 一律拒绝
+        //（/fetch-webpage、/bilibili/asset 同款 isUnsafeFetchTarget）。
+        if (isUnsafeFetchTarget(parsedTarget)) {
+          return jsonResponse({ error: 'Target host not allowed' }, { status: 400, origin });
+        }
       } catch {
         return jsonResponse({ error: 'Invalid URL' }, { status: 400, origin });
       }
@@ -2493,6 +2498,8 @@ export default {
           method: webdavMethod,
           headers: forwardHeaders,
           body,
+          // 备份文件可能很大但不能无限 hanging：30s 上游无响应即断开，客户端按失败重试。
+          signal: AbortSignal.timeout(30000),
         });
         console.log('webdav', webdavMethod, targetUrl, '→', upstream.status);
         const respHeaders = new Headers(corsHeaders(origin));
@@ -2608,6 +2615,7 @@ export default {
           method: cfMethod,
           headers: cfHeaders,
           body: cfBody,
+          signal: AbortSignal.timeout(30000),
         });
         // 日志只留方法 / 路径 / 状态码，排障够用。token 在 header 里、不打；
         // query 也不打（pathname 已经把它切掉了）。路径里的账号 id 会留下。
@@ -3122,6 +3130,8 @@ export default {
           headers: ghHeaders,
           body: ghBody,
           redirect: 'follow',
+          // 备份包上传可能很慢，给足 120s；无限 hanging 会占住 isolate。
+          signal: AbortSignal.timeout(120000),
         });
         console.log('github', ghMethod, targetUrl, '→', ghUpstream.status);
         const ghRespHeaders = new Headers(corsHeaders(origin));
@@ -3164,7 +3174,8 @@ export default {
             'Notion-Version': '2022-06-28',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(25000),
         });
         const text = await notionRes.text();
         return new Response(text, {
@@ -3191,7 +3202,8 @@ export default {
             filter: body.filter || undefined,
             sorts: body.sorts || [{ property: 'Date', direction: 'descending' }],
             page_size: body.page_size || 10
-          })
+          }),
+          signal: AbortSignal.timeout(25000),
         });
         const text = await notionRes.text();
         return new Response(text, {
@@ -3207,7 +3219,8 @@ export default {
           headers: {
             'Authorization': `Bearer ${notionKey}`,
             'Notion-Version': '2022-06-28'
-          }
+          },
+          signal: AbortSignal.timeout(25000),
         });
         const text = await notionRes.text();
         return new Response(text, {
@@ -3223,7 +3236,8 @@ export default {
           headers: {
             'Authorization': `Bearer ${notionKey}`,
             'Notion-Version': '2022-06-28'
-          }
+          },
+          signal: AbortSignal.timeout(25000),
         });
         const text = await notionRes.text();
         return new Response(text, {

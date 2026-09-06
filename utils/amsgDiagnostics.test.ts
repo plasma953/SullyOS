@@ -242,6 +242,27 @@ describe('buildAmsgDiagnosticRows — 红绿判定', () => {
     expect(masterKey.detail).toContain('Secret');
   });
 
+  it('没设 AMSG_SERVER_TOKEN → 安全红灯：公网知道地址就能读写任务', () => {
+    const rows = buildAmsgDiagnosticRows({
+      probe: {
+        reachable: true,
+        report: healthyReport({
+          config: {
+            ok: true,
+            missing: [],
+            message: 'Worker 配置齐全。',
+            warnings: [{ code: 'SERVER_TOKEN_MISSING', message: '没设 AMSG_SERVER_TOKEN' }],
+          },
+        }),
+      },
+      localPushSubscribed: true,
+    });
+
+    const serverToken = rowOf(rows, 'serverToken');
+    expect(serverToken.level).toBe('bad');
+    expect(serverToken.detail).toContain('AMSG_SERVER_TOKEN');
+  });
+
   /**
    * 回归守卫：查不了 ≠ 齐了。
    *

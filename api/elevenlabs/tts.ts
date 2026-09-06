@@ -1,6 +1,7 @@
 /**
  * ElevenLabs TTS 代理（Vercel serverless）。
- * Key 由客户端请求头或部署环境变量提供；代理只转发，不记录 Key 与待合成文本。
+ * Key 必须由客户端请求头提供；代理只转发，不记录 Key 与待合成文本。
+ * 注意：不要在这里回退到环境变量——CORS 全开 + 无鉴权时，部署者的 Key 会被公网任意调用烧掉。
  */
 const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
 const DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
@@ -39,13 +40,12 @@ export default async function handler(req: any, res: any) {
 
   try {
     const incomingKey = typeof req.headers['xi-api-key'] === 'string' ? req.headers['xi-api-key'] : '';
-    const envKey = typeof process.env.ELEVENLABS_API_KEY === 'string' ? process.env.ELEVENLABS_API_KEY : '';
-    const apiKey = normalizeApiKey(incomingKey) || normalizeApiKey(envKey);
+    const apiKey = normalizeApiKey(incomingKey);
     const voiceId = normalizeVoiceId(req.query?.voice_id);
     const outputFormat = normalizeOutputFormat(req.query?.output_format);
 
     if (!apiKey) {
-      res.status(400).json({ error: 'Missing API key. Provide xi-api-key or ELEVENLABS_API_KEY.' });
+      res.status(400).json({ error: 'Missing API key. Provide xi-api-key header.' });
       return;
     }
     if (!voiceId) {

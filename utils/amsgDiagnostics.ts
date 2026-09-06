@@ -376,6 +376,7 @@ export const buildAmsgDiagnosticRows = (input: AmsgDiagnosticsInput): AmsgDiagno
       },
       unknownRest('database', '数据库绑定'),
       unknownRest('masterKey', '主密钥'),
+      unknownRest('serverToken', '访问口令'),
       unknownRest('schema', '数据表'),
       unknownRest('pushCredential', '推送凭据'),
       unknownRest('pushDevice', '这台设备'),
@@ -408,6 +409,18 @@ export const buildAmsgDiagnosticRows = (input: AmsgDiagnosticsInput): AmsgDiagno
     label: '主密钥',
     level: masterKeyMissing ? 'bad' : masterKeyFormat ? 'warn' : 'ok',
     detail: masterKeyMissing ? MASTER_KEY_MISSING_HINT : masterKeyFormat?.message || '已配置。',
+  });
+
+  // 访问口令：没设 AMSG_SERVER_TOKEN 时 Worker 端点对公网全开，知道地址就能读写任务。
+  // 库函数层面配了才校验、不配不拦——这里是唯一能把"裸奔"摆到用户面前的地方，必须报红。
+  const serverTokenMissing = config.warnings.some((item) => item.code === 'SERVER_TOKEN_MISSING');
+  rows.push({
+    key: 'serverToken',
+    label: '访问口令',
+    level: serverTokenMissing ? 'bad' : 'ok',
+    detail: serverTokenMissing
+      ? '没设 AMSG_SERVER_TOKEN：知道 Worker 地址的人都能读写你的任务。去 Worker 的 Secret 里加上，客户端填同一个值。'
+      : '已配置。',
   });
 
   // 库都没绑的话，下面这些查出来必然是「什么都没有」，报红会把人往错的方向引。

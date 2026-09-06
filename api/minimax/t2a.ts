@@ -48,15 +48,14 @@ export default async function handler(req: any, res: any) {
   try {
     const incomingAuthRaw = typeof req.headers.authorization === 'string' ? req.headers.authorization : '';
     const customApiKeyRaw = typeof req.headers['x-minimax-api-key'] === 'string' ? req.headers['x-minimax-api-key'] : '';
-    const envApiKeyRaw = typeof process.env.MINIMAX_API_KEY === 'string' ? process.env.MINIMAX_API_KEY : '';
 
     const incomingApiKey = normalizeApiKey(incomingAuthRaw);
     const customApiKey = normalizeApiKey(customApiKeyRaw);
-    const envApiKey = normalizeApiKey(envApiKeyRaw);
-    const finalApiKey = incomingApiKey || customApiKey || envApiKey;
+    // 注意：不要回退到 MINIMAX_API_KEY 环境变量——CORS 全开 + 无鉴权时，部署者的 Key 会被公网任意调用烧掉。
+    const finalApiKey = incomingApiKey || customApiKey;
 
     if (!finalApiKey) {
-      res.status(400).json({ error: 'Missing API key. Provide Authorization, x-minimax-api-key, or MINIMAX_API_KEY.' });
+      res.status(400).json({ error: 'Missing API key. Provide Authorization or x-minimax-api-key.' });
       return;
     }
 
@@ -65,7 +64,6 @@ export default async function handler(req: any, res: any) {
     if (groupId && !requestBody.group_id) requestBody.group_id = groupId;
     const targetUrl = resolveTargetUrl(req);
     const requestStartedAt = Date.now();
-    const reqPreview = typeof requestBody.text === 'string' ? requestBody.text.slice(0, 80) : '';
 
     console.log('[minimax:t2a] request', {
       model: requestBody.model,
@@ -74,8 +72,8 @@ export default async function handler(req: any, res: any) {
       voice_id: requestBody?.voice_setting?.voice_id,
       group_id: requestBody.group_id || '',
       target: targetUrl,
+      // 只记长度不记正文：Vercel 日志不是放用户文本的地方。
       text_length: typeof requestBody.text === 'string' ? requestBody.text.length : 0,
-      text_preview: reqPreview,
     });
 
     const upstream = await fetch(targetUrl, {

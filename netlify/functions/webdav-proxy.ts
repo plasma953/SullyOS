@@ -19,6 +19,24 @@ const CORS_HEADERS: Record<string, string> = {
     'Access-Control-Max-Age': '86400',
 };
 
+/** 与 worker/index.js 的 isUnsafeFetchTarget 同语义：挡回环/私网/link-local/特殊域。 */
+function isUnsafeFetchTarget(parsed: URL): boolean {
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return true;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return true;
+    if (host === '::1' || host === '0.0.0.0') return true;
+    const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (v4) {
+        const a = Number(v4[1]), b = Number(v4[2]);
+        if (a === 127 || a === 10 || a === 0) return true;
+        if (a === 192 && b === 168) return true;
+        if (a === 169 && b === 254) return true;
+        if (a === 172 && b >= 16 && b <= 31) return true;
+    }
+    if (/^f[cd][0-9a-f]{2}:/i.test(host) || /^fe[89ab][0-9a-f]:/i.test(host)) return true;
+    return false;
+}
+
 export default async (req: Request) => {
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -48,6 +66,13 @@ export default async (req: Request) => {
         parsedTarget = new URL(targetUrl);
         if (parsedTarget.protocol !== 'https:') {
             return new Response(JSON.stringify({ error: 'Only HTTPS URLs allowed' }), {
+                status: 400,
+                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+            });
+        }
+        // SSRF：公共实例可被任意网站借用，内网/回环/link-local 一律拒绝。
+        if (isUnsafeFetchTarget(parsedTarget)) {
+            return new Response(JSON.stringify({ error: 'Target host not allowed' }), {
                 status: 400,
                 headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
             });
@@ -93,6 +118,7 @@ export default async (req: Request) => {
             method: webdavMethod,
             headers: forwardHeaders,
             body: body,
+            signal: AbortSignal.timeout(30000),
         });
 
         // Build response — pass through status and body
