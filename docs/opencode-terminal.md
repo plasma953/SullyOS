@@ -16,14 +16,15 @@
 改动抽屉）、**文件**（目录树 + 读文件 + 全文搜索）、**遥控**（操作电脑屏幕上正在跑
 的那个 TUI：预填/提交 prompt、执行 TUI 命令、弹 toast、开会话/模型选择器）。
 
-## 电脑端三选一（按推荐排序）
+## 电脑端四选一（按推荐排序）
 
 | 路径 | 适用 | 电脑端命令 / 操作 |
 |------|------|-------------------|
 | **直连**（代理 URL 留空） | 同机 / 同 Wi-Fi / 出门但手机电脑都在外网直达 | `opencode serve --port 4096 --cors http://localhost:5173`（`--cors` 填手机页面的源；`--cors` 可传多次） |
 | **Tailscale 直连**（最推荐的远程） | 出门远程办公，不想暴露公网 | 两边都装 Tailscale 进同一虚拟局域网；serve 照常绑本机；手机填 `http://100.x.y.z:4096`。流量走 WireGuard 加密，不经过任何第三方代理 |
+| **VPS 反向隧道**（手机零安装） | 手机 VPN 槽被占 / 不想装任何 App，有 VPS | 电脑 `ssh -R` 把端口递到 VPS，手机连 VPS。详见下节 |
 | **本地代理** | serve 没起 `--cors`、又不想动它 | 电脑上跑 `node scripts/opencode-proxy.mjs`（默认 `:18062`），手机「代理 URL」填 `http://localhost:18062`（电脑浏览器） |
-| **自部署 CF Worker** | 公网远程 + 电脑无公网 IP（经 Tunnel） | 见下 |
+| **自部署 CF Worker** | 公网远程 + 电脑无公网 IP（经 Tunnel） | 见「CF Worker 代理部署」节 |
 
 > serve 默认只绑 `127.0.0.1`。局域网另一台设备要连，起 serve 的那台保持默认即可
 > （连的是它的局域网 IP，如 `http://192.168.1.5:4096`）；**只有**需要经公网/Tunnel
@@ -39,9 +40,85 @@ OPENCODE_SERVER_PASSWORD=<强密码> opencode serve --port 4096
 ```
 
 手机设置里填同一对用户名/密码，请求头自动带 `Authorization: Basic …`。
-**不设密码 = 局域网裸奔**：只在可信网络用；任何经公网的链路必须设密码。
+**不设密码 = 裸奔**：VPS 反向隧道和任何经公网的链路必须设密码。
 密码只存本机 localStorage（`aetheros.opencode.connection`），随备份导出包一起走
 （与 MCP token 同口径）——**备份包妥善保管**。密码永不进日志与报错文本。
+
+## VPS 反向隧道（详细步骤）
+
+原理：电脑主动 `ssh` 连上 VPS，把远端 `127.0.0.1:4096` 映射回本机 serve。
+serve 继续绑 `127.0.0.1`（ssh 在同一台机器走回环，不用 `--hostname 0.0.0.0`）；
+手机连 VPS，全程手机端零安装、不占 VPN 槽。
+
+```mermaid
+手机 --(http/https + Basic Auth)--> VPS:4096 --(ssh -R 隧道)--> 电脑 127.0.0.1:4096
+```
+
+### 1. 电脑生成专用密钥（PowerShell，一次）
+
+```powershell
+ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\oc_tunnel -N '""'
+type $env:USERPROFILE\.ssh\oc_tunnel.pub
+```
+
+把打印出的公钥追加到 VPS 的 `~/.ssh/authorized_keys`（单独一行；可选加固前缀，
+sshd 认不出就去掉它）：
+`permitlisten="127.0.0.1:4096" ssh-ed25519 AAAA…`。
+
+### 2. 电脑建保活隧道（PowerShell）
+
+存为 `$env:USERPROFILE\tunnel-oc.ps1`（把 `你的VPS` 换成地址）：
+
+```powershell
+while ($true) {
+  ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 `
+    -i $env:USERPROFILE\.ssh\oc_tunnel `
+    -R 127.0.0.1:4096:localhost:4096 root@你的VPS
+  Start-Sleep -Seconds 10
+}
+```
+
+先手动跑一次验证通路（另开终端 `curl http://你的VPS:4096/global/health`
+应返回 `{"healthy":true,…}`——注意这一步从**外网**测，不要在 VPS 本机测）。
+通了之后注册成开机自启的计划任务：
+
+```powershell
+$action = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument "-NoProfile -WindowStyle Hidden -File $env:USERPROFILE\tunnel-oc.ps1"
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -RestartCount 999 `
+  -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
+Register-ScheduledTask -TaskName "opencode-tunnel" `
+  -Action $action -Trigger $trigger -Settings $settings
+```
+
+### 3. VPS 侧二选一
+
+- **A. 直接暴露端口（简单）**：隧道绑的是 VPS 的 `127.0.0.1`，手机够不着。
+  要么改第 2 步的 `-R` 为 `-R 0.0.0.0:4096:localhost:4096`（需 VPS 的
+  `sshd_config` 开 `GatewayPorts yes` 并 `ufw allow 4096/tcp`），要么走 B。
+- **B. Caddy 反代 + 自动 TLS（推荐）**：保持 `-R 127.0.0.1:4096`，Caddy 加一段：
+
+```caddy
+oc-phone.你的域名 {
+    reverse_proxy 127.0.0.1:4096
+}
+```
+
+手机填 `https://oc-phone.你的域名`——https 还顺手治好了「https 页面调 http
+被浏览器拦」的问题，线上版 SullyOS 也能用。
+
+### 4. 手机侧
+
+终端 → 连接 → opencode 地址填 VPS 地址（A 为 `http://VPS:4096`，B 为
+`https://oc-phone.你的域名`），用户名/密码照旧，测试连接。
+
+### 排障
+
+- 测试连接失败先看隧道活着没：电脑任务计划程序里 `opencode-tunnel` 是否在跑；
+  VPS 上 `ss -ltnp | grep 4096` 有没有监听。
+- 隧道通但 401：serve 密码与手机填的不一致（`OPENCODE_SERVER_PASSWORD`）。
+- 隧道通但 `Failed to fetch`：`--cors` 没包含手机页面的源。
 
 ## CF Worker 代理部署（出门远程）
 

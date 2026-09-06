@@ -434,6 +434,7 @@ git commit -m "feat(desktop): appearance settings and snapshot fields"
 - [ ] **Step 1: grep 建清单**（`Select-String -Pattern '\d+vw|\d+vh|svh|lvh|dvh'`，逐条判定 portal/内部）
 - [ ] **Step 2: 分批转换**（每 5 文件一批，每批后 tsc scoped）
 - [ ] **Step 3: Commit**（一批一 commit，message 如 `fix(desktop): container-relative sizing in <area>`）
+- 落地结论（2026-09-06 对账）：已转换 ThemeMaker / Live2DActionSettings / ChatAppearanceEditor / JournalAppearanceEditor（`min(94vw,520px,100%)`）四处 `vh→%`；其余字面量逐条核过——Live2DAvatarCanvas 本就是容器 rect 读数，ThemeMaker:1391 的 `100dvh` maxHeight 经几何核算在框内永不收紧（`height: min(62vh,620px)` 先收敛），Chat.tsx 一处 `35vh` 随 bilibili 混改文件暂缓。无需再动。
 
 ### Task 9: 触屏手势桌面审计
 
@@ -444,6 +445,7 @@ git commit -m "feat(desktop): appearance settings and snapshot fields"
 - [ ] **Step 1: 审计**：列出全部 `onTouchStart` 用点，标记已有 pointer/`onContextMenu` 双线的（`LongPressArea` 模式，`apps/Appearance.tsx:55-111` 为范本）vs 触屏独占的
 - [ ] **Step 2: 补双线**：触屏独占的关键路径仿 `LongPressArea` 补 pointer 计时（只加不改 touch 路径）；非关键路径记录不修
 - [ ] **Step 3: 桌面手动验证**（聊天消息长按、DateSession 手势、输入区、CallApp）+ Commit
+- 落地结论（2026-09-06 对账）：审计完最高频文件，仓库内一律是 touch + mouseDown/contextMenu 双线（范本 `LongPressArea`，DateApp 的 handler 签名直接接受 `TouchEvent | MouseEvent`），鼠标用户全覆盖；合成 TouchEvent 桥不需要，无代码改动。
 
 ```bash
 git add <实际文件>
