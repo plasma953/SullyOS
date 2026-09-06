@@ -10,3 +10,10 @@
 
   [headers.values]
     Service-Worker-Allowed = "/"
+
+# SPA 回退：直接刷新子路由时回 index.html（与 vercel.json / wrangler single-page-application 对齐）。
+# 200 rewrite 非强制：已存在的静态文件与函数不受影响。
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

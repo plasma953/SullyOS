@@ -93,7 +93,7 @@ export function addHiddenDoubanId(sourceId: string): void {
 
 // --- 时间 / 文本 ---
 
-/** 'YYYY-MM-DD HH:mm:ss(.ffffff)?' → 毫秒时间戳，解析失败回 Date.now() */
+/** 'YYYY-MM-DD HH:mm:ss(.ffffff)?' → 毫秒时间戳；解析失败回 0（沉底，绝不能冒充最新） */
 export function parseDoubanTime(input: unknown): number {
     if (typeof input === 'string' && input.trim()) {
         const normalized = input.trim().replace(' ', 'T').replace(/(\.\d{3})\d+$/, '$1');
@@ -103,7 +103,7 @@ export function parseDoubanTime(input: unknown): number {
     if (typeof input === 'number' && Number.isFinite(input)) {
         return input > 1e12 ? input : input * 1000;
     }
-    return Date.now();
+    return 0;
 }
 
 /** 详情正文可能是富文本/HTML，转纯文本展示 */
@@ -148,16 +148,24 @@ export function doubanImgUrl(url: unknown): string {
 
 // --- worker 调用 ---
 
+const DOUBAN_TIMEOUT_MS = 20000;
+
 async function workerGet(path: string, params: Record<string, string>): Promise<any> {
     const base = getProxyWorkerUrl();
     const qs = new URLSearchParams(params).toString();
-    const res = await fetch(`${base}${path}?${qs}`);
-    const text = await res.text().catch(() => '');
-    let json: any = null;
-    try { json = text ? JSON.parse(text) : null; } catch { /* non-json */ }
-    if (!res.ok) throw new Error((json && json.error) || `HTTP ${res.status}`);
-    if (!json || json.success !== true) throw new Error((json && json.error) || '代理返回异常');
-    return json.data;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DOUBAN_TIMEOUT_MS);
+    try {
+        const res = await fetch(`${base}${path}?${qs}`, { signal: controller.signal });
+        const text = await res.text().catch(() => '');
+        let json: any = null;
+        try { json = text ? JSON.parse(text) : null; } catch { /* non-json */ }
+        if (!res.ok) throw new Error((json && json.error) || `HTTP ${res.status}`);
+        if (!json || json.success !== true) throw new Error((json && json.error) || '代理返回异常');
+        return json.data;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 /** 拉一个小组的话题列表（start 分页，0 起），归一化成 SocialPost */
@@ -201,8 +209,8 @@ export async function fetchDoubanTopicDetail(sourceId: string): Promise<{
 }
 
 /** 拉话题评论（豆瓣真实评论）。端点形态未经长期验证，失败由调用方静默跳过。 */
-export async function fetchDoubanComments(sourceId: string): Promise<SocialComment[]> {
-    const data = await workerGet('/social/douban/comments', { id: sourceId, start: '0' });
+export async function fetchDoubanComments(sourceId: string, start = 0): Promise<SocialComment[]> {
+    const data = await workerGet('/social/douban/comments', { id: sourceId, start: String(start) });
     // 两层容错：comments / replies / list 任一数组形态都接受
     const raw = Array.isArray(data?.comments)
         ? data.comments
@@ -212,10 +220,11 @@ export async function fetchDoubanComments(sourceId: string): Promise<SocialComme
                 ? data.list
                 : [];
     const comments: SocialComment[] = [];
-    for (const c of raw) {
-        const comment = normalizeDoubanComment(c);
+    (raw as any[]).forEach((c: any, index: number) => {
+        // 无服务端 id 时用索引兜底，保证同批拉取的 key 稳定、不抖动重排
+        const comment = normalizeDoubanComment(c, index);
         if (comment) comments.push(comment);
-    }
+    });
     return comments;
 }
 
@@ -258,14 +267,14 @@ export function normalizeDoubanTopic(topic: any, group: DoubanGroup): SocialPost
     };
 }
 
-export function normalizeDoubanComment(raw: any): SocialComment | null {
+export function normalizeDoubanComment(raw: any, fallbackIndex = 0): SocialComment | null {
     if (!raw || typeof raw !== 'object') return null;
     const text = stripHtml(raw.text ?? raw.content ?? raw.raw ?? '');
     if (!text) return null;
     const author = (raw.author && typeof raw.author === 'object') ? raw.author : {};
     const authorName = String(author?.name ?? raw.author_name ?? raw.user_name ?? '豆友');
     return {
-        id: `douban-cmt:${String(raw.id ?? `${Date.now()}-${Math.random()}`)}`,
+        id: `douban-cmt:${String(raw.id ?? `idx-${fallbackIndex}`)}`,
         authorName,
         authorAvatar: typeof (author?.avatar ?? raw.author_avatar) === 'string'
             ? (author?.avatar ?? raw.author_avatar)

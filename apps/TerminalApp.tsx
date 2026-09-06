@@ -14,6 +14,7 @@ import {
 } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { AppID } from '../types';
+import ConfirmDialog from '../components/os/ConfirmDialog';
 import FilesTab from '../components/terminal/FilesTab';
 import TuiTab from '../components/terminal/TuiTab';
 import type {
@@ -125,6 +126,44 @@ const SessionDrawer: React.FC<{
     );
 };
 
+const RenameModal: React.FC<{
+    session: OpencodeSessionInfo | null;
+    onSubmit: (s: OpencodeSessionInfo, title: string) => void;
+    onClose: () => void;
+}> = ({ session, onSubmit, onClose }) => {
+    const [draft, setDraft] = useState(session?.title || '');
+    useEffect(() => { setDraft(session?.title || ''); }, [session?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!session) return null;
+    return (
+        <div className="absolute inset-0 z-30">
+            <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+            <div className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white p-4 shadow-2xl">
+                <p className="text-xs font-bold text-slate-700">会话改名</p>
+                <input
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter') { onSubmit(session, draft); onClose(); }
+                        if (e.key === 'Escape') onClose();
+                    }}
+                    maxLength={60}
+                    placeholder="起个名字"
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-700 outline-none placeholder:text-slate-300 focus:border-emerald-400"
+                />
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button type="button" onClick={onClose} className="rounded-xl bg-slate-100 py-2.5 text-xs font-bold text-slate-500 active:scale-95">取消</button>
+                    <button
+                        type="button"
+                        onClick={() => { onSubmit(session, draft); onClose(); }}
+                        disabled={!draft.trim() || draft.trim() === session.title}
+                        className="rounded-xl bg-emerald-500 py-2.5 text-xs font-bold text-white active:scale-95 disabled:opacity-40"
+                    >确定</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const DiffPanel: React.FC<{
     open: boolean;
     loading: boolean;
@@ -183,11 +222,17 @@ const TerminalApp: React.FC = () => {
     const [diffs, setDiffs] = useState<OpencodeFileDiff[]>([]);
     const [diffLoading, setDiffLoading] = useState(false);
     const [sseOn, setSseOn] = useState(false);
+    const [pendingDelete, setPendingDelete] = useState<OpencodeSessionInfo | null>(null);
+    const [pendingReject, setPendingReject] = useState<OpencodePermission | null>(null);
+    const [renameTarget, setRenameTarget] = useState<OpencodeSessionInfo | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const connRef = useRef(conn);
     connRef.current = conn;
     const activeRef = useRef(activeId);
     activeRef.current = activeId;
+    // statusMap 的 ref 镜像：2s 轮询 interval 只建一次，读闭包里的 statusMap 会永远过期。
+    const statusRef = useRef(statusMap);
+    statusRef.current = statusMap;
 
     const activeStatus = activeId ? statusMap[activeId]?.type : undefined;
     const busy = activeStatus === 'busy' || activeStatus === 'retry';
@@ -246,13 +291,13 @@ const TerminalApp: React.FC = () => {
             void refreshStatus();
             const id = activeRef.current;
             const c = connRef.current;
-            if (id && c?.enabled && (statusMap[id]?.type === 'busy' || statusMap[id]?.type === 'retry')) {
+            const st = id ? statusRef.current[id]?.type : undefined;
+            if (id && c?.enabled && (st === 'busy' || st === 'retry')) {
                 void refreshMessages(id, true);
             }
         }, POLL_MS);
         return () => clearInterval(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [conn?.enabled]);
+    }, [conn?.enabled, refreshSessions, refreshStatus, refreshMessages]);
 
     // SSE：权限审批与会话增删实时推；断线 5s 后重连。
     useEffect(() => {
@@ -338,13 +383,13 @@ const TerminalApp: React.FC = () => {
         } catch (e) { addToast(failHint(e), 'error'); }
     }, [addToast, failHint, refreshSessions, selectSession]);
 
-    const handleRename = useCallback(async (s: OpencodeSessionInfo) => {
+    const handleRename = useCallback(async (s: OpencodeSessionInfo, title: string) => {
         const c = connRef.current;
         if (!c?.enabled) return;
-        const title = window.prompt('会话改名', s.title || '');
-        if (title == null || !title.trim() || title.trim() === s.title) return;
+        const next = title.trim();
+        if (!next || next === s.title) return;
         try {
-            await renameSession(c, s.id, title.trim());
+            await renameSession(c, s.id, next);
             await refreshSessions(true);
         } catch (e) { addToast(failHint(e), 'error'); }
     }, [addToast, failHint, refreshSessions]);
@@ -352,7 +397,6 @@ const TerminalApp: React.FC = () => {
     const handleDelete = useCallback(async (s: OpencodeSessionInfo) => {
         const c = connRef.current;
         if (!c?.enabled) return;
-        if (!window.confirm(`删除会话「${s.title || '未命名'}」？\n\n消息记录会一起删，文件改动不受影响。`)) return;
         try {
             await deleteSession(c, s.id);
             if (s.id === activeRef.current) { setActiveId(null); setMessages([]); }
@@ -400,7 +444,6 @@ const TerminalApp: React.FC = () => {
     const handlePermission = useCallback(async (p: OpencodePermission, response: OpencodePermissionResponse) => {
         const c = connRef.current;
         if (!c?.enabled) return;
-        if (response === 'reject' && !window.confirm(`拒绝「${p.title}」？\n\n电脑端当前这一步会停下。`)) return;
         try {
             await respondPermission(c, p.sessionID, p.id, response);
             setPermissions(prev => prev.filter(x => x.id !== p.id));
@@ -485,7 +528,7 @@ const TerminalApp: React.FC = () => {
                         <div className="mt-2 grid grid-cols-3 gap-1.5">
                             <button type="button" onClick={() => void handlePermission(p, 'once')} className="rounded-lg bg-emerald-500 py-2 text-[10px] font-bold text-white active:scale-95">允许本次</button>
                             <button type="button" onClick={() => void handlePermission(p, 'always')} className="rounded-lg bg-emerald-100 py-2 text-[10px] font-bold text-emerald-700 active:scale-95">总是允许</button>
-                            <button type="button" onClick={() => void handlePermission(p, 'reject')} className="rounded-lg bg-slate-200 py-2 text-[10px] font-bold text-slate-600 active:scale-95">拒绝</button>
+                            <button type="button" onClick={() => setPendingReject(p)} className="rounded-lg bg-slate-200 py-2 text-[10px] font-bold text-slate-600 active:scale-95">拒绝</button>
                         </div>
                     </div>
                 ))}
@@ -540,11 +583,34 @@ const TerminalApp: React.FC = () => {
                 statusMap={statusMap}
                 onSelect={selectSession}
                 onNew={() => void handleNew()}
-                onRename={(s) => void handleRename(s)}
-                onDelete={(s) => void handleDelete(s)}
+                onRename={(s) => setRenameTarget(s)}
+                onDelete={(s) => setPendingDelete(s)}
                 onClose={() => setDrawerOpen(false)}
             />
             <DiffPanel open={diffOpen} loading={diffLoading} diffs={diffs} onClose={() => setDiffOpen(false)} />
+            <RenameModal
+                session={renameTarget}
+                onSubmit={(s, title) => void handleRename(s, title)}
+                onClose={() => setRenameTarget(null)}
+            />
+            <ConfirmDialog
+                isOpen={pendingDelete != null}
+                title="删除会话"
+                message={pendingDelete ? `删除会话「${pendingDelete.title || '未命名'}」？\n\n消息记录会一起删，文件改动不受影响。` : ''}
+                variant="danger"
+                confirmText="删除"
+                onConfirm={() => { if (pendingDelete) void handleDelete(pendingDelete); setPendingDelete(null); }}
+                onCancel={() => setPendingDelete(null)}
+            />
+            <ConfirmDialog
+                isOpen={pendingReject != null}
+                title="拒绝操作"
+                message={pendingReject ? `拒绝「${pendingReject.title}」？\n\n电脑端当前这一步会停下。` : ''}
+                variant="warning"
+                confirmText="拒绝"
+                onConfirm={() => { if (pendingReject) void handlePermission(pendingReject, 'reject'); setPendingReject(null); }}
+                onCancel={() => setPendingReject(null)}
+            />
         </div>
     );
 };

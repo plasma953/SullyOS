@@ -118,11 +118,10 @@ describe('parseDoubanTime / stripHtml', () => {
         expect(parseDoubanTime('2026-09-06 19:50:46.639321')).toBe(new Date('2026-09-06T19:50:46.639').getTime());
     });
 
-    it('非法输入回退到当前时间', () => {
-        const before = Date.now();
-        const got = parseDoubanTime('not-a-date');
-        expect(got).toBeGreaterThanOrEqual(before);
-        expect(got).toBeLessThanOrEqual(Date.now());
+    it('非法输入回 0（脏时间沉底，绝不能冒充最新）', () => {
+        expect(parseDoubanTime('not-a-date')).toBe(0);
+        expect(parseDoubanTime(undefined)).toBe(0);
+        expect(parseDoubanTime('')).toBe(0);
     });
 
     it('stripHtml 去标签转义字符', () => {
