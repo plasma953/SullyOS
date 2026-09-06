@@ -7,7 +7,9 @@ import {
     enrichMoveToPlace,
     getCityLibrary,
     listCachedLibraries,
+    readUserCity,
     resolveStructuredPlace,
+    writeUserCityMirror,
 } from './cityPlaces';
 
 const AUTH = { proxyUrl: 'https://proxy.example', key: 'K' };
@@ -183,6 +185,15 @@ describe('enrichMoveToPlace', () => {
         mockFetch({ failAll: true });
         // failAll 下 Open-Meteo 也挂 → null
         expect(await enrichMoveToPlace('上海', AUTH)).toBeNull();
+    });
+});
+
+describe('用户城市镜像（localStorage 同步读写）', () => {
+    it('write/read round-trip；空串清除', () => {
+        writeUserCityMirror('上海市');
+        expect(readUserCity()).toBe('上海市');
+        writeUserCityMirror('  ');
+        expect(readUserCity()).toBeUndefined();
     });
 });
 

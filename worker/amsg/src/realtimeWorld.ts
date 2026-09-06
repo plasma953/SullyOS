@@ -26,9 +26,15 @@ import {
 } from '../../../utils/realtimeWorldCore';
 import type { AmsgToolConfig } from '../../../utils/amsgToolPack';
 
-/** 两份快照都放全局命名空间：天气按城市、热榜按时段，本来就是所有角色共用一份。 */
-export const AMSG_WEATHER_SNAPSHOT_KEY = 'world_weather';
+/** 两份快照都放全局命名空间：天气按城市分键、热榜按时段，本来就是所有角色共用一份。 */
 export const AMSG_HOTNEWS_SNAPSHOT_KEY = 'world_hotnews';
+
+/**
+ * 天气快照键（按城市分键）：角色与用户异地时各存各的、互不覆盖。
+ * 注意：2026-09 之前用的是单键 `world_weather`，老快照会剩一行孤儿在 client_state
+ *（JSON 小行，无 GC，忽略即可；30 分钟语义过期后不再被读）。
+ */
+export const weatherSnapshotKey = (city: string): string => `world_weather:${city}`;
 
 /** 天气快照的保鲜期，与前台默认的缓存时长一致。 */
 const WEATHER_TTL_MS = 30 * 60 * 1000;
@@ -123,9 +129,10 @@ const loadWeather = async (
 ): Promise<WeatherData | null> => {
   if (!city) return null;
 
-  const snap = parseSnapshot<WeatherSnapshot>(globalRows, AMSG_WEATHER_SNAPSHOT_KEY,
+  const snapKey = weatherSnapshotKey(city);
+  const snap = parseSnapshot<WeatherSnapshot>(globalRows, snapKey,
     (v) => v && typeof v.city === 'string' && v.data && typeof v.fetchedAt === 'number');
-  if (snap && snap.city === city && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
+  if (snap && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
     console.log('[amsg:world] 天气命中快照', { city, ageMin: Math.round((nowMs - snap.fetchedAt) / 60000) });
     return snap.data;
   }
@@ -133,14 +140,14 @@ const loadWeather = async (
   const fresh = await fetchWeatherWithFallback(city, cfg.weatherApiKey);
   if (fresh) {
     pendingWrites.push({
-      key: AMSG_WEATHER_SNAPSHOT_KEY,
+      key: snapKey,
       value: JSON.stringify({ city, data: fresh, fetchedAt: nowMs } satisfies WeatherSnapshot),
     });
     return fresh;
   }
   // 拉不到就用手上这份旧的：半小时前的气温也比「今天天气怎么样都不知道」强，
-  // 而且不写快照，下次触发会再试一次。城市换过了、或者旧得过头了就宁可不说。
-  if (snap && snap.city === city && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
+  // 而且不写快照，下次触发会再试一次。旧得过头了就宁可不说。
+  if (snap && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
     console.warn('[amsg:world] 天气拉取失败，先用上一次的读数', { city });
     return snap.data;
   }
@@ -203,6 +210,10 @@ export const buildRealtimeWorldResult = async (args: {
    * （与自定义时区同构），全局默认城市只兜没填地点的角色。
    */
   charCity?: string;
+  /**
+   * 角色所在省（tool_pack.charProvince）：「你所在的城市」行用，没有就不出那一行。
+   */
+  charProvince?: string;
   /** onBeforeFire 已经读过的 amsg:global 行，直接复用，不再多查一次。 */
   globalRows: StateRow[];
   globalNamespace: string;
@@ -211,6 +222,9 @@ export const buildRealtimeWorldResult = async (args: {
   const { toolConfig: cfg, nowMs, globalRows } = args;
   // 天气取数城市：角色自己的家优先，没填地点的角色退全局默认城市。
   let weatherCity = (args.charCity || cfg.weatherCity || '').trim();
+  // 用户那边：开关默认开；没设用户城市、或与角色同城 → 不出那一段。
+  const userCity = (cfg.userPerceptionEnabled !== false ? (cfg.userCity || '').trim() : '');
+  const showUserSide = !!userCity && userCity !== weatherCity;
 
   const specialDates = args.timeAwarenessEnabled ? checkSpecialDates(args.tzId, nowMs) : [];
   if (!cfg.weatherEnabled && !cfg.newsEnabled) {
@@ -218,19 +232,24 @@ export const buildRealtimeWorldResult = async (args: {
   }
   if (!cfg.weatherEnabled) {
     // 天气关了（或角色/全局连个城市都没有），weatherCity 置空只挡天气那一支；热搜与城市无关照走。
+    // 用户那边同样是天气，跟着一起熄。
     weatherCity = '';
   }
 
   const pendingWrites: Array<{ key: string; value: string }> = [];
-  const [weather, news] = await withBudget(
+  const [weather, userWeather, news] = await withBudget(
     Promise.all([
       (cfg.weatherEnabled && weatherCity)
         ? loadWeather(weatherCity, cfg, nowMs, globalRows, pendingWrites)
         : Promise.resolve(null),
+      // 用户城市同链路再取一次：快照按城分键，异地各拉各的（共用 10 秒总预算）。
+      (cfg.weatherEnabled && showUserSide)
+        ? loadWeather(userCity, cfg, nowMs, globalRows, pendingWrites)
+        : Promise.resolve(null),
       cfg.newsEnabled ? loadHotNews(cfg, nowMs, globalRows, pendingWrites) : Promise.resolve([] as NewsItem[]),
     ]),
     FETCH_BUDGET_MS,
-    [null, [] as NewsItem[]] as [WeatherData | null, NewsItem[]],
+    [null, null, [] as NewsItem[]] as [WeatherData | null, WeatherData | null, NewsItem[]],
     '实时世界',
   );
 
@@ -247,10 +266,16 @@ export const buildRealtimeWorldResult = async (args: {
     specialDates,
     weather,
     news: pickRandomNews(news, REALTIME_NEWS_PICK_COUNT),
+    charProvince: args.charProvince?.trim() || undefined,
+    charCity: weatherCity || undefined,
+    userCity: showUserSide ? userCity : undefined,
+    userWeather: showUserSide ? userWeather : null,
+    userPerceptionEnabled: cfg.userPerceptionEnabled,
   });
   console.log('[amsg:world] 本次注入', {
     节日: specialDates.length,
     天气: weather ? weather.city : '无',
+    用户那边: showUserSide && userWeather ? userWeather.city : '无',
     热点池: news.length,
     整段字数: block.length,
   });

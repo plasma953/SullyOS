@@ -86,6 +86,7 @@ import {
   buildToolConfig,
   buildToolPack,
 } from './amsgToolPack';
+import { readUserCity } from './cityPlaces';
 // 只取一个常量：客户端算 firstSendTime 时要留的提前量，和包装层「把任务行拉到期」
 // 那一步是同一个数，各写各的就会出现「校验说时间要在未来 / cron 说还没到」的死角。
 import type { AmsgEmotionEvalSpec } from '../worker/amsg/src/emotionEval';
@@ -1212,11 +1213,13 @@ const buildToolConfigEntry = (
   namespace: AMSG_GLOBAL_NAMESPACE,
   key: AMSG_TOOL_CONFIG_KEY,
   // MCP 配置在这里现读现带：三条上传路径（排程 / fire_pack 冲刷 / 设置保存）
-  // 全走这个咽喉，不会出现某条路漏带的版本分叉。
+  // 全走这个咽喉，不会出现某条路漏带的版本分叉。用户城市同理现读
+  // localStorage 镜像（updateUserProfile 单点写，同步读不碰 IndexedDB——
+  // 有些调用方的测试跑在 fake timers 下，真库读会冻住）。
   value: JSON.stringify(buildToolConfig(realtimeConfig, {
     servers: collectMcpFireServers(),
     useNativeTools: getMcpUseNativeTools(),
-  }, charCity)),
+  }, charCity, readUserCity())),
   updatedAt,
 });
 
@@ -2303,8 +2306,7 @@ export const ActiveMsgClient = {
       await putClientStateOrThrow(client, [
         ...(owesChat ? charEntries.filter((entry) => entry.key !== AMSG_FIRE_PACK_KEY) : charEntries),
         buildToolConfigEntry(realtimeConfig, now, char.location?.city?.trim()),
-      ], '上传云端状态');
-    }
+      ], '上传云端状态');    }
 
     // 凭据行要先在云端存在：上游建任务前会挨个查引用，缺一个就 409 CREDENTIAL_NOT_FOUND。
     // 只在值变过时真的发请求（指纹底账），所以常态下这一步一个请求都不发。

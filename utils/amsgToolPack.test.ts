@@ -66,10 +66,23 @@ describe('buildToolPack / parseToolPack', () => {
   it('角色关掉时间感知 → 这个开关跟着上云（不然主动消息里照样过节）', () => {
     const off = buildToolPack({ id: 'c3', name: '零', timeAwarenessEnabled: false } as unknown as CharacterProfile);
     expect(off.timeAwarenessEnabled).toBe(false);
-    expect(parseToolPack(JSON.stringify(off))?.timeAwarenessEnabled).toBe(false);
+        expect(parseToolPack(JSON.stringify(off))?.timeAwarenessEnabled).toBe(false);
     // 没这个字段的包一律打回：worker 拿不到开关就只能猜，而猜错就是穿帮。
     const { timeAwarenessEnabled: _dropped, ...missing } = off;
     expect(parseToolPack(JSON.stringify(missing))).toBeNull();
+  });
+
+  it('角色省市随包上云（worker 你所在的城市行用）；没有就不带键', () => {
+    const withPlace = buildToolPack({
+      id: 'c4', name: '七',
+      location: { province: '上海市', city: '上海市', source: 'user', updatedAt: 1 },
+    } as unknown as CharacterProfile);
+    expect(withPlace.charCity).toBe('上海市');
+    expect(withPlace.charProvince).toBe('上海市');
+
+    const bare = buildToolPack({ id: 'c5', name: '八' } as unknown as CharacterProfile);
+    expect('charCity' in bare).toBe(false);
+    expect('charProvince' in bare).toBe(false);
   });
 });
 
@@ -114,6 +127,27 @@ describe('buildToolConfig / parseToolConfig', () => {
     expect(config.notionEnabled).toBe(false);
     expect(config.feishuEnabled).toBe(false);
     expect(config.xhsMcpConfig).toBeUndefined();
+  });
+
+  it('用户城市随包上云；感知开关默认开不上云，显式关才带', () => {
+    const rc = { weatherEnabled: true, weatherCity: '上海' } as unknown as RealtimeConfig;
+    const withUser = buildToolConfig(rc, undefined, '上海市', '北京市');
+    expect(withUser.userCity).toBe('北京市');
+    expect('userPerceptionEnabled' in withUser).toBe(false);
+
+    const switchedOff = buildToolConfig(
+      { ...rc, userPerceptionEnabled: false } as unknown as RealtimeConfig,
+      undefined, '上海市', '北京市',
+    );
+    expect(switchedOff.userCity).toBe('北京市');
+    expect(switchedOff.userPerceptionEnabled).toBe(false);
+
+    const noUser = buildToolConfig(rc, undefined, '上海市');
+    expect('userCity' in noUser).toBe(false);
+
+    // 空白城市不写键
+    const blank = buildToolConfig(rc, undefined, '上海市', '   ');
+    expect('userCity' in blank).toBe(false);
   });
 
   it('坏数据一律 null', () => {

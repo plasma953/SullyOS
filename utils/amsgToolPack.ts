@@ -43,6 +43,11 @@ export interface AmsgToolPack {
    * 城市里（与自定义时区同构），全局默认城市只兜没填地点的角色。老 worker 不读它，零影响。
    */
   charCity?: string;
+  /**
+   * 角色所在省（location.province，高德回填/MOVE_TO 验证来的）。
+   * worker 渲染「你所在的城市」行用；没有就不出那一行，老 worker 不读它，零影响。
+   */
+  charProvince?: string;
 }
 
 /**
@@ -87,6 +92,16 @@ export interface AmsgToolConfig extends AgenticToolRealtimeConfig {
    * 角色活在自己的城市里（与自定义时区同构），全局默认城市只兜没填地点的角色。
    */
   charCity?: string;
+  /**
+   * 用户所在城市（用户档案 location.city，只到城市级）。worker 到点给「用户那边」段
+   * 现拉用户城市天气用；没有/与角色同城就不出那一段。
+   */
+  userCity?: string;
+  /**
+   * 把「用户那边」告诉角色。默认开，只在用户显式关掉时上云（省字节）；
+   * worker 侧缺省按开处理，与前台「未显式 false 即开」同口径。
+   */
+  userPerceptionEnabled?: boolean;
 }
 
 /**
@@ -132,6 +147,8 @@ export const buildToolPack = (char: CharacterProfile): AmsgToolPack => ({
   timeAwarenessEnabled: char.timeAwarenessEnabled !== false,
   // 角色活在自己的城市（有就带，worker 天气取数按它；没有就退全局默认城市）。
   ...(char.location?.city?.trim() ? { charCity: char.location.city.trim() } : {}),
+  // 省也带上（worker「你所在的城市」行用；没有就不出那一行）。
+  ...(char.location?.province?.trim() ? { charProvince: char.location.province.trim() } : {}),
 });
 
 /**
@@ -146,6 +163,11 @@ export const buildToolConfig = (
    * 全局默认城市（realtimeConfig.weatherCity）只兜没填地点的角色。
    */
   charCity?: string,
+  /**
+   * 用户所在城市（可选，只到城市级）。worker 到点给「用户那边」段现拉天气用；
+   * 与角色同城/为空时 worker 不出那一段。
+   */
+  userCity?: string,
 ): AmsgToolConfig => {
   const rc = realtimeConfig;
   const xhs = rc?.xhsMcpConfig;
@@ -156,6 +178,9 @@ export const buildToolConfig = (
     ...(rc?.weatherCity ? { weatherCity: rc.weatherCity } : {}),
     ...(charCity?.trim() ? { charCity: charCity.trim() } : {}),
     ...(rc?.weatherApiKey ? { weatherApiKey: rc.weatherApiKey } : {}),
+    // 用户那边：有城市才带；开关默认开，只在显式关掉时上云（省字节）。
+    ...(userCity?.trim() ? { userCity: userCity.trim() } : {}),
+    ...(rc?.userPerceptionEnabled === false ? { userPerceptionEnabled: false } : {}),
     // 透视窗端点：Supabase 公网可达，worker 端能直连（与本地 XHS 服务器不同）。
     ...(rc?.perspectiveEnabled && rc?.perspectiveSupabaseUrl && rc?.perspectiveSupabaseAnonKey
       ? {

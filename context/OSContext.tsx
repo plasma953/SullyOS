@@ -34,6 +34,7 @@ import { safeFetchJson } from '../utils/safeApi';
 import { captureApiRequestOnce, getApiCallAmbientContext, recordApiCall, setApiCallAmbientContext, updateApiRequestCaptureUsage } from '../utils/apiCallLog';
 import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedResponse } from '../utils/streamUpgrade';
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
+import { writeUserCityMirror } from '../utils/cityPlaces';
 import { buildFetchFailureDetail, classifyFetchFailure, describeReachabilityProbe, parseTargetUrl, probeOriginReachability, shouldProbeReachability, summarizeFetchRequestBody } from '../utils/networkFailureDiagnosis';
 import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
 import { isAnalyticsRequestUrl, trackEvent, trackDataScaleOnce, trackCurrentAppearanceOnce, trackCurrentCharSettingsOnce, trackCurrentFeaturesOnce } from '../utils/analytics';
@@ -3627,6 +3628,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const updateUserProfile = async (updates: Partial<UserProfile>) => {
       setUserProfile(prev => {
           const next = { ...prev, ...updates };
+          // 用户城市镜像（只到城市级）：tool_config 上云「用户那边」用。同步写 localStorage，
+          // 不碰 IndexedDB——上云咽喉在 fake timers 测试下也要能同步读到。
+          writeUserCityMirror(next.location?.city || '');
           // 用户资料是所有角色共享的素材（名字、人设直接烤进 fire_pack 模板），改完不打脏的话
           // 角色到点还按旧名字叫你。仿表情库：逐个打脏，没开 2.0 的角色被 markDirty 的门筛掉。
           DB.saveUserProfile(next).then(() => {

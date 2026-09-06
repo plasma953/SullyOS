@@ -1900,6 +1900,7 @@ export const amsgHooks = {
       nowMs: ctx.now.getTime(),
       // 角色活在自己的城市（tool_pack 随包带上来的）；没填地点的角色退全局默认城市。
       charCity: toolPack.charCity,
+      charProvince: toolPack.charProvince,
       globalRows,
       globalNamespace: AMSG_GLOBAL_NAMESPACE,
       writeState: ctx.writeState,

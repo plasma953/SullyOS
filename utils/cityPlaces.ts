@@ -196,6 +196,32 @@ export const readAmapAuth = (): AmapAuth => {
     return { proxyUrl: getProxyWorkerUrl(), key };
 };
 
+/** localStorage 里的用户城市镜像键（updateUserProfile 单点写，只到城市级）。 */
+export const USER_CITY_MIRROR_KEY = 'sully_user_city_v1';
+
+/**
+ * 读用户所在城市（只到城市级）：读 localStorage 镜像，同步、无 IO。
+ * 镜像由 OSContext.updateUserProfile 单点维护（用户档案唯一的生产写入口）；
+ * 读不到/被清空 → undefined，调用方按无用户城市处理。
+ */
+export const readUserCity = (): string | undefined => {
+    try {
+        const city = localStorage.getItem(USER_CITY_MIRROR_KEY);
+        return (city || '').trim() || undefined;
+    } catch {
+        return undefined;
+    }
+};
+
+/** 写用户城市镜像（updateUserProfile 调用；city 为空串时清掉）。 */
+export const writeUserCityMirror = (city: string): void => {
+    try {
+        const v = (city || '').trim();
+        if (v) localStorage.setItem(USER_CITY_MIRROR_KEY, v);
+        else localStorage.removeItem(USER_CITY_MIRROR_KEY);
+    } catch { /* 存储不可用：镜像缺失=无用户城市，不影响主链路 */ }
+};
+
 /**
  * MOVE_TO 验证：城市名 → 结构化地点。
  * 高德（国内，验出 adcode/坐标）→ Open-Meteo（海外回落，admin1 当省）→ null（调用方保留原文）。

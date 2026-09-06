@@ -8,7 +8,7 @@
  */
 
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { buildRealtimeWorldBlock, AMSG_HOTNEWS_SNAPSHOT_KEY, AMSG_WEATHER_SNAPSHOT_KEY } from './realtimeWorld';
+import { buildRealtimeWorldBlock, AMSG_HOTNEWS_SNAPSHOT_KEY, weatherSnapshotKey } from './realtimeWorld';
 import type { AmsgToolConfig } from '../../../utils/amsgToolPack';
 
 /** 上海时间 2026-12-25 12:00（圣诞节，用来验节日那一行）。 */
@@ -26,7 +26,7 @@ const cfg = (extra: Partial<AmsgToolConfig> = {}): AmsgToolConfig => ({
 });
 
 const weatherSnapshot = (city: string, fetchedAt: number) => ({
-    key: AMSG_WEATHER_SNAPSHOT_KEY,
+    key: weatherSnapshotKey(city),
     value: JSON.stringify({
         city,
         data: { temp: 3, feelsLike: 1, humidity: 40, description: '小雪', icon: '13d', city },
@@ -45,6 +45,8 @@ const hotNewsSnapshot = (id: string, platforms: string[], titles: string[], fetc
 const run = (args: {
     toolConfig: AmsgToolConfig;
     timeAwarenessEnabled?: boolean;
+    charCity?: string;
+    charProvince?: string;
     globalRows?: Array<{ key: string; value: string }>;
     writeState?: any;
 }) => buildRealtimeWorldBlock({
@@ -52,6 +54,8 @@ const run = (args: {
     timeAwarenessEnabled: args.timeAwarenessEnabled ?? true,
     tzId: TZ,
     nowMs: NOW,
+    charCity: args.charCity,
+    charProvince: args.charProvince,
     globalRows: args.globalRows ?? [],
     globalNamespace: 'amsg:global',
     writeState: args.writeState,
@@ -136,7 +140,7 @@ describe('天气快照', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
         const [ns, rows] = writeState.mock.calls[0];
         expect(ns).toBe('amsg:global');
-        expect(rows[0].key).toBe(AMSG_WEATHER_SNAPSHOT_KEY);
+        expect(rows[0].key).toBe(weatherSnapshotKey('上海'));
     });
 
     it('拉失败但手上有同城旧读数 → 先用旧的，且不写回（下次重试）', async () => {
@@ -242,5 +246,61 @@ describe('全拉挂也不断链', () => {
             writeState,
         });
         expect(out).toContain('实时天气');
+    });
+});
+
+describe('用户那边（双城天气）', () => {
+    it('异地 → 两城快照各用各的，一次请求都不发', async () => {
+        const out = await run({
+            toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海', userCity: '北京' }),
+            globalRows: [weatherSnapshot('上海', NOW - 10 * 60_000), weatherSnapshot('北京', NOW - 10 * 60_000)],
+        });
+        expect(out).toContain('🌤️ 【上海实时天气】');
+        expect(out).toContain('🏠 【对方所在的城市 · 北京】');
+        expect(out).toContain('对方那边现在: 小雪');
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('同城 → 不出用户段（没新信息可说）', async () => {
+        const out = await run({
+            toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海', userCity: '上海' }),
+            globalRows: [weatherSnapshot('上海', NOW - 10 * 60_000)],
+        });
+        expect(out).toContain('🌤️ 【上海实时天气】');
+        expect(out).not.toContain('对方所在的城市');
+    });
+
+    it('开关关掉 → 不出用户段', async () => {
+        const out = await run({
+            toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海', userCity: '北京', userPerceptionEnabled: false }),
+            globalRows: [weatherSnapshot('上海', NOW - 10 * 60_000), weatherSnapshot('北京', NOW - 10 * 60_000)],
+        });
+        expect(out).not.toContain('对方所在的城市');
+    });
+
+    it('用户城市没快照又拉不到 → 只有角色天气，用户段消失', async () => {
+        const out = await run({
+            toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海', userCity: '北京' }),
+            globalRows: [weatherSnapshot('上海', NOW - 10 * 60_000)],
+        });
+        expect(out).toContain('🌤️ 【上海实时天气】');
+        expect(out).not.toContain('对方所在的城市');
+    });
+
+    it('charProvince → 出「你所在的城市」行；没有就不出', async () => {
+        const withProvince = await run({
+            toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海' }),
+            charCity: '上海市',
+            charProvince: '上海市',
+            globalRows: [weatherSnapshot('上海', NOW - 10 * 60_000)],
+        });
+        expect(withProvince).toContain('📍 你现在在上海市上海市。');
+
+        const without = await run({
+            toolConfig: cfg({ weatherEnabled: true, weatherCity: '上海' }),
+            charCity: '上海市',
+            globalRows: [weatherSnapshot('上海', NOW - 10 * 60_000)],
+        });
+        expect(without).not.toContain('你现在在');
     });
 });
