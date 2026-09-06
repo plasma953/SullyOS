@@ -355,6 +355,30 @@ const DeviceDetail: React.FC<{
     const [services, setServices] = useState<BleGattServiceInfo[] | null>(null);
     const [enumerating, setEnumerating] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [renaming, setRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState(device.name);
+
+    // 切到别的设备时，改名态跟着复位。
+    useEffect(() => {
+        setRenameValue(device.name);
+        setRenaming(false);
+    }, [device.id, device.name]);
+
+    const handleRename = async () => {
+        const name = renameValue.trim();
+        if (!name) {
+            addToast('名字不能为空', 'error');
+            return;
+        }
+        if (name === device.name) {
+            setRenaming(false);
+            return;
+        }
+        await upsertBleDevice(device.id, name);
+        addToast(`已改名为「${name}」`, 'success');
+        setRenaming(false);
+        onReload();
+    };
     const logs = useMemo(
         () => snapshot.logs.filter(l => l.deviceId === device.id).slice(-20),
         [snapshot.logs, device.id],
@@ -427,7 +451,43 @@ const DeviceDetail: React.FC<{
                     onClick={onBack}
                     className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg active:scale-95 transition-transform"
                 >← 返回</button>
-                <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-700">{device.name}</span>
+                {renaming ? (
+                    <>
+                        <input
+                            type="text"
+                            value={renameValue}
+                            onChange={e => setRenameValue(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') void handleRename();
+                                if (e.key === 'Escape') setRenaming(false);
+                            }}
+                            autoFocus
+                            maxLength={24}
+                            placeholder="给设备起个名字，如卧室灯"
+                            className="min-w-0 flex-1 bg-white border border-sky-300 rounded-lg px-2 py-1 text-sm font-bold text-slate-700"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => void handleRename()}
+                            className="text-[11px] font-bold text-white bg-sky-500 px-2.5 py-1 rounded-lg active:scale-95 transition-transform shrink-0"
+                        >保存</button>
+                        <button
+                            type="button"
+                            onClick={() => setRenaming(false)}
+                            className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg active:scale-95 transition-transform shrink-0"
+                        >取消</button>
+                    </>
+                ) : (
+                    <>
+                        <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-700">{device.name}</span>
+                        <button
+                            type="button"
+                            onClick={() => { setRenameValue(device.name); setRenaming(true); }}
+                            title="改名（角色看到的就是这个名字）"
+                            className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg active:scale-95 transition-transform shrink-0"
+                        >改名</button>
+                    </>
+                )}
                 <ConnDot state={conn} />
                 {conn === 'connected' ? (
                     <button
