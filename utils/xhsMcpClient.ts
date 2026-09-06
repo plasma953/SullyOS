@@ -994,7 +994,9 @@ export const normalizeNote = (n: any): {
     return {
         noteId: n.noteId || n.note_id || n.id || card?.note_id || card?.noteId || card?.noteId || '',
         title: n.title || n.display_title || n.displayTitle || card?.display_title || card?.displayTitle || '',
-        desc: (n.desc || n.description || n.content || card?.desc || card?.description || card?.title || '').slice(0, 500),
+        // 正文全量保留（2026-09-06 链接提取：角色要读完整内容，不再截断 500 字），
+        // 仅留 8000 字保险上限防超长笔记撑爆上下文。
+        desc: (n.desc || n.description || n.content || card?.desc || card?.description || card?.title || '').slice(0, 8000),
         author: n.author || n.nickname || n.user?.nickname || n.user?.name || card?.user?.nickname || card?.user?.name || '',
         authorId: n.authorId || n.author_id || n.user?.user_id || n.user?.userId || card?.user?.user_id || card?.user?.userId || '',
         likes: parseXhsCount(likesRaw),
@@ -1029,7 +1031,11 @@ export const normalizeXhsLiteDetail = (payload: any, commentLimit = 15): ReturnT
             appendComments(item.subComments);
         }
     };
-    appendComments(normalizeXhsComments(payload));
+    // 最火的在前：顶层评论按赞排序（稳定排序，同赞保持原顺序），
+    // 回复经 DFS 跟随自己的父评论，线程不拆散。喂角色/展示都取前 commentLimit 条即最火部分。
+    const roots = normalizeXhsComments(payload);
+    roots.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+    appendComments(roots);
 
     const rawCommentArray = firstArray(
         root.comments?.list,

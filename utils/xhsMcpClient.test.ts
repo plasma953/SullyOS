@@ -263,3 +263,42 @@ describe('Spider v3 hidden client patch', () => {
         });
     });
 });
+
+describe('XHS 分享给角色读的数据面（2026-09-06 链接提取）', () => {
+    it('desc 长正文全量保留（不再截断 500 字）', () => {
+        const long = '正'.repeat(2000);
+        expect(normalizeNote({ note_id: 'note-1', title: '标题', desc: long }).desc).toBe(long);
+    });
+
+    it('超长正文保留保险上限（8000 字）', () => {
+        expect(normalizeNote({ note_id: 'note-1', title: '标题', desc: '正'.repeat(9000) }).desc).toHaveLength(8000);
+    });
+
+    it('评论按点赞排序：最火的在前，回复跟随父评论', () => {
+        const payload = {
+            data: {
+                note: { note_id: 'note-1', title: '标题' },
+                comments: {
+                    list: [
+                        {
+                            comment_id: 'cold', content: '冷门评论', like_count: '3',
+                            user: { user_id: 'u1', nickname: '甲' },
+                        },
+                        {
+                            comment_id: 'hot', content: '热门评论', like_count: '1.2万',
+                            user: { user_id: 'u2', nickname: '乙' },
+                            sub_comments: [{
+                                comment_id: 'reply', content: '热门下的回复', like_count: '1',
+                                user: { user_id: 'u3', nickname: '丙' },
+                            }],
+                        },
+                    ],
+                },
+            },
+        };
+        const comments = normalizeXhsLiteDetail(payload).comments || [];
+        // 最火的线程在前，回复跟随自己的父评论
+        expect(comments.map(c => c.commentId)).toEqual(['hot', 'reply', 'cold']);
+        expect(comments[0].likes).toBe(12_000);
+    });
+});
