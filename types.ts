@@ -634,6 +634,11 @@ export interface RealtimeConfig {
   weatherApiKey: string;  // OpenWeatherMap API Key（可选；留空走免 key 的 Open-Meteo）
   weatherCity: string;    // 城市名（如 "北京"、"Beijing"）
 
+  // 真实地点配置（高德 Web 服务：地理编码 / 逆地理 / POI 检索 / 输入提示）
+  amapApiKey?: string;    // 高德 Web 服务 Key（个人认证免费；留空则地点只走 Open-Meteo 城市级）
+  /** 把「用户那边」（用户所在城市 + 天气）告诉角色。未显式 false 即开。 */
+  userPerceptionEnabled?: boolean;
+
   // 新闻配置
   newsEnabled: boolean;
   newsApiKey?: string;
@@ -3081,9 +3086,17 @@ export interface CharacterProfile {
   // 角色级地理位置（省市）。与自定义时区同构：每个角色活在自己的城市里，
   // 天气按这里的城市取；用户在角色档案手动填写，角色也可通过 SET_LOCATION 自改。
   // location.city 为空 / 整个字段缺失时回退全局默认城市（RealtimeConfig.weatherCity）。
+  // district/lat/lng/adcode 由地理编码回填（神经链接联想选中 / MOVE_TO 验证 / 后台惰性回填），
+  // 全是可选字段——只有省市的老数据照常用，不做迁移。
   location?: {
     province?: string;
     city: string;
+    district?: string;
+    /** 高德地理编码的城市中心坐标（GCJ-02），用于 POI 距离估算。 */
+    lat?: number;
+    lng?: number;
+    /** 高德 adcode（城市级，POI 检索与缓存键用）。 */
+    adcode?: string;
     /** 'user' = 用户手动填写；'char' = 角色自己改的 */
     source: 'user' | 'char';
     updatedAt: number;
@@ -3380,6 +3393,17 @@ export interface UserVRState {
         scale?: number;
         offsetY?: number;
         flip?: boolean;
+    };
+    /**
+     * 用户本人所在城市（档案 App「所在城市」卡填写，或 GPS 定位回填）。
+     * 隐私只到城市级：只存省/市，不存坐标——prompt 里的「用户那边」段只用它。
+     * 'gps' = GPS 定位回填；'user' = 手填。
+     */
+    location?: {
+        province?: string;
+        city: string;
+        source: 'gps' | 'user';
+        updatedAt: number;
     };
 }
 

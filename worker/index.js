@@ -2737,6 +2737,43 @@ export default {
       }
     }
 
+    // ========== 高德 Web 服务透传 (/amap/*) ==========
+    // 高德 REST 接口不带 CORS 头，浏览器直连会被拦：前端把 path 原样拼在 /amap 后面
+    // （GET /amap/v3/geocode/geo?address=..&key=..），worker 转发到 restapi.amap.com 并原样回传
+    // （高德自己的 status/infocode 不动，前端按原生语义解析）。
+    // SSRF 由构造保证：上游 host 写死 restapi.amap.com，只放行 /v3/ 前缀的 path；
+    // key 由请求 query 自带（用户本地 realtimeConfig.amapApiKey），代理不存 key。
+    // 见 utils/amapCore.ts buildAmapUrl。
+    if (url.pathname === '/amap' || url.pathname.startsWith('/amap/')) {
+      if (request.method !== 'GET') {
+        return jsonResponse({ error: 'Method not allowed. Use GET.' }, { status: 405, origin });
+      }
+      const rest = url.pathname === '/amap' ? '/' : url.pathname.slice('/amap'.length);
+      if (!rest.startsWith('/v3/')) {
+        return jsonResponse({ error: '只允许转发高德 Web 服务 /v3/ 接口' }, { status: 400, origin });
+      }
+      const upstream = new URL('https://restapi.amap.com' + rest);
+      upstream.search = url.searchParams.toString();
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), 10000);
+      try {
+        const res = await fetch(upstream.toString(), { method: 'GET', signal: c.signal });
+        const body = await res.text();
+        return new Response(body, {
+          status: res.status,
+          headers: {
+            'Content-Type': res.headers.get('content-type') || 'application/json; charset=utf-8',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        const aborted = e && e.name === 'AbortError';
+        return jsonResponse({ error: aborted ? '高德请求超时' : `高德请求失败: ${String((e && e.message) || e)}` }, { status: aborted ? 504 : 502, origin });
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
     // ========== GitHub 代理 ==========
     // 给国内连不上 github.com 的用户兜底用。只放行 api.github.com 和
     // uploads.github.com，方法用 X-GitHub-Method 头携带。
