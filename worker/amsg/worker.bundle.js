@@ -7170,6 +7170,7 @@ var buildScheduleInjection = (schedule, evolvedNarrative, now = /* @__PURE__ */ 
 `;
   const footnote = `
 \uFF08\u4E0D\u662F\u53F0\u8BCD\uFF0C\u4E0D\u7528\u8BF4\u51FA\u53E3\u2014\u2014\u8BA9\u5B83\u5F71\u54CD\u4F60\u7684\u8BED\u6C14\u548C\u60C5\u7EEA\u5C31\u597D\u3002\uFF09`;
+  const scopeNote = "\uFF08\u8FD9\u5F20\u8868\u662F\u4F60\u81EA\u5DF1\u7684\u4E00\u5929\uFF0C\u4E0D\u662F\u7ED9\u5BF9\u65B9\u5217\u7684\u5F85\u529E\u3002\u91CC\u5934\u8981\u662F\u6709\u8DDF\u5BF9\u65B9\u76F8\u5173\u7684\u4E8B\uFF0C\u90A3\u4E5F\u662F\u4F60\u81EA\u5DF1\u7684\u60E6\u8BB0\u2014\u2014\u8BDD\u8D76\u5230\u4E86\u987A\u53E3\u5E26\u4E00\u53E5\u5C31\u591F\uFF0C\u4E0D\u7528\u8FFD\u7740\u95EE\u8FDB\u5C55\uFF0C\u4E5F\u4E0D\u7528\u50AC\u5BF9\u65B9\u53BB\u505A\u3002\uFF09";
   let out = "";
   if (options.includeFullDay) {
     const rows = schedule.slots.map((slot) => {
@@ -7192,6 +7193,8 @@ ${rows.join("\n")}
 \u65E5\u7A0B\u662F\u4F60\u65E9\u4E0A\u7ED9\u81EA\u5DF1\u6392\u7684\u8BA1\u5212\uFF0C\u4E0D\u662F\u5FC5\u987B\u5C65\u884C\u7684\u547D\u4EE4\u3002\u771F\u5B9E\u53D1\u751F\u7684\u4E8B\u8DDF\u5B83\u5BF9\u4E0D\u4E0A\u65F6\uFF08\u6BD4\u5982\u8FD9\u4F1A\u513F\u8868\u4E0A\u5199\u7740\u7761\u89C9\u3001\u4F60\u5374\u9192\u7740\u5728\u8DDF\u5BF9\u65B9\u8BF4\u8BDD\uFF09\uFF0C\u628A\u5B83\u6539\u6210\u4F60\u5B9E\u9645\u5728\u505A\u7684\u4E8B\u5C31\u597D\u3002
 \u9700\u8981\u65F6\u5728\u56DE\u590D\u672B\u5C3E\u5355\u72EC\u8F93\u51FA\uFF1A[[ACTION:CHANGE_SCHEDULE | ${changeTarget.startTime} | \u53BB\u8D85\u5E02]]\uFF08\u65F6\u6BB5\u8981\u539F\u6837\u6284\u4E0A\u9762\u51FA\u73B0\u8FC7\u7684\u90A3\u51E0\u4E2A\uFF1B\u6B63\u5728\u8FDB\u884C\u7684\u8FD9\u4E00\u6761\u548C\u5B83\u4E4B\u540E\u7684\u90FD\u80FD\u6539\uFF0C\u5DF2\u7ECF\u8FC7\u53BB\u7684\u4E0D\u80FD\uFF09\u3002`;
   }
+  out += `
+${scopeNote}`;
   out += "\n";
   return out;
 };
@@ -7655,6 +7658,7 @@ var MAX_ACTIVE_TASKS_PER_CHAR = 5;
 var shortTaskId = (taskUuid) => taskUuid.slice(0, 8);
 var describeRecurrence = (recurrence) => recurrence === "daily" ? "\u6BCF\u5929" : recurrence === "weekly" ? "\u6BCF\u5468" : "\u4E00\u6B21\u6027";
 var AMSG2_SCHEDULE_SECRECY_NOTE = "\u4E0D\u8981\u5411\u7528\u6237\u590D\u8FF0\u6216\u63D0\u53CA\u8FD9\u4EFD\u6392\u7A0B\u4FE1\u606F\u672C\u8EAB\u7684\u5B58\u5728\u3002";
+var AMSG2_SCHEDULE_NOT_YET_NOTE = "\u6392\u5728\u672A\u6765\u7684\u4E8B\u5230\u70B9\u81EA\u5DF1\u4F1A\u54CD\uFF0C\u4E0D\u7528\u4F60\u73B0\u5728\u63D0\u524D\u66FF\u5B83\u5F00\u53E3\u2014\u2014\u8FD8\u6CA1\u5230\u90A3\u4E2A\u65F6\u523B\u7684\u5C31\u8BA9\u5B83\u5B89\u9759\u5F85\u7740\uFF0C\u522B\u6BCF\u8F6E\u90FD\u62FF\u5B83\u8D77\u8BDD\u5934\u3001\u8FFD\u7740\u95EE\u8FDB\u5C55\u3002\u5BF9\u65B9\u81EA\u5DF1\u63D0\u8D77\uFF0C\u6216\u8005\u771F\u5230\u4E86\u90A3\u4E2A\u70B9\uFF0C\u624D\u662F\u8BF4\u5B83\u7684\u65F6\u5019\u3002";
 var describeExpirePolicy = (policy) => policy === "force" ? "\u5F3A\u5236\u53D1\u9001" : "\u9047\u5FD9\u4F5C\u5E9F";
 var describeTaskMode = (task) => {
   if (task.mode === "fixed") return "\u56FA\u5B9A\u6D88\u606F";
@@ -7694,6 +7698,7 @@ var buildFireTaskListBlock = (tasks, opts) => {
       return `- [${shortTaskId(t.taskUuid)}] ${when} ${describeRecurrence(t.recurrenceType)} \xB7 ${describeTaskMode(t)} \xB7 ${describeExpirePolicy(t.expirePolicy)}`;
     }),
     "\uFF08\u8FD9\u51E0\u6761\u5230\u70B9\u4F1A\u81EA\u52A8\u53D1\u51FA\u53BB\uFF0C\u522B\u5728\u8FD9\u6761\u6D88\u606F\u91CC\u628A\u540C\u4E00\u4EF6\u4E8B\u518D\u6392\u4E00\u904D\uFF0C\u4E5F\u522B\u5F53\u5B83\u4EEC\u4E0D\u5B58\u5728\u3002\uFF09",
+    AMSG2_SCHEDULE_NOT_YET_NOTE,
     AMSG2_SCHEDULE_SECRECY_NOTE
   ].join("\n");
 };
@@ -8405,7 +8410,10 @@ var renderRealtimeWorldBlock = (input) => {
   const specialDates = input.specialDates?.filter(Boolean) ?? [];
   const weather = input.weather ?? null;
   const news = input.news ?? [];
-  if (!timeLine && specialDates.length === 0 && !weather && news.length === 0) {
+  const charProvince = input.charProvince?.trim();
+  const charCity = input.charCity?.trim() || weather?.city || "";
+  const showUserSide = input.userPerceptionEnabled !== false && !!input.userCity?.trim() && !!input.userWeather;
+  if (!timeLine && specialDates.length === 0 && !weather && news.length === 0 && !charProvince && !showUserSide) {
     return "";
   }
   const parts = [];
@@ -8418,11 +8426,20 @@ var renderRealtimeWorldBlock = (input) => {
   if (specialDates.length > 0) {
     parts.push(`\u{1F389} \u4ECA\u65E5\u7279\u6B8A: ${specialDates.join("\u3001")}`);
   }
+  if (charProvince) {
+    parts.push(`\u{1F4CD} \u4F60\u73B0\u5728\u5728${charProvince}${charCity}\u3002`);
+  }
   if (weather) {
     parts.push("");
     parts.push(`\u{1F324}\uFE0F \u3010${weather.city}\u5B9E\u65F6\u5929\u6C14\u3011`);
     parts.push(`\u73B0\u5728\u5916\u9762: ${weather.description}\uFF0C\u6C14\u6E29 ${weather.temp}\xB0C\uFF08\u4F53\u611F ${weather.feelsLike}\xB0C\uFF09\uFF0C\u6E7F\u5EA6 ${weather.humidity}%`);
     parts.push(`\u4F60\u7684\u5EFA\u8BAE: ${generateWeatherAdvice(weather)}`);
+  }
+  if (showUserSide) {
+    const uw = input.userWeather;
+    parts.push("");
+    parts.push(`\u{1F3E0} \u3010\u5BF9\u65B9\u6240\u5728\u7684\u57CE\u5E02 \xB7 ${input.userCity?.trim()}\u3011`);
+    parts.push(`\u5BF9\u65B9\u90A3\u8FB9\u73B0\u5728: ${uw.description}\uFF0C\u6C14\u6E29 ${uw.temp}\xB0C\uFF08\u4F53\u611F ${uw.feelsLike}\xB0C\uFF09\uFF0C\u6E7F\u5EA6 ${uw.humidity}%`);
   }
   if (news.length > 0) {
     parts.push("");
@@ -8448,14 +8465,17 @@ var renderRealtimeWorldBlock = (input) => {
   if (weather) {
     tips.push(`\u5929\u6C14\u662F\u771F\u5B9E\u7684\uFF0C\u53EF\u4EE5\u81EA\u7136\u5730\u5173\u5FC3\u5BF9\u65B9\uFF08"\u5916\u9762\u5728\u4E0B\u96E8\uFF0C\u5E26\u4F1E\u4E86\u5417\uFF1F"\uFF09\u3002`);
   }
+  if (showUserSide) {
+    tips.push(`\u5BF9\u65B9\u90A3\u8FB9\u7684\u5929\u6C14\u4E5F\u662F\u771F\u5B9E\u7684\uFF0C\u53EF\u4EE5\u81EA\u7136\u5730\u5173\u5FC3\uFF08"\u4F60\u90A3\u8FB9\u4E0B\u96E8\u4E86\uFF0C\u8BB0\u5F97\u5E26\u4F1E"\uFF09\uFF1B\u4F46\u4F60\u53EA\u77E5\u9053\u5BF9\u65B9\u5728\u54EA\u4E2A\u57CE\u5E02\u2014\u2014\u522B\u63E3\u6D4B\u5177\u4F53\u4F4D\u7F6E\uFF0C\u66F4\u522B\u8BF4\u51FA\u8857\u9053\u5C0F\u533A\u3002`);
+  }
   tips.push(`\u522B\u5047\u88C5\u4E0D\u77E5\u9053\u8FD9\u4E9B\uFF0C\u8FD9\u662F\u4F60\u771F\u80FD\u611F\u77E5\u5230\u7684\u5916\u90E8\u4E16\u754C\u3002`);
   tips.forEach((t, i) => parts.push(`${i + 1}. ${t}`));
   return parts.join("\n");
 };
 
 // worker/amsg/src/realtimeWorld.ts
-var AMSG_WEATHER_SNAPSHOT_KEY = "world_weather";
 var AMSG_HOTNEWS_SNAPSHOT_KEY = "world_hotnews";
+var weatherSnapshotKey = (city) => `world_weather:${city}`;
 var WEATHER_TTL_MS = 30 * 60 * 1e3;
 var WEATHER_FALLBACK_MAX_AGE_MS = 3 * 60 * 60 * 1e3;
 var HOTNEWS_FALLBACK_MAX_AGE_MS = 24 * 60 * 60 * 1e3;
@@ -8492,24 +8512,25 @@ var withBudget = async (job, ms, fallback, label) => {
 };
 var loadWeather = async (city, cfg, nowMs, globalRows, pendingWrites) => {
   if (!city) return null;
+  const snapKey = weatherSnapshotKey(city);
   const snap = parseSnapshot(
     globalRows,
-    AMSG_WEATHER_SNAPSHOT_KEY,
+    snapKey,
     (v) => v && typeof v.city === "string" && v.data && typeof v.fetchedAt === "number"
   );
-  if (snap && snap.city === city && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
+  if (snap && nowMs - snap.fetchedAt < WEATHER_TTL_MS) {
     console.log("[amsg:world] \u5929\u6C14\u547D\u4E2D\u5FEB\u7167", { city, ageMin: Math.round((nowMs - snap.fetchedAt) / 6e4) });
     return snap.data;
   }
   const fresh = await fetchWeatherWithFallback(city, cfg.weatherApiKey);
   if (fresh) {
     pendingWrites.push({
-      key: AMSG_WEATHER_SNAPSHOT_KEY,
+      key: snapKey,
       value: JSON.stringify({ city, data: fresh, fetchedAt: nowMs })
     });
     return fresh;
   }
-  if (snap && snap.city === city && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
+  if (snap && nowMs - snap.fetchedAt <= WEATHER_FALLBACK_MAX_AGE_MS) {
     console.warn("[amsg:world] \u5929\u6C14\u62C9\u53D6\u5931\u8D25\uFF0C\u5148\u7528\u4E0A\u4E00\u6B21\u7684\u8BFB\u6570", { city });
     return snap.data;
   }
@@ -8544,6 +8565,8 @@ var loadHotNews = async (cfg, nowMs, globalRows, pendingWrites) => {
 var buildRealtimeWorldResult = async (args) => {
   const { toolConfig: cfg, nowMs, globalRows } = args;
   let weatherCity = (args.charCity || cfg.weatherCity || "").trim();
+  const userCity = cfg.userPerceptionEnabled !== false ? (cfg.userCity || "").trim() : "";
+  const showUserSide = !!userCity && userCity !== weatherCity;
   const specialDates = args.timeAwarenessEnabled ? checkSpecialDates(args.tzId, nowMs) : [];
   if (!cfg.weatherEnabled && !cfg.newsEnabled) {
     return { block: renderRealtimeWorldBlock({ specialDates }), weather: null };
@@ -8552,13 +8575,15 @@ var buildRealtimeWorldResult = async (args) => {
     weatherCity = "";
   }
   const pendingWrites = [];
-  const [weather, news] = await withBudget(
+  const [weather, userWeather, news] = await withBudget(
     Promise.all([
       cfg.weatherEnabled && weatherCity ? loadWeather(weatherCity, cfg, nowMs, globalRows, pendingWrites) : Promise.resolve(null),
+      // 用户城市同链路再取一次：快照按城分键，异地各拉各的（共用 10 秒总预算）。
+      cfg.weatherEnabled && showUserSide ? loadWeather(userCity, cfg, nowMs, globalRows, pendingWrites) : Promise.resolve(null),
       cfg.newsEnabled ? loadHotNews(cfg, nowMs, globalRows, pendingWrites) : Promise.resolve([])
     ]),
     FETCH_BUDGET_MS,
-    [null, []],
+    [null, null, []],
     "\u5B9E\u65F6\u4E16\u754C"
   );
   if (pendingWrites.length > 0 && typeof args.writeState === "function") {
@@ -8571,11 +8596,17 @@ var buildRealtimeWorldResult = async (args) => {
   const block = renderRealtimeWorldBlock({
     specialDates,
     weather,
-    news: pickRandomNews(news, REALTIME_NEWS_PICK_COUNT)
+    news: pickRandomNews(news, REALTIME_NEWS_PICK_COUNT),
+    charProvince: args.charProvince?.trim() || void 0,
+    charCity: weatherCity || void 0,
+    userCity: showUserSide ? userCity : void 0,
+    userWeather: showUserSide ? userWeather : null,
+    userPerceptionEnabled: cfg.userPerceptionEnabled
   });
   console.log("[amsg:world] \u672C\u6B21\u6CE8\u5165", {
     \u8282\u65E5: specialDates.length,
     \u5929\u6C14: weather ? weather.city : "\u65E0",
+    \u7528\u6237\u90A3\u8FB9: showUserSide && userWeather ? userWeather.city : "\u65E0",
     \u70ED\u70B9\u6C60: news.length,
     \u6574\u6BB5\u5B57\u6570: block.length
   });
@@ -10724,7 +10755,9 @@ var normalizeNote = (n) => {
   return {
     noteId: n.noteId || n.note_id || n.id || card?.note_id || card?.noteId || card?.noteId || "",
     title: n.title || n.display_title || n.displayTitle || card?.display_title || card?.displayTitle || "",
-    desc: (n.desc || n.description || n.content || card?.desc || card?.description || card?.title || "").slice(0, 500),
+    // 正文全量保留（2026-09-06 链接提取：角色要读完整内容，不再截断 500 字），
+    // 仅留 8000 字保险上限防超长笔记撑爆上下文。
+    desc: (n.desc || n.description || n.content || card?.desc || card?.description || card?.title || "").slice(0, 8e3),
     author: n.author || n.nickname || n.user?.nickname || n.user?.name || card?.user?.nickname || card?.user?.name || "",
     authorId: n.authorId || n.author_id || n.user?.user_id || n.user?.userId || card?.user?.user_id || card?.user?.userId || "",
     likes: parseXhsCount(likesRaw),
@@ -10755,7 +10788,9 @@ var normalizeXhsLiteDetail = (payload, commentLimit = 15) => {
       appendComments(item.subComments);
     }
   };
-  appendComments(normalizeXhsComments(payload));
+  const roots = normalizeXhsComments(payload);
+  roots.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+  appendComments(roots);
   const rawCommentArray = firstArray(
     root.comments?.list,
     root.comments?.comment_list,
@@ -13657,6 +13692,7 @@ var amsgHooks = {
       nowMs: ctx.now.getTime(),
       // 角色活在自己的城市（tool_pack 随包带上来的）；没填地点的角色退全局默认城市。
       charCity: toolPack.charCity,
+      charProvince: toolPack.charProvince,
       globalRows,
       globalNamespace: AMSG_GLOBAL_NAMESPACE,
       writeState: ctx.writeState
