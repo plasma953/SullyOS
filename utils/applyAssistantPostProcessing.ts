@@ -25,7 +25,7 @@
  * Phase 2 会让 worker 端把识别出的副作用 (RECALL/SEARCH/...) 结构化传 directives, 这里只重放。
  */
 
-import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, RealtimeConfig, GroupProfile } from '../types';
+import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, RealtimeConfig, GroupProfile, APIConfig } from '../types';
 import { DB } from './db';
 import { ChatParser, type FrozenMusicSong } from './chatParser';
 import { resolveCharTimeZone } from './timezone';
@@ -58,6 +58,8 @@ import { markAmsgStateDirty } from './amsgStateSync';
 import { announceScheduleChanges, applyAssistantScheduleChanges } from './scheduleChange';
 import { isBlobRef } from './blobRef';
 import { stripLeakedSourceTags } from './sanitize';
+import { extractGenImageTags, stripGenImageTags } from './imageGenTags';
+import { runImageGenReply } from './imageGenFlow';
 
 // ─── 模块内辅助 ──────────────────────────────────────────────────────────────
 
@@ -515,6 +517,22 @@ export interface PostProcessCtx {
      * 在线送达 vs 离线补收的判定见 activeMsgRuntime.resolveInboxPersistTimestamp。
      */
     messageTimestamp?: number;
+    /**
+     * AI 生图运行时（可选）。本地聊天路径（useChatAI）传；不传的路径
+     * （群聊 / instant push）遇到 [[GEN_IMAGE:]] 只剥离、不执行，
+     * 避免悄悄烧掉用户的周额度。
+     */
+    imageGen?: ImageGenRuntime;
+}
+
+/**
+ * AI 生图运行时：apiConfig 读 key + 总开关，characters 是外貌档案来源，
+ * saveCharProfile 把自动提取的档案回写（调用方接 updateCharacter）。
+ */
+export interface ImageGenRuntime {
+    apiConfig: APIConfig;
+    characters: CharacterProfile[];
+    saveCharProfile: (charId: string, profile: string) => void;
 }
 
 // ─── 主入口 ─────────────────────────────────────────────────────────────────
@@ -547,6 +565,7 @@ export async function applyAssistantPostProcessing(
         directives,
         reasoningContent: pushReasoningContent,
         messageTimestamp,
+        imageGen,
     } = ctx;
     const { baseUrl, headers, effectiveApi } = api;
     // 拟人打字延迟：流式预览已实时展示过气泡时（instantRender）跳过，避免二次慢放
@@ -2317,6 +2336,31 @@ ${material}
         // 降级成占位文本，跟锁屏横幅那边（utils/sanitize.ts 的 [HTML 卡片]）看到的一致。
         console.warn('[HTML] HTML 卡片没开，源码降级成占位文本', { charId: char.id });
         aiContent = aiContent.replace(/\[html\][\s\S]*?\[\/html\]/gi, '[HTML 卡片]').trim();
+    }
+
+    // ─── Step 5b: AI 生图标签 ───
+    // [[GEN_IMAGE: ...]] 先从正文剥离（展示 / 历史 / 二轮都不该看到它），再决定执不执行：
+    // 调用方给了 imageGen 运行时 + 总开关开着 + 有 key → 取第一个标签 fire-and-forget
+    // 跑后台生图（文字消息 Step 6 照常先落库，图片生成完再追加一条 image 消息）。
+    // 开关关着 / 没 key / 没传运行时的路径 → 只剥离不执行（flow 里缺 key 也会 toast）。
+    const genImageReqs = extractGenImageTags(aiContent);
+    if (genImageReqs.length > 0) {
+        aiContent = stripGenImageTags(aiContent);
+        if (genImageReqs.length > 1) {
+            console.warn('[imageGen] 一轮多个 GEN_IMAGE 标签，只执行第一个', { charId: char.id, count: genImageReqs.length });
+        }
+        const imgReq = genImageReqs[0];
+        if (imageGen && imageGen.apiConfig?.imageGenEnabled === true && imgReq) {
+            void runImageGenReply(imgReq, {
+                apiConfig: imageGen.apiConfig,
+                char,
+                userProfile,
+                characters: imageGen.characters?.length ? imageGen.characters : [char],
+                contextMsgs,
+                hooks: { addToast },
+                saveCharProfile: imageGen.saveCharProfile,
+            });
+        }
     }
 
     // ─── Step 6: 展示本轮回复 (二轮结果 B / 无二轮时的单轮回复) ───

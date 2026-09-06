@@ -23,7 +23,13 @@
 
 ## 新增功能时的硬约定
 
-**UI、动效、美化风格必须与 ethernet 现有风格保持一致**：动手前先看 ethernet 里同类界面的既有写法（配色、圆角、动效节奏、CSS 组织方式），在既有模式上扩展，不照抄上游新风格、不引入全新视觉语言。
+**UI、动效、美化风格必须与 ethernet 现有风格保持一致**：动手前先看 ethernet 里同类界面的既有写法（配色、圆角、动效节奏、CSS 组织方式），在既有模式上扩展，不照抄上游新风格、不引入全新视觉语言。各 App 的既有风格（如聊天/设置系的深色玻璃风）**只在其 App 内延续，不要互相串味**。
+
+**唯一例外专区——番茄钟「铅笔手绘风」**（2026-09-06 整套落地，改番茄钟前必读本条）：
+
+- 风格基因：纸底 `#f5f0e8` + 墨色 `#3a3630` 文字；`border-2 dashed` 虚线框；手绘不规则圆角（如 `255px 15px 225px 15px / 15px 225px 15px 255px`）；阴影用 45° 交叉线伪元素（不用纯色投影）；楷体栈 `'Kaiti SC','STKaiti','KaiTi',serif`；**禁**渐变、纯白底、玻璃模糊（backdrop-blur）；动效短促（120-160ms 微抖入场、按下沉 1px）。
+- 原子件只从 `apps/pomodoro/SketchKit.tsx` 取（SketchBox / SketchButton / SketchLabel / SketchHatch / SketchKeyframes / accentFill）；颜色只来自 `utils/pomodoroPrefs.ts` 的 `accent` / `waterColor`（用户可自定义，8+6 预设）。改番茄钟任何界面必须复用这套原子件，不许散写新样式。
+- 边界：手绘风**只属于番茄钟**，不要扩散到其他 App；其他 App 的组件也不要把手绘风元素带进去。番茄钟内部五个子模块（SketchKit / WaterBallSketch / CompanionBall / PomodoroSettings / UsageHeatmap）风格必须保持同一基因，接线约束见 `utils/pomodoroSketch.wiring.test.ts`。
 
 ## VPS 部署布局（已确认可连，2026-09-06）
 
@@ -42,7 +48,7 @@ SSH：`root@108.165.20.235:32212`（opencode 的 vps 工具里叫 `default`）�
 
 - ✅ 番茄钟手绘风改造已落地（本地 `39878aee`，已 push；纯前端，VPS 未动）：全 App 铅笔手绘风；主页设背景图/整体配色/水球单色/消息形态；可拖动角色悬浮球（轻点循环文字/语音/混合，语音自动播放）；12 周热力图（历史上限 100→500）；停止改一层轻确认后立即结束，惩罚后台生成自动落聊天+记忆，惩罚弹窗已删。
 - ✅ UTF-8 乱码大修复（本地 `b19fffb9`）：8 文件 203 处 U+FFFD 截断从 git 历史逐行恢复，activeMsgRuntime 两处 `= 启动` 裸标识符（cherry-pick 出生即坏，曾致 49 个测试失败）补为 `'上线补收'`，新增 `utils/mojibakeGuard.test.ts` 全仓护栏（扫到 U+FFFD 即测试红）。
-- ⚠️ **编码铁律（别再犯）**：本仓库历史上多次被 Windows AI 会话按非 UTF-8 方式写文件造成多字节截断。今后**任何写文件操作必须 UTF-8 无 BOM**；编辑含中文的行后，用 `utils/mojibakeGuard.test.ts` 或 python 字节扫 `\xef\xbf\xbd` 自查；修复乱码的套路是「逐行回溯 git 历史，按 FFFD 前后碎片匹配完好版本」（脚本模式见 2026-09-06 会话）。相关特性提交波次：f732464a/c75ffa57/ec8c983e/7a68eb2b/dcb78439/939e6525。
+- ⚠️ 乱码专项（项目事实）：本仓库历史上多次被 Windows AI 会话截断 UTF-8，肇事的特性提交波次 f732464a / c75ffa57 / ec8c983e / 7a68eb2b / dcb78439 / 939e6525。日常编码纪律与乱码修复套路见全局 AGENTS.md「文件编码」节；已加 `utils/mojibakeGuard.test.ts` 全仓护栏（扫到 U+FFFD 即测试红），动过含中文文件后跑它。
 - 🧷 **AI 防乱码操作清单（2026-09-06 实测结论）**：乱码分两层——①显示层：PowerShell 5.1 输出管线把 UTF-8 中文解码成问号状替换符（U+FFFD）（git 里的字节是干净的，`git log` 经 python 验过 `utf8-ok=True`），只污染眼睛；②文件层：真正的 U+FFFD 进源码，来自 shell 写文件或引用了被显示层污染的文本。遵守：写文件只用 Write/Edit 工具，绝不用 shell 重定向/`Set-Content`/`echo` 写文件；含中文的 oldString 只从 Read 工具输出逐字取，bash 输出里的中文只看行号、不复制文字；bash 命令参数避免中文（搜中文用 Grep 工具）；commit message 用英文；绝不在 Write/Edit 参数里放 U+FFFD 字符本身做示意（护栏认字不认意图），用“U+FFFD”文字描述代替；每次动过含中文文件后跑 `pnpm vitest run utils/mojibakeGuard.test.ts` + 字节扫 FFFD（诊断只打印 ASCII）。
 - ✅ 上游 MCP 产品化合并已收尾（本地 `53dc9664`，已 push、已同步 VPS）：`collectMcpFireServers` 双方融合（ethernet relay 物化 + 上游 destructive 过滤/完整工具载荷），Settings 标题保留 ethernet StatusBadge，`APP_VERSION` 维持 `v3.8 (Slimdown)` 不随上游。上游 8df8e594 的等价合入到此完成。
 - 本机开发环境：pnpm 不在 PATH，用 `corepack pnpm@9.15.9`（lockfile v9）；项目 `.npmrc` 指向腾讯镜像但经常 502，装依赖加 `--registry=https://registry.npmjs.org/`。git 身份仅本仓库配置为 **plasma953 / plasma953@users.noreply.github.com**（与 `18fd25f8` 一致）。

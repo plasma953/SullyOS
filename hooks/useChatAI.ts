@@ -2011,6 +2011,12 @@ export const useChatAI = ({
                 },
                 // 流式预览已把气泡展示过 → 落库免打字延迟，秒回填（未预览时行为不变）
                 instantRender: streamPreviewShown,
+                // AI 生图运行时：内联 [[GEN_IMAGE:]] 标签的执行上下文（1:1 聊天只有本角色）。
+                imageGen: {
+                    apiConfig,
+                    characters: [char],
+                    saveCharProfile: (id, profile) => updateCharacter?.(id, { imageGenProfile: profile } as any),
+                },
                 // Phase 0: 本地 fetch 路径保持原逻辑, 不跳 2nd-pass LLM, 也没有结构化 directives。
                 skipSecondPassLLM: false,
                 directives: [],

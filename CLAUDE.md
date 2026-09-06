@@ -10,6 +10,7 @@
 
 | 主题 | 文档 | 什么时候看 |
 |------|------|-----------|
+| **ethernet 分支 · 项目背景与约定** | [`notes/ethernet-branch-context.md`](./notes/ethernet-branch-context.md) | **每次开工前先读**：这是二改仓库（原版 qegj567-cloud/SullyOS），ethernet 分支的侧重点、与上游的同步惯例（cherry-pick 等价提交）、以及「新增功能必须保持 ethernet 现有 UI/动效风格」的硬约定。仓库现状与坑也在里面 |
 | **开发调试面板 / 开关** | [`docs/dev-debug.md`](./docs/dev-debug.md) | 加 dev-only 开关、加调试日志、排查"角色怎么又不说话了"。含逐步指南 |
 | **记忆系统** | [`docs/memory-system-overview.md`](./docs/memory-system-overview.md) | 涉及长期记忆、月度总结、向量化记忆宫殿、情感空间。改记忆相关逻辑前必读 |
 | **查手机 · 人际关系系统** | [`docs/relationship-system.md`](./docs/relationship-system.md) | 改「查手机」聊天/通讯录、角色联系人/好感、真假甄别、真角色双向对话、虚构 NPC 约束前必读 |

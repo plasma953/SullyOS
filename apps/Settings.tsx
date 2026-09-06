@@ -628,6 +628,13 @@ const Settings: React.FC = () => {
     apiConfig.minimaxRegion === 'overseas' ? 'overseas' : 'domestic'
   );
   const [localAceStepKey, setLocalAceStepKey] = useState(apiConfig.aceStepApiKey || '');
+  // AI 生图（latent.moe）：key + 总开关，草稿-提交模式，随 apiConfig 持久化。
+  const [localLatentKey, setLocalLatentKey] = useState(apiConfig.latentImageKey || '');
+  const [localImageGenEnabled, setLocalImageGenEnabled] = useState(apiConfig.imageGenEnabled === true);
+  const [showLatentGuide, setShowLatentGuide] = useState(false);
+  const [imageGenStatusMsg, setImageGenStatusMsg] = useState('');
+  // 角色外貌档案编辑草稿：charId → tag 串（提交时只写改过的）。
+  const [profileDrafts, setProfileDrafts] = useState<Record<string, string>>({});
   const [localTtsProvider, setLocalTtsProvider] = useState<TtsProvider>(
     apiConfig.ttsProvider === 'fishaudio' || apiConfig.ttsProvider === 'elevenlabs'
       ? apiConfig.ttsProvider
@@ -909,6 +916,8 @@ const Settings: React.FC = () => {
       setLocalMiniMaxGroupId(apiConfig.minimaxGroupId || '');
       setLocalMiniMaxRegion(apiConfig.minimaxRegion === 'overseas' ? 'overseas' : 'domestic');
       setLocalAceStepKey(apiConfig.aceStepApiKey || '');
+      setLocalLatentKey(apiConfig.latentImageKey || '');
+      setLocalImageGenEnabled(apiConfig.imageGenEnabled === true);
       setLocalTtsProvider(
           apiConfig.ttsProvider === 'fishaudio' || apiConfig.ttsProvider === 'elevenlabs'
               ? apiConfig.ttsProvider
@@ -928,6 +937,7 @@ const Settings: React.FC = () => {
       setLocalVoicePromptDate(apiConfig.voicePrompts?.dateVoice || '');
   }, [
       apiConfig.minimaxApiKey, apiConfig.minimaxGroupId, apiConfig.minimaxRegion, apiConfig.aceStepApiKey,
+      apiConfig.latentImageKey, apiConfig.imageGenEnabled,
       apiConfig.ttsProvider, apiConfig.fishAudioApiKey, apiConfig.fishAudioModel,
       apiConfig.elevenLabsApiKey, apiConfig.elevenLabsModel, apiConfig.elevenLabsStability,
       apiConfig.elevenLabsSimilarityBoost, apiConfig.elevenLabsStyle, apiConfig.elevenLabsUseSpeakerBoost,
@@ -1250,6 +1260,22 @@ const Settings: React.FC = () => {
     updateApiConfig(buildOtherApiConfig());
     setOtherStatusMsg('已保存');
     setTimeout(() => setOtherStatusMsg(''), 2000);
+  };
+
+  // AI 生图板块独立保存：key + 总开关进 apiConfig，外貌档案逐角色写回（只提交改过的）。
+  const handleSaveImageGen = () => {
+    updateApiConfig({ latentImageKey: localLatentKey, imageGenEnabled: localImageGenEnabled });
+    for (const c of characters) {
+      const draft = profileDrafts[c.id];
+      if (draft === undefined) continue;
+      const next = draft.trim();
+      const cur = ((c as any).imageGenProfile || '').trim();
+      if (next !== cur) updateCharacter(c.id, { imageGenProfile: next } as any);
+    }
+    setProfileDrafts({});
+    setImageGenStatusMsg('已保存');
+    setTimeout(() => setImageGenStatusMsg(''), 2000);
+    trackEvent('保存 AI 生图配置');
   };
 
   // 选「谁来做语音生成」立即落库——不需要再点下面的保存。
@@ -3270,6 +3296,96 @@ const Settings: React.FC = () => {
 
                 <button onClick={handleSaveOtherApis} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-amber-500/20 bg-amber-500 active:scale-95 transition-all mt-2">
                     {otherStatusMsg || '保存其他 API'}
+                </button>
+            </div>
+        </SettingsSection>
+
+        {/* AI 生图 — latent.moe 公益 GPU 池。key 与总开关随 apiConfig 走（可随时改），外貌档案逐角色存。 */}
+        <SettingsSection
+            title="AI 生图"
+            icon={
+                <div className="p-2 bg-fuchsia-100/50 rounded-xl text-fuchsia-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.125-11.625a1.875 1.875 0 1 1-3.75 0 1.875 1.875 0 0 1 3.75 0Z" />
+                    </svg>
+                </div>
+            }
+        >
+            <p className="text-[11px] text-slate-400 mb-4 leading-relaxed pl-1">
+                聊天时角色会在关键场面自动配图（回复里写 <span className="font-mono font-semibold text-slate-500">[[GEN_IMAGE:]]</span> 标签触发）。图片走 latent.moe 生图、自动存进相册。
+            </p>
+
+            <div className="space-y-4">
+                <div className="group">
+                    <div className="flex items-center justify-between bg-white/50 border border-slate-200/60 rounded-xl px-4 py-3">
+                        <div>
+                            <div className="text-sm font-bold text-slate-700">自动生图</div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">关掉后标签只剥离不执行（楼层上的手动生图按钮仍可用）</div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setLocalImageGenEnabled(v => !v)}
+                            className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center shrink-0 ml-3 ${localImageGenEnabled ? 'bg-fuchsia-500' : 'bg-slate-200'}`}
+                        >
+                            <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${localImageGenEnabled ? 'translate-x-4' : ''}`}></div>
+                        </button>
+                    </div>
+                </div>
+
+                <div className="group">
+                    <div className="flex items-center justify-between mb-1.5 pl-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Latent API Key</label>
+                        <button
+                            type="button"
+                            onClick={() => setShowLatentGuide(v => !v)}
+                            className="text-[10px] font-semibold text-fuchsia-500 hover:text-fuchsia-600 active:scale-95 transition-all flex items-center gap-1"
+                        >
+                            {showLatentGuide ? '收起' : '怎么拿？'}
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-3 h-3 transition-transform ${showLatentGuide ? 'rotate-180' : ''}`}>
+                                <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                    <input type="password" name="latent-api-key" autoComplete="new-password" spellCheck={false} value={localLatentKey} onChange={(e) => setLocalLatentKey(e.target.value)} placeholder="lat_sk_...（聊天生图用）" className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all" />
+                    <p className="text-[11px] text-slate-400 mt-1 pl-1">Key 只存在你自己的手机里（随备份走），生成时经网络 Worker 透传给 latent.moe，项目不主动留存。站点每周有免费额度，用完会提示。</p>
+
+                    {showLatentGuide && (
+                        <div className="mt-3 rounded-2xl border border-fuchsia-200/60 bg-fuchsia-50/60 px-4 py-3">
+                            <div className="text-[12px] font-bold text-slate-700 mb-1.5">3 步拿到 Key</div>
+                            <ol className="text-[11px] text-slate-500 leading-relaxed list-decimal list-inside space-y-1">
+                                <li>打开 <a href="https://latent.moe/create" target="_blank" rel="noopener noreferrer" className="text-fuchsia-600 hover:underline font-semibold">latent.moe</a> 注册 / 登录账号。</li>
+                                <li>进 <span className="font-mono">dashboard/keys</span> 手动创建一个 designer API key（lat_sk_ 开头）。</li>
+                                <li>粘贴到上面输入框 → 点保存 → 聊天时角色就会在关键场面自动配图。</li>
+                            </ol>
+                        </div>
+                    )}
+                </div>
+
+                <div className="group">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">角色外貌档案（防串脸）</label>
+                    <p className="text-[11px] text-slate-400 pl-1 leading-relaxed">生图提示词里写 @名字 时自动替换成这里的外貌 tag，保证同一角色每张图长一个样。首次生图会自动从人设提取，之后可再手动改。</p>
+                    <div className="space-y-2 mt-2">
+                        {characters.map(c => (
+                            <div key={c.id} className="bg-white/50 border border-slate-200/60 rounded-xl px-3 py-2.5">
+                                <div className="text-xs font-bold text-slate-600 mb-1.5">{c.name}</div>
+                                <input
+                                    type="text"
+                                    spellCheck={false}
+                                    value={profileDrafts[c.id] ?? (c as any).imageGenProfile ?? ''}
+                                    onChange={(e) => setProfileDrafts(prev => ({ ...prev, [c.id]: e.target.value }))}
+                                    placeholder="cat girl, silver hair, green eyes（英文 tag，逗号分隔）"
+                                    className="w-full bg-white/70 border border-slate-200/60 rounded-lg px-3 py-2 text-xs font-mono focus:bg-white transition-all"
+                                />
+                            </div>
+                        ))}
+                        {characters.length === 0 && (
+                            <p className="text-[11px] text-slate-400 pl-1">还没有角色，先去捏一个吧。</p>
+                        )}
+                    </div>
+                </div>
+
+                <button onClick={handleSaveImageGen} className="w-full py-3 rounded-2xl font-bold text-white shadow-lg shadow-fuchsia-500/20 bg-fuchsia-500 active:scale-95 transition-all mt-2">
+                    {imageGenStatusMsg || '保存生图配置'}
                 </button>
             </div>
         </SettingsSection>

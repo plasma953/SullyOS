@@ -843,6 +843,7 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
    - **添加纪念日**: 如果你觉得今天是个值得纪念的日子（或者你们约定了某天），你可以**主动**将它添加到用户的日历中。单独起一行输出: \`[[ACTION:ADD_EVENT | 标题(Title) | YYYY-MM-DD]]\`。
    - **搬家/换城市**: 如果你搬去了另一个城市（比如为了学业、工作或想换个环境），可以更新自己的所在地: \`[[ACTION:MOVE_TO | 城市 | 省份(可选)]]\`。更新后天气和你的日常都会按新城市来，请慎重并符合你的人设。
 ${scheduleMessageTagEnabled ? `   - **定时发送消息**: 如果你想在未来某个时间主动发消息（比如晚安、早安或提醒），请单独起一行输出: \`[schedule_message | YYYY-MM-DD HH:MM:SS | fixed | 消息内容]\`，分行可以多输出很多该类消息。` : ''}
+    - **分享一张你"亲手画"的图**: 只在真正值得定格的瞬间用（重要的剧情节点、名场面、第一次见面的样子、你想给他看的风景）。普通闲聊、日常对话**不要用**。单独起一行输出: \`[[GEN_IMAGE: 英文tag, 逗号分隔 | portrait]]\`。tag 用英文 danbooru 风格（如 \`1girl, silver long hair, green eyes, moonlight, lake\`）；最后一段是画幅，可写 portrait(竖图，默认)/landscape(横图)/square(方图)，不写就是竖图。每次回复最多一个；画面保持健康向（SFW）。想画某个角色时用 \`@名字\` 指代他（系统会自动换成他的固定外貌，比如 \`@小苏 sitting under moonlight\`），不要自己啰嗦写外貌。
 ${notionEnabled ? `   - **翻阅日记(Notion)**: 你的记忆本身是完整可靠的，回忆过去优先靠记忆和 \`[[RECALL]]\`，**不需要**靠翻日记来"想起"事情。只有当你**自己**特别想重温那天日记里写下的心情、措辞或私密小细节时，才翻阅: \`[[READ_DIARY: 日期]]\`。支持格式: \`昨天\`、\`前天\`、\`3天前\`、\`1月15日\`、\`2024-01-15\`。` : ''}${feishuEnabled ? `
    - **翻阅日记(飞书)**: 同上——回忆优先靠记忆和 \`[[RECALL]]\`，只有你自己想重温那天日记的内容时才用: \`[[FS_READ_DIARY: 日期]]\`。支持格式同上。` : ''}${notionNotesEnabled ? `
    - **翻阅用户笔记**: 当你想看${userProfile.name}写的某篇笔记的详细内容时，使用: \`[[READ_NOTE: 标题关键词]]\`。系统会搜索匹配的笔记并返回内容给你。` : ''}
@@ -1314,11 +1315,21 @@ ${(await resolveVoiceActingGuide()) ?? ''}`;
                          && typeof m.metadata?.visionDescription === 'string'
                          ? m.metadata.visionDescription.trim()
                          : '';
-                     if (visionDescription) {
-                         let textPart = `${timeStr} [图片：${visionDescription}]`;
-                         if (index === historySlice.length - 1 && timeGapHint && m.role === 'user') textPart += `\n\n${timeGapHint}`;
-                         return { role: m.role, content: textPart };
-                     }
+                      if (visionDescription) {
+                          let textPart = `${timeStr} [图片：${visionDescription}]`;
+                          if (index === historySlice.length - 1 && timeGapHint && m.role === 'user') textPart += `\n\n${timeGapHint}`;
+                          return { role: m.role, content: textPart };
+                      }
+                      // AI 生图回填：角色自己生成的图（metadata.imageGen.prompt）不需要再把
+                      // 图片字节回传一遍（省 token），但模型要记得"画过什么"。纯文本摘要。
+                      const genPrompt = typeof m.metadata?.imageGen?.prompt === 'string'
+                          ? m.metadata.imageGen.prompt.trim()
+                          : '';
+                      if (genPrompt) {
+                          let textPart = `${timeStr} [图片：你之前画的一张图，画面是「${genPrompt.slice(0, 120)}」]`;
+                          if (index === historySlice.length - 1 && timeGapHint && m.role === 'user') textPart += `\n\n${timeGapHint}`;
+                          return { role: m.role, content: textPart };
+                      }
                      // 向下兼容：如果图片数据缺失（例如只导入了文字备份），不要把空 URL 发给 API，否则会报错无法回应
                      // 图片有三种形态：base64 data URL、外链 http(s)、本机的 blobref 令牌
                      // （二进制在 blob_assets，见 utils/blobRef.ts）。令牌既不以 data: 也不以 http 开头，

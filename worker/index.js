@@ -3798,6 +3798,61 @@ export default {
       }
     }
 
+    // ========== Latent.moe AI 生图代理 (公益站点 GPU 池, 纯透传) ==========
+    // 上游 API 不发 CORS 头, 浏览器直连会被拦, 所以走这里转发。
+    // 前端 utils/latentImageGen.ts 调:
+    //   GET  /latent/generate/status            → https://latent.moe/api/generate/status
+    //   POST /latent/generate                   → https://latent.moe/api/generate
+    //   GET  /latent/generate/{id}              → https://latent.moe/api/generate/{id}
+    //   GET  /latent/media/{artworkId}?size=... → https://latent.moe/api/media/{artworkId}?size=...
+    // Authorization: Bearer lat_sk_... 由前端设置页的 key 透传, Worker 不读不存。
+    // /media/* 回二进制图片 (流式透传); 其余回文本 (JSON)。
+    if (url.pathname.startsWith('/latent/')) {
+      const auth = request.headers.get('Authorization');
+      if (!auth) {
+        return jsonResponse({ error: 'Missing Authorization header (Latent API key)' }, { status: 401, origin });
+      }
+      const apiPath = url.pathname.replace(/^\/latent/, ''); // e.g. /generate
+      const apiUrl = `https://latent.moe/api${apiPath}${url.search || ''}`;
+      const allowedMethods = ['GET', 'POST'];
+      if (!allowedMethods.includes(request.method)) {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      try {
+        const forwardHeaders = {
+          'Authorization': auth,
+          'Content-Type': request.headers.get('Content-Type') || 'application/json',
+          'Accept': request.headers.get('Accept') || 'application/json',
+          'User-Agent': 'sully-latent-proxy',
+        };
+        const init = { method: request.method, headers: forwardHeaders };
+        if (request.method === 'POST') {
+          init.body = await request.text();
+        }
+        const upstream = await fetch(apiUrl, init);
+        // 媒体字节流式透传 (text() 会弄坏 PNG 二进制, 不能走 JSON 分支)。
+        if (apiPath.startsWith('/media/')) {
+          const respHeaders = new Headers(corsHeaders(origin));
+          const ct = upstream.headers.get('Content-Type');
+          if (ct) respHeaders.set('Content-Type', ct);
+          const cl = upstream.headers.get('Content-Length');
+          if (cl) respHeaders.set('Content-Length', cl);
+          respHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+          return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+        }
+        const text = await upstream.text();
+        return new Response(text, {
+          status: upstream.status,
+          headers: {
+            'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        return jsonResponse({ error: 'Latent upstream fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });
+      }
+    }
+
     // ========== 鱼声 Fish Audio TTS 代理 (静态部署绕 CORS, 纯透传) ==========
     // 前端 POST /fishaudio/tts?model=s2.1-pro  + Authorization: Bearer <fish key>
     // body = { text, reference_id, format, ... }；返回二进制音频(mp3)。

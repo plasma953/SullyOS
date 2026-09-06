@@ -7,6 +7,7 @@ import ScheduleCard from '../schedule/ScheduleCard';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
 import { isTranslationLangPreset, normalizeTranslationLangLabel, TRANSLATION_LANG_MAX_LENGTH, TRANSLATION_LANG_PRESETS } from '../../utils/translationLang';
 import type { ContextRangeMode, ContextRangeSnapshot } from '../../utils/chatContextRange';
+import type { ImageGenResolution } from '../../utils/imageGenTags';
 import { trackEvent } from '../../utils/analytics';
 import { CANTONESE_VOICE_SUPPORT_NOTE, VOICE_LANGUAGE_OPTIONS } from '../../utils/voiceLanguage';
 import { chatMessageFuzzyMatchesKeyword } from '../../utils/chatMessageSearch';
@@ -126,6 +127,13 @@ interface ChatModalsProps {
     voiceCollectable?: boolean; // true for a generated voice or an unsynthesized <语音> message
     onToggleVoiceFavorite?: () => void;
     voiceFavorited?: boolean;
+    // AI 生图（手动：楼层长按 → 生成图片 → tag 弹窗确认）
+    onGenerateImage?: () => void;
+    imageGenAvailable?: boolean;
+    imageGenDraft?: { prompt: string; resolution: ImageGenResolution } | null;
+    setImageGenDraft?: (d: { prompt: string; resolution: ImageGenResolution }) => void;
+    imageGenSuggesting?: boolean;
+    onConfirmImageGen?: () => void;
     // Schedule
     scheduleData?: DailySchedule | null;
     isScheduleGenerating?: boolean;
@@ -268,6 +276,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     htmlModeEnabled, onToggleHtmlMode, htmlModeCustomPrompt, setHtmlModeCustomPrompt,
     chatVoiceEnabled, onToggleChatVoice, chatVoiceAutoPlay, onToggleChatVoiceAutoPlay, chatVoiceLang, onSetChatVoiceLang,
     onGenerateVoice, voiceAvailable, onDownloadVoice, voiceDownloadable, voiceCollectable, onToggleVoiceFavorite, voiceFavorited,
+    onGenerateImage, imageGenAvailable, imageGenDraft, setImageGenDraft, imageGenSuggesting, onConfirmImageGen,
     scheduleData, isScheduleGenerating, onScheduleEdit, onScheduleDelete, onScheduleReroll, onScheduleCoverChange,
     onScheduleStyleChange, onPlayTheater,
     isScheduleFeatureEnabled, onToggleScheduleFeature,
@@ -1022,10 +1031,48 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             {voiceFavorited ? '取消收藏语音' : '收藏语音'}
                         </button>
                     )}
+                    {selectedMessage?.type === 'text' && imageGenAvailable && onGenerateImage && (
+                        <button onClick={() => { onGenerateImage(); setModalType('none'); }} className="w-full py-3 bg-fuchsia-50 text-fuchsia-600 font-medium rounded-2xl active:bg-fuchsia-100 transition-colors flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.125-11.625a1.875 1.875 0 1 1-3.75 0 1.875 1.875 0 0 1 3.75 0Z" /></svg>
+                            生成图片
+                        </button>
+                    )}
                     <button onClick={onDeleteMessage} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl active:bg-red-100 transition-colors flex items-center justify-center gap-2">
                         删除消息
                     </button>
                 </div>
+            </Modal>
+
+            {/* AI 生图确认弹窗：tag 可编辑 + 画幅三选 */}
+            <Modal
+                isOpen={modalType === 'image-gen'} title="生成图片" onClose={() => setModalType('none')}
+                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onConfirmImageGen} disabled={!imageGenDraft?.prompt.trim() || imageGenSuggesting} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl disabled:opacity-40">生成图片</button></>}
+            >
+                {imageGenSuggesting || !imageGenDraft ? (
+                    <div className="py-8 text-center text-sm text-slate-400">正在按这段剧情写 tag…</div>
+                ) : (
+                    <div className="space-y-3">
+                        <textarea
+                            value={imageGenDraft.prompt}
+                            onChange={e => setImageGenDraft?.({ ...imageGenDraft, prompt: e.target.value })}
+                            placeholder="英文 tag，逗号分隔；@名字 会自动换成他的固定外貌"
+                            className="w-full h-32 bg-slate-100 rounded-2xl p-4 resize-none focus:ring-1 focus:ring-fuchsia-300 transition-all text-sm leading-relaxed font-mono"
+                        />
+                        <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                            {([['portrait', '竖图'], ['landscape', '横图'], ['square', '方图']] as Array<[ImageGenResolution, string]>).map(([v, label]) => (
+                                <button
+                                    key={v}
+                                    type="button"
+                                    onClick={() => setImageGenDraft?.({ ...imageGenDraft, resolution: v })}
+                                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${imageGenDraft.resolution === v ? 'bg-fuchsia-500 text-white shadow-sm' : 'text-slate-600 active:bg-white/60'}`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">图生成好后会追加进聊天并自动存相册，大概要等半分钟到几分钟（看站点排队）。</p>
+                    </div>
+                )}
             </Modal>
             
              <Modal

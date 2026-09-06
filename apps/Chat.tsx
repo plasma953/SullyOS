@@ -63,6 +63,8 @@ import {
 import { shouldAutoGenerateVoice, shouldAutoPlayGeneratedVoice } from '../utils/voicePlayback';
 import { voiceLanguageAnalyticsValue, voiceLanguagePromptLabel } from '../utils/voiceLanguage';
 import { fetchBlobForShare, shareOrDownloadBlob } from '../utils/shareExport';
+import { runImageGenReply, suggestImageTags } from '../utils/imageGenFlow';
+import type { ImageGenResolution } from '../utils/imageGenTags';
 import { CollaborationStore } from '../features/collaboration/store';
 import { resolveTtsProvider } from '../utils/ttsProvider';
 import { isInstantConfigReady, loadInstantConfig } from '../utils/instantPushClient';
@@ -215,7 +217,7 @@ const Chat: React.FC = () => {
     // Reply Logic
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
 
-    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'emoji-options' | 'rename-emoji' | 'schedule' | 'chrome-css' | 'chrome-sound' | 'memory-vectorize-confirm' | 'memory-vectorize-result'>('none');
+    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'image-gen' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'emoji-options' | 'rename-emoji' | 'schedule' | 'chrome-css' | 'chrome-sound' | 'memory-vectorize-confirm' | 'memory-vectorize-result'>('none');
     // 「聊天装扮」悬浮态：不走全屏 modal——圆气泡挂在聊天上，点开小面板边看真聊天边调。
     const [fineTuneOpen, setFineTuneOpen] = useState(false);          // 圆气泡在场
     const [fineTunePanelOpen, setFineTunePanelOpen] = useState(false); // 小面板展开/收起
@@ -255,6 +257,9 @@ const Chat: React.FC = () => {
         waterlineAlreadyAhead: boolean;
     } | null>(null);
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+    // AI 生图手动弹窗：tag 草稿（LLM 联想后可编辑）+ 联想中状态。
+    const [imageGenDraft, setImageGenDraft] = useState<{ prompt: string; resolution: ImageGenResolution } | null>(null);
+    const [imageGenSuggesting, setImageGenSuggesting] = useState(false);
     const [selectedEmoji, setSelectedEmoji] = useState<Emoji | null>(null);
     const [selectedCategory, setSelectedCategory] = useState<EmojiCategory | null>(null); // For deletion modal
     const [editContent, setEditContent] = useState('');
@@ -3050,6 +3055,47 @@ const Chat: React.FC = () => {
         setModalType('message-options');
     }, []);
 
+    // AI 生图（手动）：楼层长按 → 生成图片 → LLM 按场景写 tag → 弹窗确认 → 后台生成落库。
+    const buildImageGenScene = (msg: Message): string => {
+        const idx = messages.findIndex(m => m.id === msg.id);
+        const win = (idx >= 0 ? messages.slice(Math.max(0, idx - 6), idx + 1) : [msg])
+            .filter(m => m.type === 'text');
+        return win
+            .map(m => `${m.role === 'user' ? userProfile.name : char.name}：${String(m.content || '').slice(0, 300)}`)
+            .join('\n');
+    };
+
+    const handleManualImageGen = async (msg: Message) => {
+        setImageGenDraft({ prompt: '', resolution: 'portrait' });
+        setImageGenSuggesting(true);
+        setModalType('image-gen');
+        try {
+            const tags = await suggestImageTags(buildImageGenScene(msg), char, apiConfig);
+            setImageGenDraft({ prompt: tags, resolution: 'portrait' });
+        } catch (e: any) {
+            addToast(`写 tag 失败：${e?.message || '未知错误'}`, 'error');
+            setModalType('none');
+        } finally {
+            setImageGenSuggesting(false);
+        }
+    };
+
+    const handleConfirmImageGen = () => {
+        const draft = imageGenDraft;
+        if (!draft || !draft.prompt.trim()) return;
+        setModalType('none');
+        setImageGenDraft(null);
+        void runImageGenReply({ prompt: draft.prompt.trim(), resolution: draft.resolution }, {
+            apiConfig,
+            char,
+            userProfile,
+            characters: [char],
+            contextMsgs: messages,
+            hooks: { addToast },
+            saveCharProfile: (id, profile) => updateCharacter(id, { imageGenProfile: profile } as any),
+        });
+    };
+
     const handleBatchDelete = async () => {
         const msgIdsToDelete = new Set<number>(selectedMsgIds);
         // 思维链单独勾选、但宿主消息没选 -> 只清 metadata.thinkingChain，保留消息
@@ -3870,6 +3916,12 @@ const Chat: React.FC = () => {
                 onDownloadVoice={selectedMessage ? () => handleDownloadVoice(selectedMessage) : undefined}
                 voiceFavorited={!!(selectedMessage?.id && chatFavoriteKeys.has(chatFavoriteSourceKey(selectedMessage)))}
                 onToggleVoiceFavorite={selectedMessage ? () => handleToggleVoiceFavorite(selectedMessage) : undefined}
+                imageGenAvailable={apiConfig.imageGenEnabled !== false}
+                onGenerateImage={selectedMessage ? () => handleManualImageGen(selectedMessage) : undefined}
+                imageGenDraft={imageGenDraft}
+                setImageGenDraft={setImageGenDraft}
+                imageGenSuggesting={imageGenSuggesting}
+                onConfirmImageGen={handleConfirmImageGen}
                 scheduleData={scheduleData}
                 isScheduleGenerating={isScheduleGenerating}
                 onScheduleEdit={handleScheduleEdit}

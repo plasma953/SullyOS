@@ -316,6 +316,12 @@ export interface APIConfig {
   };
   // Replicate token (r8_xxx) for ACE-Step song generation in 写歌 App.
   aceStepApiKey?: string;
+  // Latent API Key (lat_sk_...) for AI 生图 via latent.moe GPU 池.
+  // 在「设置 → AI 生图」里填，随 apiConfig 持久化、可随时改。
+  latentImageKey?: string;
+  // AI 生图总开关。false/undefined → 内联 [[GEN_IMAGE:]] 标签只剥离不执行
+  //（手动生图按钮仍可用）。缺省 undefined = 关（有 key 才谈得上开）。
+  imageGenEnabled?: boolean;
   model: string;
   // Per-API streaming toggle. Some endpoints only support stream:true.
   // Missing → false (默认非流式).
@@ -3190,6 +3196,13 @@ export interface CharacterProfile {
    */
   htmlModeEnabled?: boolean;
   htmlModeCustomPrompt?: string;
+  /**
+   * AI 生图外貌档案（per-character）。
+   * - 英文 tag 串（如 "cat girl, silver hair, green eyes"），生图 prompt 里写
+   *   `@角色名` 时会被机械替换成这串，保证同一角色每张图长一个样（柏宝绘式防漂移）。
+   * - 首次生图时档案为空 → 从人设自动提取一次存档；之后可在「设置 → AI 生图」里手动改。
+   */
+  imageGenProfile?: string;
   /** 可选：在日常 ChatApp 注入任务优先的协同工作规则。提示词较长，默认关闭。 */
   chatCollaborationEnabled?: boolean;
   /** 该角色专属的聊天「白框」自定义 CSS（叠加在全局 osTheme.chatChromeCustomCss 之上）。 */
