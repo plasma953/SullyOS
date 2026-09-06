@@ -293,19 +293,11 @@ git commit -m "feat(ble): pure helpers for payload codec, uuid normalize, name m
   - `saveCommandToDevice(deviceId: string, cmd: BleSavedCommand): Promise<void>`
   - `removeCommandFromDevice(deviceId: string, cmdId: string): Promise<void>`
 
-- [ ] **Step 1: Write the failing test** — 创建 `utils/bleRegistry.test.ts`（`vi.mock` 路径风格先看一个现有 `utils/*.test.ts` 的写法再定，不能假设）：
+- [ ] **Step 1: Write the failing test** — 创建 `utils/bleRegistry.test.ts`（用真实 DB：`test-setup.ts` 已全局挂 `fake-indexeddb/auto`，`DB.getAsset/saveAsset` 在测试里直接可用；每个测试文件是隔离环境，不会污染其它文件。**禁止** `vi.mock('./db')` 方案）：
 
 ```ts
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const store = new Map<string, string>();
-vi.mock('./db', () => ({
-  DB: {
-    getAsset: vi.fn(async (id: string) => (store.has(id) ? store.get(id)! : null)),
-    saveAsset: vi.fn(async (id: string, data: string) => { store.set(id, data); }),
-  },
-}));
-
+import { beforeEach, describe, expect, it } from 'vitest';
+import { DB } from './db';
 import {
   BLE_REGISTRY_ASSET_KEY,
   loadBleDevices,
@@ -313,12 +305,13 @@ import {
   normalizeSavedDevice,
   removeCommandFromDevice,
   removeBleDevice,
+  saveBleDevices,
   saveCommandToDevice,
   touchBleDeviceConnected,
   upsertBleDevice,
 } from './bleRegistry';
 
-beforeEach(() => { store.clear(); });
+beforeEach(async () => { await saveBleDevices([]); });
 
 describe('normalizeSavedCommand', () => {
   it('passes through a valid command', () => {
@@ -387,7 +380,7 @@ describe('persistence', () => {
   });
   it('writes to the ble_registry_v1 asset key', async () => {
     await upsertBleDevice('d1', '灯');
-    expect(store.has(BLE_REGISTRY_ASSET_KEY)).toBe(true);
+    expect(await DB.getAsset(BLE_REGISTRY_ASSET_KEY)).not.toBeNull();
   });
 });
 ```

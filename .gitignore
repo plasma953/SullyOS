@@ -65,3 +65,6 @@ xiaohongshu-skills/
 public/shopping/shops-raw.json
 public/shopping/off-products.json
 public/shopping/mall-shops-raw.json
+
+# superpowers agent workspaces（ledger/briefs/reports，不进仓库）
+.superpowers/
