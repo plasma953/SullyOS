@@ -10,6 +10,9 @@ import { loadCharacterContextRange } from './chatContextRange';
 import { ChatPrompts } from './chatPrompts';
 import { cleanApiMessages, flattenImageContentParts } from './promptMessageCleanup';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleFeature';
+import { getCityLibrary, readAmapAuth } from './cityPlaces';
+import { matchPlace } from './geoMatch';
+import { renderPlaceLibraryFull, type CityPlaceLibrary } from './amapCore';
 
 export { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleFeature';
 
@@ -71,6 +74,9 @@ function buildLifestylePrompt(
     today: string,
     dayOfWeek: string,
     chatHistoryBlock: string,
+    // 真实地点库成段（getCityLibrary + renderPlaceLibraryFull）：有才附，没有 prompt 原样。
+    placeBlock?: string,
+    cityName?: string,
 ): string {
     return `${baseContext}
 ${chatHistoryBlock}
@@ -116,6 +122,11 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
    - ✅ user 只能作为某件正在发生的事的**副词**自然地渗进 description，
         比如 "画草稿，昨天 ${user.name} 说那个角色好看，顺手再画一张" —— 主语仍是 ta 自己
 
+5. **地点要真实** —— 角色住在「${cityName || '（城市未知）'}」：白天出门的 slot 写 location 字段，在家/在公司的 slot 不写。
+${placeBlock
+    ? `${placeBlock}\n选地点时优先从上面清单里挑（名字照抄，别改字）；清单里没有合适的，才用同城真实存在的地方。**严禁编造听起来像真名的假地点**。`
+    : 'location 写"家里""公司""小区楼下"这类泛指就行；不确定的宁可不写 location 字段，也别编一个像真名的假地点。'}
+
 ### 第二部分：意识流独白（这是核心）
 
 为三个时间段各写一段角色的**内心独白**：
@@ -140,7 +151,7 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 请以JSON格式输出：
 {
   "slots": [
-    { "startTime": "08:00", "activity": "活动名称", "description": "简短描述", "emoji": "🏃" },
+    { "startTime": "08:00", "activity": "活动名称", "description": "简短描述", "emoji": "🏃", "location": "地点（出门活动才写）" },
     { "startTime": "09:00", "activity": "专注的事", "description": "简短描述", "emoji": "💼", "busy": true },
     ...
   ],
@@ -285,9 +296,22 @@ export async function generateDailyScheduleForChar(
     const dayOfWeek = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()];
 
     const style = char.scheduleStyle || 'lifestyle';
+    // 真实地点库：lifestyle 系出门活动需要，mindful 系没有物理外出不附（省 token）。
+    // 角色没设城市 / 没配高德 Key / 拉取失败 → placeBlock 留空，prompt 原样降级。
+    let placeBlock: string | undefined;
+    let placeLib: CityPlaceLibrary | null = null;
+    const scheduleCity = (char.location?.city || '').trim();
+    if (style !== 'mindful' && scheduleCity) {
+        try {
+            placeLib = await getCityLibrary(scheduleCity, readAmapAuth());
+            if (placeLib) placeBlock = renderPlaceLibraryFull(placeLib);
+        } catch (e) {
+            console.warn('[Schedule] 地点库拉取失败，本次无真实地点注入:', e instanceof Error ? e.message : e);
+        }
+    }
     const prompt = style === 'mindful'
         ? buildMindfulPrompt(baseContext, char, userProfile, today, dayOfWeek, chatHistoryBlock)
-        : buildLifestylePrompt(baseContext, char, userProfile, today, dayOfWeek, chatHistoryBlock);
+        : buildLifestylePrompt(baseContext, char, userProfile, today, dayOfWeek, chatHistoryBlock, placeBlock, scheduleCity || undefined);
 
     try {
         const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -333,6 +357,23 @@ export async function generateDailyScheduleForChar(
 
         // Sort by time
         slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+        // 生成后对齐：location 与地点库模糊匹配，命中挂 locationMeta（UI 展示真实地址用）。
+        // 原文保留不改（"老街咖啡二楼"比 canonical 名信息多）；换活动时整个 slot 重建，meta 跟着丢。
+        if (placeLib) {
+            for (const s of slots) {
+                if (!s.location || s.locationMeta) continue;
+                const hit = matchPlace(s.location, placeLib.places);
+                if (hit) {
+                    s.locationMeta = {
+                        name: hit.place.name,
+                        ...(hit.place.address ? { address: hit.place.address } : {}),
+                        ...(hit.place.district ? { district: hit.place.district } : {}),
+                        ...(hit.place.typeShort ? { typeShort: hit.place.typeShort } : {}),
+                    };
+                }
+            }
+        }
 
         // Extract flowNarrative
         let flowNarrative: Record<string, string> | undefined;

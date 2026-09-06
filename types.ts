@@ -858,7 +858,18 @@ export interface ScheduleSlot {
     activity: string;     // "晨跑"
     description?: string; // "在河边慢跑"
     emoji?: string;       // "🏃"
-    location?: string;    // "河边"
+    location?: string;    // "河边"（有地点库时生成器会用真实地名）
+    /**
+     * 地点的真实 POI 挂接（生成后与城市地点库对齐命中的结果）。
+     * UI 可展示真实地址；prompt 侧只用 location 原文（已经是真实名，不重复注入省 token）。
+     * 换活动时整个 slot 重建，本字段连同旧地点一起丢掉（见 scheduleChange）。
+     */
+    locationMeta?: {
+        name: string;
+        address?: string;
+        district?: string;
+        typeShort?: string;
+    };
     innerThought?: string; // 该时段的内心独白，生成时由AI写好，运行时直接注入
     theater?: SlotTheater; // 该时段的小剧场（窥视演出），按需生成并缓存
     /**

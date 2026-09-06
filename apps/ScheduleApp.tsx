@@ -17,7 +17,7 @@ import {
 } from '../utils/anniversaryEngine';
 import { formatLunarShort, lunarMonthLabel, lunarDayLabel, solarToLunarOf } from '../utils/lunarTable';
 import { fetchCnHolidays, getHolidayInfo, dateKeyOf } from '../utils/cnHoliday';
-import { RealtimeContextManager, resolveCharCity, defaultRealtimeConfig } from '../utils/realtimeContext';
+import { RealtimeContextManager, resolveCharCity } from '../utils/realtimeContext';
 import type { AnniversaryRepeat } from '../types';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { trackEvent } from '../utils/analytics';
@@ -89,7 +89,7 @@ const THEMES: Record<ThemeMode, any> = {
 };
 
 const ScheduleApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, characterGroups } = useOS();
+    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, characterGroups, realtimeConfig } = useOS();
     const localDateKey = useLocalDateKey();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
@@ -124,8 +124,11 @@ const ScheduleApp: React.FC = () => {
     });
     const [calSelected, setCalSelected] = useState<string | null>(null);
 
-    // 日历 · 今日城市天气（活动角色的 location.city，与聊天天气同一缓存链路）
+    // 日历 · 今日城市天气（活动角色的 location.city，与聊天天气同一缓存链路）。
+    // 之前这里误用了静态 defaultRealtimeConfig（weatherEnabled 恒 false），头部天气实际从不显示；
+    // 改用 live 的 realtimeConfig 恢复设计意图。角色与用户异地时并排显示两城天气。
     const [todayWeather, setTodayWeather] = useState<{ city: string; description: string; temp: number } | null>(null);
+    const [userDayWeather, setUserDayWeather] = useState<{ city: string; description: string; temp: number } | null>(null);
     // 日历 · 当年节假日数据（角标：法定假日 / 调休补班；缺失时无角标）
     const [holidayData, setHolidayData] = useState<Awaited<ReturnType<typeof fetchCnHolidays>>>(null);
     useEffect(() => {
@@ -142,16 +145,27 @@ const ScheduleApp: React.FC = () => {
         let cancelled = false;
         (async () => {
             try {
-                const cfg = defaultRealtimeConfig;
+                const cfg = realtimeConfig;
                 const char = characters.find(c => c.id === activeCharacterId);
                 const city = char ? resolveCharCity(char, cfg) : (cfg.weatherCity || '');
-                if (!city || !cfg.weatherEnabled) { if (!cancelled) setTodayWeather(null); return; }
-                const w = await RealtimeContextManager.fetchWeather(cfg, city);
-                if (!cancelled) setTodayWeather(w ? { city: w.city, description: w.description, temp: w.temp } : null);
-            } catch { if (!cancelled) setTodayWeather(null); }
+                if (!city || !cfg.weatherEnabled) {
+                    if (!cancelled) setTodayWeather(null);
+                } else {
+                    const w = await RealtimeContextManager.fetchWeather(cfg, city);
+                    if (!cancelled) setTodayWeather(w ? { city: w.city, description: w.description, temp: w.temp } : null);
+                }
+                // 用户那边：异地且开关开着才显示，同城不重复
+                const uCity = (userProfile.location?.city || '').trim();
+                if (!uCity || !cfg.weatherEnabled || cfg.userPerceptionEnabled === false || uCity === city) {
+                    if (!cancelled) setUserDayWeather(null);
+                } else {
+                    const w = await RealtimeContextManager.fetchWeather(cfg, uCity);
+                    if (!cancelled) setUserDayWeather(w ? { city: w.city, description: w.description, temp: w.temp } : null);
+                }
+            } catch { if (!cancelled) { setTodayWeather(null); setUserDayWeather(null); } }
         })();
         return () => { cancelled = true; };
-    }, [activeCharacterId, characters]);
+    }, [activeCharacterId, characters, realtimeConfig, userProfile.location?.city]);
 
     useEffect(() => {
         loadData();
@@ -650,6 +664,9 @@ const ScheduleApp: React.FC = () => {
                             {selected === todayKey && todayWeather && (
                                 <div className={`text-[11px] font-bold ${theme.text} flex items-center gap-2 flex-wrap`}>
                                     <span>📍 {todayWeather.city} · {todayWeather.description} {Math.round(todayWeather.temp)}°C</span>
+                                    {userDayWeather && (
+                                        <span className={theme.textSub}>🏠 {userDayWeather.city} · {userDayWeather.description} {Math.round(userDayWeather.temp)}°C</span>
+                                    )}
                                     {(() => { const hi = getHolidayInfo(holidayData, todayKey); return hi ? <span className={hi.isOffDay ? 'text-red-400' : 'text-amber-400'}>{hi.isOffDay ? `法定假日${hi.name ? `· ${hi.name}` : ''}` : `调休补班${hi.name ? `· ${hi.name}` : ''}`}</span> : null; })()}
                                 </div>
                             )}
