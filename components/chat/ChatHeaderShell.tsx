@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import { CaretLeft, Lightning, Stop } from '@phosphor-icons/react';
 import { CharacterBuff, CharacterProfile } from '../../types';
 import TokenImg from '../os/TokenImg';
@@ -542,7 +543,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         </div>
                     </div>
                 </div>,
-                document.body,
+                getPortalHost(),
             )}
         </div>
         </div>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../../utils/portalHost';
 import { APIConfig, CharacterProfile, SpriteConfig, UserProfile } from '../../../types';
 import { useBlobRefUrl } from '../../../utils/blobRef';
 import './QixiDemoEvent.css';
@@ -1433,7 +1434,7 @@ export const QixiDemoSession: React.FC<QixiDemoSessionProps> = ({ char, user, ap
                 @media(prefers-reduced-motion:reduce){.qixi-v7-root *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
             `}</style>
         </div>,
-        document.body,
+        getPortalHost(),
     );
 };
 

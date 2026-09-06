@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import {
     CaretLeft,
     CaretRight,
@@ -481,7 +482,7 @@ const FavoritesPortal: React.FC<FavoritesPortalProps> = ({ onClose, onJumpToMess
         </div>
     );
 
-    return createPortal(portal, document.body);
+    return createPortal(portal, getPortalHost());
 };
 
 export default FavoritesPortal;

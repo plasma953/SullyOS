@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../utils/portalHost';
 import { CornersIn, CornersOut, X } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import {
@@ -10,6 +11,7 @@ import {
     type Amsg2DebugTaskView,
     type Amsg2PanelPosition,
 } from '../utils/amsg2DebugView';
+import { getHostGeometry } from '../utils/hostViewport';
 import {
     formatInstantTraceLog,
     readAllInstantTraces,
@@ -133,10 +135,10 @@ const HeaderButton: React.FC<{
     </button>
 );
 
-const getViewportSize = () => ({
-    width: window.visualViewport?.width ?? window.innerWidth,
-    height: window.visualViewport?.height ?? window.innerHeight,
-});
+const getViewportSize = (anchor?: Element | null) => {
+    const g = getHostGeometry(anchor ?? null);
+    return { width: g.W, height: g.H };
+};
 
 /**
  * amsg2 任务的实时观察窗。入口在 Dev Debug 面板里，打开后常驻右上角小窗，
@@ -210,7 +212,7 @@ const Amsg2DebugPanel: React.FC = () => {
             setPosition((current) => (current === null ? null : clampPanelPosition(
                 current,
                 { width: panel.offsetWidth, height: panel.offsetHeight },
-                getViewportSize(),
+                getViewportSize(panel),
             )));
         };
         window.addEventListener('resize', pullBack);
@@ -254,10 +256,11 @@ const Amsg2DebugPanel: React.FC = () => {
         const drag = dragRef.current;
         const panel = panelRef.current;
         if (!drag || !panel || drag.pointerId !== event.pointerId) return null;
+        const g = getHostGeometry(panel);
         return clampPanelPosition(
-            { x: drag.origin.x + (event.clientX - drag.startX), y: drag.origin.y + (event.clientY - drag.startY) },
+            { x: drag.origin.x + (event.clientX - drag.startX) - g.ox, y: drag.origin.y + (event.clientY - drag.startY) - g.oy },
             { width: panel.offsetWidth, height: panel.offsetHeight },
-            getViewportSize(),
+            { width: g.W, height: g.H },
         );
     };
 
@@ -268,11 +271,12 @@ const Amsg2DebugPanel: React.FC = () => {
         // 第一次拖：起点从当前实际位置读（默认态是 right 定位，没有 x/y 可继承），
         // 否则会从 (0,0) 起跳、面板瞬移到左上角。
         const rect = panel.getBoundingClientRect();
+        const g = getHostGeometry(panel);
         dragRef.current = {
             pointerId: event.pointerId,
             startX: event.clientX,
             startY: event.clientY,
-            origin: position ?? { x: rect.left, y: rect.top },
+            origin: position ?? { x: rect.left - g.ox, y: rect.top - g.oy },
         };
         event.currentTarget.setPointerCapture(event.pointerId);
     };
@@ -412,7 +416,7 @@ const Amsg2DebugPanel: React.FC = () => {
                 )}
             </div>
         </div>,
-        document.body,
+        getPortalHost(),
     );
 };
 

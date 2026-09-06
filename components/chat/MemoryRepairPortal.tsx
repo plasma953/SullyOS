@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import {
     EyeSlash,
     FloppyDisk,
@@ -744,7 +745,7 @@ const MemoryRepairPortal: React.FC<MemoryRepairPortalProps> = ({
         </div>
     );
 
-    return createPortal(portal, document.body);
+    return createPortal(portal, getPortalHost());
 };
 
 const NodeEditor: React.FC<{

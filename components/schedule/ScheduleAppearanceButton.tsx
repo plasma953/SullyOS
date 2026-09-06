@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import {
     ArrowCounterClockwise,
     Check,
@@ -341,7 +342,7 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
                 </div>
             </div>
         </div>,
-        document.body,
+        getPortalHost(),
     ) : null;
 
     return (

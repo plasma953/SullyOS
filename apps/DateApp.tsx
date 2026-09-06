@@ -18,6 +18,7 @@ import { BookOpen, Sparkle, CaretLeft, GearSix } from '@phosphor-icons/react';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trimHistoryThrough } from '../utils/dateSessionHistory';
 import { trackEvent } from '../utils/analytics';
+import { getHostGeometry } from '../utils/hostViewport';
 import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import StoryTheater from '../components/date/story/StoryTheater';
 import { dateLaunch } from '../utils/dateLaunch';
@@ -571,14 +572,22 @@ const DateApp: React.FC = () => {
     };
 
     // --- History Long Press ---
+    const placeHistoryMenu = useCallback((clientX: number, clientY: number, anchor: Element | null) => {
+        const g = getHostGeometry(anchor);
+        setHistoryMenuPos({
+            x: Math.min(clientX - g.ox, g.W - 140),
+            y: Math.min(clientY - g.oy, g.H - 120),
+        });
+    }, []);
     const handleHistoryLongPressStart = useCallback((msg: Message, e: React.TouchEvent | React.MouseEvent) => {
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const anchor = e.currentTarget instanceof Element ? e.currentTarget : null;
         longPressTimer.current = setTimeout(() => {
             setHistoryMenuMsg(msg);
-            setHistoryMenuPos({ x: clientX, y: clientY });
+            placeHistoryMenu(clientX, clientY, anchor);
         }, 500);
-    }, []);
+    }, [placeHistoryMenu]);
 
     const handleHistoryLongPressEnd = useCallback(() => {
         if (longPressTimer.current) {
@@ -944,7 +953,7 @@ const DateApp: React.FC = () => {
                                             onMouseDown={(e) => handleHistoryLongPressStart(m, e)}
                                             onMouseUp={handleHistoryLongPressEnd}
                                             onMouseLeave={handleHistoryLongPressEnd}
-                                            onContextMenu={(e) => { e.preventDefault(); setHistoryMenuMsg(m); setHistoryMenuPos({ x: e.clientX, y: e.clientY }); }}
+                                            onContextMenu={(e) => { e.preventDefault(); setHistoryMenuMsg(m); placeHistoryMenu(e.clientX, e.clientY, e.currentTarget instanceof Element ? e.currentTarget : null); }}
                                         >
                                             <div className={`max-w-[90%] text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'text-slate-500 text-right italic' : 'text-slate-800'}`}>
                                                 {m.role === 'user' ? <span className="bg-slate-100 px-3 py-2 rounded-xl rounded-tr-none inline-block">{text}</span> : <span>{text || '(无内容)'}</span>}
@@ -971,7 +980,7 @@ const DateApp: React.FC = () => {
                 {historyMenuMsg && (
                     <div
                         className="fixed z-50 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden animate-fade-in"
-                        style={{ top: Math.min(historyMenuPos.y, window.innerHeight - 120), left: Math.min(historyMenuPos.x, window.innerWidth - 140) }}
+                        style={{ top: historyMenuPos.y, left: historyMenuPos.x }}
                         onClick={(e) => e.stopPropagation()}
                     >
                         <button

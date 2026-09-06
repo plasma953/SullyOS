@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import { Broom, X } from '@phosphor-icons/react';
 import { getMcpResultList, clearMcpResults, type McpResultEntry } from '../../utils/mcpResultMemory';
 
@@ -148,7 +149,7 @@ const McpMemoryModal: React.FC<McpMemoryModalProps> = ({ charId, charName, onClo
             </div>
         </div>
     );
-    return createPortal(portal, document.body);
+    return createPortal(portal, getPortalHost());
 };
 
 export default McpMemoryModal;

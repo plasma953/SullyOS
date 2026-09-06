@@ -7,6 +7,7 @@ import { ChatTheme, BubbleStyle } from '../types';
 import { processImage } from '../utils/file';
 import { validateScopedCss, runCssRenderabilityCheck, CssValidationResult } from '../utils/scopedCss';
 import { trackEvent } from '../utils/analytics';
+import { getHostGeometry } from '../utils/hostViewport';
 import { resolveBubbleCornerRadii, shouldHideBubbleTail } from '../utils/bubbleAppearance';
 import { shareOrDownloadFile } from '../utils/shareExport';
 import { migrateDataUrlToRef, resolveBlobRefsDeep, useBlobRefUrl } from '../utils/blobRef';
@@ -538,10 +539,13 @@ const ThemeMaker: React.FC = () => {
 
     // 与「外观 → 聊天界面」保持同一套交互：圆形设置钮可拖动，轻点收起/展开悬浮编辑面板。
     const EDITOR_BUBBLE_SIZE = 48;
-    const clampEditorBubble = (x: number, y: number) => ({
-        x: Math.max(8, Math.min(window.innerWidth - EDITOR_BUBBLE_SIZE - 8, x)),
-        y: Math.max(56, Math.min(window.innerHeight - EDITOR_BUBBLE_SIZE - 24, y)),
-    });
+    const clampEditorBubble = (x: number, y: number, anchor?: Element | null) => {
+        const g = getHostGeometry(anchor ?? null);
+        return {
+            x: Math.max(8, Math.min(g.W - EDITOR_BUBBLE_SIZE - 8, x - g.ox)),
+            y: Math.max(56, Math.min(g.H - EDITOR_BUBBLE_SIZE - 24, y - g.oy)),
+        };
+    };
     const onEditorBubblePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
         editorBubbleDragRef.current = {
@@ -560,7 +564,7 @@ const ThemeMaker: React.FC = () => {
         const dy = event.clientY - drag.startY;
         if (!drag.moved && Math.hypot(dx, dy) < 6) return;
         drag.moved = true;
-        setEditorBubblePos(clampEditorBubble(drag.originX + dx, drag.originY + dy));
+        setEditorBubblePos(clampEditorBubble(drag.originX + dx, drag.originY + dy, event.currentTarget));
     };
     const onEditorBubblePointerUp = () => {
         const drag = editorBubbleDragRef.current;
@@ -1367,7 +1371,7 @@ const ThemeMaker: React.FC = () => {
                     className={`fixed z-[136] flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all active:scale-90 ${editorPanelOpen ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-white/95 text-primary ring-1 ring-primary/30 backdrop-blur'}`}
                     style={editorBubblePos
                         ? { left: editorBubblePos.x, top: editorBubblePos.y, touchAction: 'none' }
-                        : { right: 12, top: 'calc(var(--safe-top, 0px) + 35vh)', touchAction: 'none' }}
+                        : { right: 12, top: 'calc(var(--safe-top, 0px) + 35%)', touchAction: 'none' }}
                     aria-label={editorPanelOpen ? '收起气泡编辑面板' : '展开气泡编辑面板'}
                     title="点按开关设置 · 按住拖动"
                 >

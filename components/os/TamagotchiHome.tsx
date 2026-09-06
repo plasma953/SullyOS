@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useOS } from '../../context/OSContext';
 import { INSTALLED_APPS } from '../../constants';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import { AppID, CharacterProfile, RoomItem, DailySchedule, ScheduleSlot } from '../../types';
 import { DB } from '../../utils/db';
 import { getLastInnerState } from '../../utils/emotionApply';
@@ -1262,7 +1263,7 @@ const TamagotchiHome: React.FC = () => {
                     onReplay={() => runTheater(theater.slotIndex, true)}
                     onClose={() => setTheater(null)}
                 />,
-                document.body,
+                getPortalHost(),
             )}
 
             {/* ===== 全部应用抽屉（逃生舱口：外观 / 全部 App 都在这） ===== */}

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../utils/portalHost';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, BubbleStyle, EmojiCategory } from '../types';
@@ -2376,7 +2377,7 @@ ${memberTimeline || '(暂无互动记录)'}
                                 }}
                             >⟲ 还原本群白框</button>
                         </>,
-                        document.body,
+                        getPortalHost(),
                     )}
                 </div>
             )}

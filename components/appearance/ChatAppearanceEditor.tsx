@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { AppID, OSTheme, ChatFineTuneFields } from '../../types';
 import WhiteboxSoundEditor from '../chat/WhiteboxSoundEditor';
 import { WhiteboxSound } from '../../utils/whiteboxSound';
+import { getHostGeometry } from '../../utils/hostViewport';
 import ChatFineTunePanel from '../chat/ChatFineTunePanel';
 import { FadersHorizontal } from '@phosphor-icons/react';
 
@@ -416,14 +417,17 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
     // 聊天壳设置面板悬浮化——同私聊「聊天装扮」的形态：面板浮在预览上方而不占文档流，
     // 预览不用瘦身也能和设置同屏；点圆气泡收起面板即可看全预览。
     const [panelOpen, setPanelOpen] = useState(true);
-    // 圆气泡可自由拖动（按住拖走，松手留在原地）；null = 默认位置（右缘、35vh 高度处）。
+    // 圆气泡可自由拖动（按住拖走，松手留在原地）；null = 默认位置（右缘、35% 高度处）。
     const [bubblePos, setBubblePos] = useState<{ x: number; y: number } | null>(null);
     const bubbleDrag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
     const BUBBLE_SIZE = 48;
-    const clampBubble = (x: number, y: number) => ({
-        x: Math.max(8, Math.min(window.innerWidth - BUBBLE_SIZE - 8, x)),
-        y: Math.max(56, Math.min(window.innerHeight - BUBBLE_SIZE - 24, y)),
-    });
+    const clampBubble = (x: number, y: number, anchor?: Element | null) => {
+        const g = getHostGeometry(anchor ?? null);
+        return {
+            x: Math.max(8, Math.min(g.W - BUBBLE_SIZE - 8, x - g.ox)),
+            y: Math.max(56, Math.min(g.H - BUBBLE_SIZE - 24, y - g.oy)),
+        };
+    };
     const onBubblePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
         const rect = e.currentTarget.getBoundingClientRect();
         bubbleDrag.current = { startX: e.clientX, startY: e.clientY, originX: rect.left, originY: rect.top, moved: false };
@@ -437,7 +441,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
         // 6px 内算点按不算拖动，避免手指微颤把点击吞掉
         if (!drag.moved && Math.hypot(dx, dy) < 6) return;
         drag.moved = true;
-        setBubblePos(clampBubble(drag.originX + dx, drag.originY + dy));
+        setBubblePos(clampBubble(drag.originX + dx, drag.originY + dy, e.currentTarget));
     };
     const onBubblePointerUp = () => {
         const drag = bubbleDrag.current;
@@ -613,7 +617,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 className={`fixed z-[106] flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-colors active:scale-90 ${panelOpen ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-white/95 text-primary ring-1 ring-primary/30 backdrop-blur'}`}
                 style={bubblePos
                     ? { left: bubblePos.x, top: bubblePos.y, touchAction: 'none' }
-                    : { right: 12, top: 'calc(var(--safe-top, 0px) + 35vh)', touchAction: 'none' }}
+                    : { right: 12, top: 'calc(var(--safe-top, 0px) + 35%)', touchAction: 'none' }}
                 aria-label={panelOpen ? '收起聊天壳设置面板' : '展开聊天壳设置面板'}
             >
                 <FadersHorizontal className="h-6 w-6" weight="bold" />

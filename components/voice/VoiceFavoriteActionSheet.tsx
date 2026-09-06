@@ -1,5 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import { Star, X } from '@phosphor-icons/react';
 
 interface VoiceFavoriteActionSheetProps {
@@ -43,7 +44,7 @@ const VoiceFavoriteActionSheet: React.FC<VoiceFavoriteActionSheetProps> = ({
                 </button>
             </div>
         </div>,
-        document.body,
+        getPortalHost(),
     );
 };
 

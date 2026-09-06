@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../../utils/portalHost';
 import {
     ArrowCounterClockwise,
     Check,
@@ -491,7 +492,7 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
             </div>
         </div>
         </>,
-        document.body,
+        getPortalHost(),
     ) : null;
 
     const previewRescue = isPreviewing && !open ? createPortal(
@@ -501,7 +502,7 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
   display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;
   position:fixed!important;z-index:2147483647!important;left:50%!important;
   top:max(10px,env(safe-area-inset-top))!important;transform:translateX(-50%)!important;
-  width:min(94vw,520px)!important;box-sizing:border-box!important;align-items:center!important;
+  width:min(94vw,520px,100%)!important;box-sizing:border-box!important;align-items:center!important;
   justify-content:space-between!important;gap:10px!important;padding:10px 12px!important;
   border:1px solid rgba(245,158,11,.45)!important;border-radius:16px!important;
   background:rgba(24,20,16,.94)!important;color:white!important;
@@ -550,7 +551,7 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
                 </div>
             </div>
         </>,
-        document.body,
+        getPortalHost(),
     ) : null;
 
     const savedStyleRescue = savedStyleBlocksButton && !isPreviewing ? createPortal(
@@ -579,7 +580,7 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
                 ⟲ 日记美化急救：恢复原版
             </button>
         </>,
-        document.body,
+        getPortalHost(),
     ) : null;
 
     return (

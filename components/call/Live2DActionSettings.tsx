@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FadersHorizontal, HandTap, PencilSimple, Play, Plus, Prohibit, Robot, Trash, TShirt, X } from '@phosphor-icons/react';
 import { inferLive2DActionTags, type Live2DAction, type Live2DActionPermission, type Live2DAvatarConfig } from '../../utils/live2dModelStore';
+import { getHostGeometry } from '../../utils/hostViewport';
 import {
   describeLive2DParameter,
   groupLive2DParameters,
@@ -63,10 +64,13 @@ const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
   const previewThrottleRef = useRef(0);
   const previewReturnTimerRef = useRef<number | null>(null);
   const settingsBubbleSize = 48;
-  const clampSettingsBubble = (x: number, y: number) => ({
-    x: Math.max(8, Math.min(window.innerWidth - settingsBubbleSize - 8, x)),
-    y: Math.max(56, Math.min(window.innerHeight - settingsBubbleSize - 24, y)),
-  });
+  const clampSettingsBubble = (x: number, y: number, anchor?: Element | null) => {
+    const g = getHostGeometry(anchor ?? null);
+    return {
+      x: Math.max(8, Math.min(g.W - settingsBubbleSize - 8, x - g.ox)),
+      y: Math.max(56, Math.min(g.H - settingsBubbleSize - 24, y - g.oy)),
+    };
+  };
   const onSettingsBubblePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     settingsBubbleDragRef.current = {
@@ -85,7 +89,7 @@ const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
     const dy = event.clientY - drag.startY;
     if (!drag.moved && Math.hypot(dx, dy) < 6) return;
     drag.moved = true;
-    setSettingsBubblePos(clampSettingsBubble(drag.originX + dx, drag.originY + dy));
+    setSettingsBubblePos(clampSettingsBubble(drag.originX + dx, drag.originY + dy, event.currentTarget));
   };
   const onSettingsBubblePointerUp = () => {
     const drag = settingsBubbleDragRef.current;
@@ -331,7 +335,7 @@ const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
         className={`fixed z-[94] flex h-12 w-12 items-center justify-center rounded-full shadow-[0_12px_34px_rgba(0,0,0,.48)] transition-colors active:scale-90 ${settingsPanelOpen ? 'bg-violet-500 text-white ring-4 ring-violet-300/20' : 'border border-violet-300/35 bg-[#16111f]/95 text-violet-200 backdrop-blur-xl'}`}
         style={settingsBubblePos
           ? { left: settingsBubblePos.x, top: settingsBubblePos.y, touchAction: 'none' }
-          : { right: 12, top: 'calc(max(1.25rem, var(--safe-top)) + 34vh)', touchAction: 'none' }}
+          : { right: 12, top: 'calc(max(1.25rem, var(--safe-top)) + 34%)', touchAction: 'none' }}
         aria-label={settingsPanelOpen ? '收起动作与参数设置' : '展开动作与参数设置'}
         aria-expanded={settingsPanelOpen}
         data-testid="live2d-floating-settings-toggle"
