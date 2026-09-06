@@ -15,6 +15,7 @@ import {
 } from '../utils/companionAvatar';
 import { DB } from '../utils/db';
 import { resolveStatusBarMode, type StatusBarMode } from '../utils/iosStandalone';
+import { closePipShell, isPipSupported, onPipChange, openPipShell } from '../utils/pipWindow';
 import { confirmExportSafety } from '../utils/exportGuard';
 import { trackEvent } from '../utils/analytics';
 import { Check, ImageSquare, Sparkle, Trash, UploadSimple } from '@phosphor-icons/react';
@@ -532,6 +533,8 @@ const Appearance: React.FC = () => {
     addToast(n ? `已还原 ${n} 处聊天白框美化` : '没有需要还原的白框美化', n ? 'success' : 'info');
   };
   const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'chat'>('theme');
+  const [pipActive, setPipActive] = useState(false);
+  useEffect(() => onPipChange(setPipActive), []);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState('');
   const lockWallpaperInputRef = useRef<HTMLInputElement>(null);
@@ -1369,6 +1372,16 @@ const Appearance: React.FC = () => {
                     <p className="mt-3 text-[10px] leading-relaxed text-slate-400">
                         只在电脑宽屏鼠标浏览器下生效，手机端不受影响。
                     </p>
+                    {isPipSupported() && (
+                        <button
+                            type="button"
+                            onClick={() => { if (pipActive) closePipShell(); else void openPipShell().catch(() => {}); }}
+                            className="mt-2 w-full rounded-2xl border border-slate-100 bg-slate-50 px-2 py-3 text-center transition-all active:scale-[0.98]"
+                        >
+                            <div className="text-xs font-bold text-slate-700">{pipActive ? '收回投屏' : '投屏到悬浮窗'}</div>
+                            <div className="text-[9px] mt-1 leading-tight text-slate-400">Chromium 置顶小窗，在小窗里直接操作手机</div>
+                        </button>
+                    )}
                 </section>
 
                 {/* Desktop Music Widget Style */}

@@ -30,6 +30,17 @@ let restoring = false;
 
 export const isPipActive = (): boolean => !!activePip && !activePip.closed;
 
+// PiP 开关订阅（DesktopHost 的投屏按钮/占位、外观行按钮用它刷新态）。
+type PipListener = (active: boolean) => void;
+const pipListeners = new Set<PipListener>();
+export const onPipChange = (fn: PipListener): (() => void) => {
+    pipListeners.add(fn);
+    return () => { pipListeners.delete(fn); };
+};
+const notifyPipChange = (active: boolean): void => {
+    pipListeners.forEach((fn) => { try { fn(active); } catch { /* ignore */ } });
+};
+
 const ROOT_ID = 'root';
 
 const clampPipSize = (width: number, height: number): { width: number; height: number } => {
@@ -88,8 +99,19 @@ const moveRootTo = (pipDoc: Document): void => {
     if (!root || !root.parentElement) return;
     originParent = root.parentElement as HTMLElement;
     originNext = root.nextSibling;
+    // 占位页：React 树整体搬走后主窗口只剩这个静态卡片（主文档样式表还在，
+    // Tailwind 类可用）。按钮直接调关闭，走同一恢复路径。
     placeholder = document.createElement('div');
     placeholder.setAttribute('data-pip-placeholder', '');
+    placeholder.innerHTML =
+        '<div class="fixed inset-0 z-0 flex items-center justify-center" style="background:#0b0f16">' +
+        '<div class="mx-4 max-w-sm rounded-3xl border border-white/10 bg-white/5 p-8 text-center backdrop-blur">' +
+        '<div class="mx-auto mb-4 h-3 w-3 rounded-full bg-emerald-400 animate-pulse"></div>' +
+        '<div class="text-lg font-bold text-white">已投屏到悬浮窗</div>' +
+        '<div class="mt-2 text-sm leading-relaxed text-slate-400">在悬浮窗里继续操作手机；关闭悬浮窗或点下面按钮即回到本页。</div>' +
+        '<button type="button" data-pip-return class="mt-5 rounded-2xl bg-white px-6 py-2.5 text-sm font-bold text-slate-900 active:scale-95">回到本页</button>' +
+        '</div></div>';
+    placeholder.querySelector('[data-pip-return]')?.addEventListener('click', () => closePipShell());
     originParent.insertBefore(placeholder, root);
     pipDoc.body.appendChild(root);
 };
@@ -122,6 +144,7 @@ export const restorePipShell = (): void => {
         const pip = activePip;
         activePip = null;
         restoring = false;
+        notifyPipChange(false);
         try {
             if (pip && !pip.closed) pip.close();
         } catch { /* 已关就不用再关 */ }
@@ -147,6 +170,7 @@ export const openPipShell = async (opts?: { width?: number; height?: number }): 
     pipWin.addEventListener('resize', () => {
         if (isPipActive()) syncPipVars(pipWin);
     });
+    notifyPipChange(true);
     return pipWin;
 };
 
