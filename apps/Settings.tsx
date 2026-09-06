@@ -20,10 +20,13 @@ import {
     getElevenLabsVoiceActingGuide,
 } from '../utils/elevenLabsTts';
 import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
-import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected } from '@phosphor-icons/react';
+import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected, Bluetooth } from '@phosphor-icons/react';
 import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
 import { getMcpResultList, clearMcpResults } from '../utils/mcpResultMemory';
 import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
+import BluetoothPanel from '../components/settings/BluetoothPanel';
+import { bleEngine } from '../utils/bleEngine';
+import { loadBleDevices } from '../utils/bleRegistry';
 import ActiveMsgGlobalSettingsModal from '../components/settings/ActiveMsgGlobalSettingsModal';
 import { syncAmsgLlmCredentials, syncAmsgToolConfig, syncAmsgToolConfigAndPrompts } from '../utils/amsgStateSync';
 import { ActiveMsgClient } from '../utils/activeMsgClient';
@@ -684,6 +687,18 @@ const Settings: React.FC = () => {
   const [showRealtimeModal, setShowRealtimeModal] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [showMcpHelp, setShowMcpHelp] = useState(false);
+  const [showBleModal, setShowBleModal] = useState(false);
+  const [bleSavedCount, setBleSavedCount] = useState(0);
+  const [bleConnectedCount, setBleConnectedCount] = useState(0);
+  // 蓝牙卡片摘要：Modal 关闭返回后重读一次（effect 同时负责首屏初值）。
+  useEffect(() => {
+      let cancelled = false;
+      loadBleDevices().then(list => { if (!cancelled) setBleSavedCount(list.length); }).catch(() => {});
+      try {
+          setBleConnectedCount(bleEngine.connectedDeviceIds().length);
+      } catch { /* ignore */ }
+      return () => { cancelled = true; };
+  }, [showBleModal]);
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showGithubModal, setShowGithubModal] = useState(false);
   const [showCloudRestoreModal, setShowCloudRestoreModal] = useState(false);
@@ -3474,6 +3489,28 @@ const Settings: React.FC = () => {
             })()}
         </SettingsSection>
 
+        {/* 蓝牙 BLE 外设：配对 + 指令控制台入口，摘要随 Modal 关闭刷新 */}
+        <SettingsSection
+            title="蓝牙"
+            icon={
+                <div className="p-2 bg-sky-100/60 rounded-xl text-sky-600">
+                    <Bluetooth size={16} weight="fill" />
+                </div>
+            }
+            actions={
+                <button onClick={() => { trackEvent('打开蓝牙管理'); setShowBleModal(true); }} className="text-[10px] bg-sky-100 text-sky-600 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform">
+                    管理
+                </button>
+            }
+        >
+            <p className="text-xs text-slate-500 leading-relaxed">
+                配对 BLE 外设，保存指令后角色也能控制。
+            </p>
+            <p className="text-[10px] text-slate-400 mt-2">
+                {bleEngine.isSupported() ? `已保存 ${bleSavedCount} 台 · 已连接 ${bleConnectedCount} 台` : '当前浏览器不支持 Web Bluetooth（需要 Chrome/Edge）'}
+            </p>
+        </SettingsSection>
+
         {/* ───────── 推送订阅状态（诊断 + 重置） ───────── */}
         <SettingsSection
             title="推送订阅状态"
@@ -4667,6 +4704,11 @@ const Settings: React.FC = () => {
                   scheduleMcpToolConfigSync(() => syncAmsgToolConfig(realtimeConfig));
               }} />
           </div>
+      </Modal>
+
+      {/* 蓝牙管理（配对 + 设备控制台） */}
+      <Modal isOpen={showBleModal} title="蓝牙" onClose={() => setShowBleModal(false)}>
+          <BluetoothPanel />
       </Modal>
 
       {/* MCP 帮助 Modal —— 面向完全不懂 MCP 的用户，讲清用途与部署方式 */}
