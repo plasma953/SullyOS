@@ -663,6 +663,9 @@ export interface RealtimeConfig {
   perspectiveMinIntervalSec: number;   // 两次查询最小间隔秒数（0 = 不限）
   perspectiveSummaryEnabled: boolean;  // 副 API 总结开关（开 = 数据量大时给总结而非原始记录）
   perspectiveSummaryThreshold: number; // 触发总结的条数阈值
+
+  // 蓝牙配置（缺省视为开启；只有真有已连接设备时才实际注入 prompt）
+  bluetoothEnabled?: boolean;
 }
 
 // 透视窗默认值（realtimeConfig 是旧数据合并口径，这里统一出口）

@@ -10,6 +10,7 @@
  * 不得给停用项留彩色底（透视窗曾因 tintIdle 带青色调被误读为已启用）。
  */
 import type { RealtimeConfig } from '../types';
+import { bleEngine } from './bleEngine';
 
 export interface PerceptionCapability {
     id: string;
@@ -81,6 +82,15 @@ export const PERCEPTION_CAPABILITIES: PerceptionCapability[] = [
         enabled: (rc) => !!rc.perspectiveEnabled,
         configured: (rc) => !!(rc.perspectiveSupabaseUrl?.trim() && rc.perspectiveSupabaseAnonKey?.trim()),
         iconKey: 'binoculars',
+    },
+    {
+        id: 'bluetooth',
+        label: '蓝牙设备',
+        description: '手机蓝牙连接的外设与可用指令（Web Bluetooth）',
+        tint: 'bg-sky-50 text-sky-600',
+        tintIdle: 'bg-slate-50 text-slate-400',
+        enabled: (rc) => rc.bluetoothEnabled !== false,
+        configured: () => bleEngine.hasConnectedDevice(),
     },
 ];
 
