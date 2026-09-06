@@ -425,6 +425,9 @@ export function collectFeatureFlags(src: FeatureSources): Record<string, string>
         天气: rt.weatherEnabled ? '开' : '关',
         // 自备 key 的人走 OpenWeatherMap，留空走 Open-Meteo。只报有没有，不报 key。
         天气自备key: rt.weatherApiKey?.trim() ? '有' : '无',
+        // 高德地点同理：key 只报有没有；「用户那边」只报开关。
+        真实地点key: rt.amapApiKey?.trim() ? '有' : '无',
+        用户那边感知: rt.userPerceptionEnabled !== false ? '开' : '关',
         热点: rt.newsEnabled ? '开' : '关',
         Notion: triState(
             Boolean(rt.notionApiKey?.trim() && rt.notionDatabaseId?.trim()),

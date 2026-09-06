@@ -12,6 +12,8 @@ import { resolveXhsDeploymentMode } from '../utils/xhsMcpConfig';
 import { getMcdToken, setMcdToken as saveMcdToken, isMcdEnabled, setMcdEnabled as saveMcdEnabled, testMcdConnection, resetMcdSession } from '../utils/mcdMcpClient';
 import { getLuckinToken, setLuckinToken as saveLuckinToken, isLuckinEnabled, setLuckinEnabled as saveLuckinEnabled, testLuckinConnection, resetLuckinSession } from '../utils/luckinMcpClient';
 import { consumeProxyWorkerSettingsFocus, getProxyWorkerUrl, setProxyWorkerUrl, DEFAULT_PROXY_WORKER } from '../utils/proxyWorker';
+import { geocodeCity, isAuthErrorCode, isQuotaErrorCode } from '../utils/amapCore';
+import { deleteCachedLibrary, getCityLibrary, listCachedLibraries } from '../utils/cityPlaces';
 import { VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
 import { FISH_VOICE_ACTING_GUIDE } from '../utils/fishAudioTts';
 import {
@@ -20,7 +22,7 @@ import {
     getElevenLabsVoiceActingGuide,
 } from '../utils/elevenLabsTts';
 import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
-import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected, Bluetooth } from '@phosphor-icons/react';
+import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected, Bluetooth, MapPin } from '@phosphor-icons/react';
 import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
 import { getMcpResultList, clearMcpResults } from '../utils/mcpResultMemory';
 import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
@@ -789,6 +791,10 @@ const Settings: React.FC = () => {
   const [rtWeatherEnabled, setRtWeatherEnabled] = useState(realtimeConfig.weatherEnabled);
   const [rtWeatherKey, setRtWeatherKey] = useState(realtimeConfig.weatherApiKey);
   const [rtWeatherCity, setRtWeatherCity] = useState(realtimeConfig.weatherCity);
+  // 真实地点（高德）：key 留空 = 只有城市级真实感，无真实地标 POI
+  const [rtAmapKey, setRtAmapKey] = useState(realtimeConfig.amapApiKey || '');
+  const [rtUserPerception, setRtUserPerception] = useState(realtimeConfig.userPerceptionEnabled !== false);
+  const [rtPlaceLibs, setRtPlaceLibs] = useState<Array<{ adcode: string; city: string; province?: string; placeCount: number; fetchedAt: number; fresh: boolean }>>([]);
   const [rtNewsEnabled, setRtNewsEnabled] = useState(realtimeConfig.newsEnabled);
   const [rtNewsApiKey, setRtNewsApiKey] = useState(realtimeConfig.newsApiKey || '');
   const [rtNewsPlatforms, setRtNewsPlatforms] = useState<string[]>(realtimeConfig.newsPlatforms || ['weibo', 'zhihu', 'baidu', 'bilibili', 'douyin']);
@@ -1752,12 +1758,21 @@ const Settings: React.FC = () => {
       setShowResetConfirm(false);
   };
 
+  // 每次打开实时感知面板时读一次已缓存的地点库（只读本地 IndexedDB，不打 API）
+  useEffect(() => {
+      if (!showRealtimeModal) return;
+      listCachedLibraries().then(setRtPlaceLibs).catch(() => { /* 读不到就当没有 */ });
+  }, [showRealtimeModal]);
+
   // 保存实时感知配置
   const handleSaveRealtimeConfig = () => {
       const updates = {
           weatherEnabled: rtWeatherEnabled,
           weatherApiKey: rtWeatherKey,
           weatherCity: rtWeatherCity,
+          // 真实地点：key 去掉首尾空格，空串按没填处理（undefined，不污染旧数据合并）
+          amapApiKey: rtAmapKey.trim() || undefined,
+          userPerceptionEnabled: rtUserPerception,
           newsEnabled: rtNewsEnabled,
           newsApiKey: rtNewsApiKey,
           newsPlatforms: rtNewsPlatforms,
@@ -1818,6 +1833,53 @@ const Settings: React.FC = () => {
           trackEvent('测试天气数据源连接', { result: 'failed' });
           setRtTestStatus(`连接失败: ${e.message}`);
       }
+  };
+
+  // 测试地点数据源：用默认城市做一次地理编码（只验 key 与连通，不建地点库）
+  const testAmapApi = async () => {
+      if (!rtAmapKey.trim()) {
+          setRtTestStatus('请先填写高德 Web 服务 Key');
+          return;
+      }
+      const city = rtWeatherCity.trim() || '上海';
+      setRtTestStatus('正在测试地点数据源...');
+      try {
+          const place = await geocodeCity(city, { proxyUrl: getProxyWorkerUrl(), key: rtAmapKey.trim() });
+          if (!place) {
+              trackEvent('测试地点数据源连接', { result: 'failed' });
+              setRtTestStatus(`连接失败: 高德找不到城市「${city}」`);
+              return;
+          }
+          trackEvent('测试地点数据源连接', { result: 'ok' });
+          setRtTestStatus(`连接成功！${place.province || ''}${place.city}（adcode ${place.adcode || '未知'}）`);
+      } catch (e: any) {
+          trackEvent('测试地点数据源连接', { result: 'failed' });
+          const code = e?.code;
+          const hint = code && isQuotaErrorCode(code) ? '（本月搜索配额用完了，下月自动恢复）'
+              : code && isAuthErrorCode(code) ? '（Key 无效，检查填的是不是 Web 服务 Key）' : '';
+          setRtTestStatus(`连接失败: ${e.message}${hint}`);
+      }
+  };
+
+  // 地点库管理：手动刷新（强制重拉）/ 删除（下次用到自动重建）
+  const refreshPlaceLib = async (city: string) => {
+      if (!rtAmapKey.trim()) {
+          setRtTestStatus('请先填写高德 Key 再刷新地点库');
+          return;
+      }
+      setRtTestStatus(`正在刷新${city}的地点库...`);
+      try {
+          await getCityLibrary(city, { proxyUrl: getProxyWorkerUrl(), key: rtAmapKey.trim() }, { forceRefresh: true });
+          setRtPlaceLibs(await listCachedLibraries());
+          setRtTestStatus(`刷新成功！${city}地点库已更新`);
+      } catch (e: any) {
+          setRtTestStatus(`刷新失败: ${e.message}`);
+      }
+  };
+  const removePlaceLib = async (adcode: string, city: string) => {
+      await deleteCachedLibrary(adcode);
+      setRtPlaceLibs(await listCachedLibraries());
+      addToast(`已删除${city}的地点库（下次用到自动重建）`, 'success');
   };
 
   // 测试Notion连接
@@ -4221,6 +4283,46 @@ const Settings: React.FC = () => {
                           <button onClick={testWeatherApi} className="w-full py-2 bg-emerald-100 text-emerald-600 text-xs font-bold rounded-xl active:scale-95 transition-transform">测试天气API</button>
                       </div>
                   )}
+              </div>
+
+              {/* 真实地点（高德） */}
+              <div className="bg-teal-50/50 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center gap-2">
+                      <MapPin size={20} weight="fill" />
+                      <span className="text-sm font-bold text-teal-700">真实地点</span>
+                  </div>
+                  <div className="space-y-2">
+                      <div>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">高德 Web 服务 Key（可选）</label>
+                          <input type="password" value={rtAmapKey} onChange={e => setRtAmapKey(e.target.value)} className="w-full bg-white/80 border border-teal-200 rounded-xl px-3 py-2 text-sm font-mono" placeholder="留空则只有城市级真实感，无真实地标" />
+                          <p className="text-[10px] text-slate-400 mt-1">高德开放平台注册即得（个人认证免费）：地理编码 15 万次/月、POI 搜索 5000 次/月，配合缓存个人用足够。Key 只存本机，经代理透传。</p>
+                      </div>
+                      <label className="flex items-center justify-between gap-2 bg-white/60 rounded-xl px-3 py-2">
+                          <span className="text-xs text-slate-600">把「用户那边」（所在城市 + 天气）告诉角色<span className="block text-[10px] text-slate-400">只到城市级，精确位置不存也不说</span></span>
+                          <span className="relative inline-flex items-center cursor-pointer shrink-0">
+                              <input type="checkbox" checked={rtUserPerception} onChange={e => setRtUserPerception(e.target.checked)} className="sr-only peer" />
+                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500"></div>
+                          </span>
+                      </label>
+                      <button onClick={testAmapApi} className="w-full py-2 bg-teal-100 text-teal-600 text-xs font-bold rounded-xl active:scale-95 transition-transform">测试地点数据源</button>
+                      <details className="border-t border-teal-200/50 pt-2 mt-1">
+                          <summary className="text-[11px] font-bold text-teal-600 cursor-pointer">地点库管理（{rtPlaceLibs.length} 个城市，30 天自动刷新）</summary>
+                          <div className="mt-2 space-y-1.5">
+                              {rtPlaceLibs.length === 0 && (
+                                  <p className="text-[11px] text-slate-400">还没有缓存。角色/日程第一次用到某个城市时会自动建库。</p>
+                              )}
+                              {rtPlaceLibs.map(lib => (
+                                  <div key={lib.adcode} className="flex items-center gap-2 bg-white/60 rounded-xl px-2.5 py-1.5">
+                                      <span className="text-xs font-bold text-slate-600 flex-1 truncate">{lib.province && lib.province !== lib.city ? `${lib.province} ` : ''}{lib.city}</span>
+                                      <span className="text-[10px] text-slate-400 shrink-0">{lib.placeCount} 个地点</span>
+                                      <span className={`text-[10px] font-bold shrink-0 ${lib.fresh ? 'text-teal-500' : 'text-amber-500'}`}>{lib.fresh ? '新鲜' : '过期'}</span>
+                                      <button onClick={() => refreshPlaceLib(lib.city)} className="text-[10px] font-bold text-teal-600 bg-teal-100 rounded-lg px-2 py-1 active:scale-95 transition-transform shrink-0">刷新</button>
+                                      <button onClick={() => removePlaceLib(lib.adcode, lib.city)} className="text-[10px] font-bold text-rose-500 bg-rose-100 rounded-lg px-2 py-1 active:scale-95 transition-transform shrink-0">删除</button>
+                                  </div>
+                              ))}
+                          </div>
+                      </details>
+                  </div>
               </div>
 
               {/* 新闻配置 */}

@@ -42,6 +42,7 @@ function poisonedRealtimeConfig(overrides: Partial<RealtimeConfig> = {}): Realti
         weatherEnabled: true,
         weatherApiKey: POISON.key,
         weatherCity: POISON.city,
+        amapApiKey: POISON.key,
         newsEnabled: true,
         newsApiKey: POISON.key,
         notionEnabled: true,
