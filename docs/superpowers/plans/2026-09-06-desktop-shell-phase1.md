@@ -235,6 +235,7 @@ git commit -m "feat(desktop): route body portals through getPortalHost"
 **Interfaces:**
 - Consumes: 框内屏幕区容器带 `data-sully-viewport` 属性（Task 6 提供）
 - Produces: `getHostViewport(el: Element | null): { width: number; height: number }`（沿祖先找最近 `[data-sully-viewport]` 取 `getBoundingClientRect`；找不到回退 `ownerDocument.defaultView` 的 innerWidth/innerHeight；再无回退 `{0,0}`）
+- 落地偏差（2026-09-06 对账）：实际实现为 `getHostGeometry(el): { ox, oy, W, H }`（多返回框原点偏移供 fixed 坐标换算；框外回落 visualViewport）。调用点均已按此签名，测试覆盖几何语义。
 
 - [ ] **Step 1: Write the failing test**
 

@@ -96,6 +96,8 @@ export function collectAppearance(
         // ── 桌面 ──
         桌面皮肤: theme.skin ?? 'default',
         桌面版本: theme.desktopVariant ?? 'paper',
+        电脑显示: theme.desktopMode ?? 'auto',
+        电脑背景: theme.desktopBackdrop ?? 'blur',
         深色模式: onOff(theme.darkMode),
         隐藏状态栏: onOff(theme.hideStatusBar),
         保留图标原轮廓: onOff(theme.preserveCustomIconOutlines),

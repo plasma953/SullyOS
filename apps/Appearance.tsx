@@ -1320,6 +1320,57 @@ const Appearance: React.FC = () => {
                     </p>
                 </section>
 
+                {/* Desktop Shell (PC) */}
+                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">电脑显示 (Desktop)</h2>
+                    <div className="grid grid-cols-3 gap-2">
+                        {([
+                            { id: 'auto', label: '自动进框', hint: '宽屏鼠标生效', icon: '◐' },
+                            { id: 'on', label: '强制进框', hint: '窄屏也框', icon: '▣' },
+                            { id: 'off', label: '永不进框', hint: '保持铺满', icon: '—' },
+                        ] as Array<{ id: 'auto' | 'on' | 'off'; label: string; hint: string; icon: string }>).map(option => {
+                            const active = (theme.desktopMode ?? 'auto') === option.id;
+                            return (
+                                <button
+                                    key={option.id}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => updateTheme({ desktopMode: option.id })}
+                                    className={`min-w-0 rounded-2xl border px-2 py-3 text-center transition-all active:scale-[0.98] ${active ? 'border-primary bg-primary/10 text-primary shadow-sm' : 'border-slate-100 bg-slate-50 text-slate-500'}`}
+                                >
+                                    <div className="text-lg leading-none mb-1.5" aria-hidden="true">{option.icon}</div>
+                                    <div className="text-xs font-bold whitespace-nowrap">{option.label}</div>
+                                    <div className="text-[9px] mt-1 leading-tight opacity-70">{option.hint}</div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                        {([
+                            { id: 'blur', label: '模糊壁纸', hint: '壁纸放大虚化铺满', icon: '▦' },
+                            { id: 'color', label: '主色纯色', hint: '提取壁纸主色', icon: '■' },
+                        ] as Array<{ id: 'blur' | 'color'; label: string; hint: string; icon: string }>).map(option => {
+                            const active = (theme.desktopBackdrop ?? 'blur') === option.id;
+                            return (
+                                <button
+                                    key={option.id}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => updateTheme({ desktopBackdrop: option.id })}
+                                    className={`min-w-0 rounded-2xl border px-2 py-3 text-center transition-all active:scale-[0.98] ${active ? 'border-primary bg-primary/10 text-primary shadow-sm' : 'border-slate-100 bg-slate-50 text-slate-500'}`}
+                                >
+                                    <div className="text-lg leading-none mb-1.5" aria-hidden="true">{option.icon}</div>
+                                    <div className="text-xs font-bold whitespace-nowrap">{option.label}</div>
+                                    <div className="text-[9px] mt-1 leading-tight opacity-70">{option.hint}</div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <p className="mt-3 text-[10px] leading-relaxed text-slate-400">
+                        只在电脑宽屏鼠标浏览器下生效，手机端不受影响。
+                    </p>
+                </section>
+
                 {/* Desktop Music Widget Style */}
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">桌面组件</h2>

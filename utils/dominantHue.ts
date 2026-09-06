@@ -94,3 +94,78 @@ export const hueFromGradient = (s: string): number | null => {
     }
     return wSum > 0 ? hSum / wSum : null;
 };
+
+// ─── 桌面背景代表色 ──────────────────────────────────────────
+// hue 家族只产色相；桌面 backdrop 的纯色模式需要完整颜色。
+// representativeColorOfPixels 是纯函数（node 可测）；image 采样复刻 hueFromImage 的骨架。
+
+const toHex = (r: number, g: number, b: number): string => {
+    const ch = (v: number) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0');
+    return `#${ch(r)}${ch(g)}${ch(b)}`;
+};
+
+// 像素 → 代表色：与 dominantHueOfPixels 同一套 24 桶划分与灰度过滤，
+// 众数桶内像素平均 RGB。无有效像素返回 null（调用方落回默认纸色）。
+export const representativeColorOfPixels = (data: Uint8ClampedArray): string | null => {
+    const BINS = 24;
+    const weight = new Array(BINS).fill(0);
+    const rSum = new Array(BINS).fill(0);
+    const gSum = new Array(BINS).fill(0);
+    const bSum = new Array(BINS).fill(0);
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 128) continue;
+        const [h, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+        if (s < 0.14 || l < 0.1 || l > 0.92) continue;
+        const w = s * (1 - Math.abs(l - 0.55));
+        const bin = Math.floor(h / (360 / BINS)) % BINS;
+        weight[bin] += w;
+        rSum[bin] += data[i] * w;
+        gSum[bin] += data[i + 1] * w;
+        bSum[bin] += data[i + 2] * w;
+    }
+    let best = 0;
+    for (let i = 1; i < BINS; i++) if (weight[i] > weight[best]) best = i;
+    if (weight[best] <= 0) return null;
+    return toHex(rSum[best] / weight[best], gSum[best] / weight[best], bSum[best] / weight[best]);
+};
+
+// 图片 url → 代表色（24×24 缩略采样；跨域污染/失败返回 null）
+export const representativeColorFromImage = (url: string): Promise<string | null> => new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+        try {
+            const cv = document.createElement('canvas');
+            cv.width = 24; cv.height = 24;
+            const ctx = cv.getContext('2d');
+            if (!ctx) return resolve(null);
+            ctx.drawImage(img, 0, 0, 24, 24);
+            resolve(representativeColorOfPixels(ctx.getImageData(0, 0, 24, 24).data));
+        } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+});
+
+const parseHex = (hex: string): [number, number, number] => {
+    const full = hex.length === 4 ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}` : hex;
+    return [parseInt(full.slice(1, 3), 16), parseInt(full.slice(3, 5), 16), parseInt(full.slice(5, 7), 16)];
+};
+
+// 壁纸值 → 代表色：图片（http/blob:/data:）走采样，渐变串走 hex 加权平均，其余 null。
+export const representativeColorFromWallpaper = (wallpaper: string): Promise<string | null> => {
+    const s = (wallpaper || '').trim();
+    if (!s) return Promise.resolve(null);
+    if (/^(https?:|blob:|data:)/.test(s)) return representativeColorFromImage(s);
+    const hexes = s.match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g);
+    if (!hexes || hexes.length === 0) return Promise.resolve(null);
+    let wSum = 0, rSum = 0, gSum = 0, bSum = 0;
+    for (const hex of hexes) {
+        const [r, g, b] = parseHex(hex);
+        const [, sat, l] = rgbToHsl(r, g, b);
+        if (sat < 0.1 || l < 0.08 || l > 0.95) continue;
+        const w = sat * (1 - Math.abs(l - 0.55));
+        wSum += w; rSum += r * w; gSum += g * w; bSum += b * w;
+    }
+    return Promise.resolve(wSum > 0 ? toHex(rSum / wSum, gSum / wSum, bSum / wSum) : null);
+};
