@@ -723,6 +723,12 @@ const WorldEditor: React.FC<{
             </div>
 
             <div className={sectionCls}>
+                <div className={labelCls}>发生的真实城市（可选）</div>
+                <input className={inputCls} value={w.city || ''} onChange={e => upd({ city: e.target.value || undefined })} placeholder="比如：上海（留空=纯架空，地点自由发挥）" />
+                <div className="text-[10.5px] text-stone-500 leading-snug">填了：演绎里的出门地点优先用这座城市真实存在的地方（约会/出游更真）；不填：世界地点完全虚构，不受现实约束。</div>
+            </div>
+
+            <div className={sectionCls}>
                 <div className={labelCls}>时间模式（世界开始后不可改，先想清楚）{w.storyClock > 0 && <span className="text-stone-400 normal-case tracking-normal font-medium">　· 已开始，锁定</span>}</div>
                 {(Object.keys(TIME_MODE_INFO) as WorldTimeMode[]).map(tm => {
                     const on = (w.timeMode || 'real') === tm;

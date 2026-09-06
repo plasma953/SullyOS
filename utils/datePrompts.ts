@@ -24,6 +24,9 @@ import { ChatPrompts } from './chatPrompts';
 import { injectMemoryPalace } from './memoryPalace/pipeline';
 import { resolveCharTimeZone, nowInTimeZone } from './timezone';
 import { getVoicePromptOverride } from './ttsProvider';
+import { matchPlace } from './geoMatch';
+import { getCityLibrary, readAmapAuth } from './cityPlaces';
+import { renderPlaceLibraryDating, type CityPlace } from './amapCore';
 
 export type ApiMessage = { role: string; content: any };
 /**
@@ -437,6 +440,24 @@ export const extractObservation = (
     return { observation: null, rest: text };
 };
 
+/** 观测块解析出的地点与城市地点库对齐（纯函数）：命中挂 placeMeta（HUD 展示真实地址用），没命中原样返回。 */
+export const enrichObservationPlace = (
+    obs: DateObservation | null,
+    places: CityPlace[] | null | undefined,
+): DateObservation | null => {
+    if (!obs || !obs.place || obs.placeMeta || !places || places.length === 0) return obs;
+    const hit = matchPlace(obs.place, places);
+    if (!hit) return obs;
+    return {
+        ...obs,
+        placeMeta: {
+            name: hit.place.name,
+            ...(hit.place.address ? { address: hit.place.address } : {}),
+            ...(hit.place.district ? { district: hit.place.district } : {}),
+            ...(hit.place.typeShort ? { typeShort: hit.place.typeShort } : {}),
+        },
+    };
+};
 /** 通用字段行（任意短 key｜value），用于匹配自定义维度的 label */
 const OBSERVE_ANYLINE_RE = /^\s*(?:[-*>•·]\s*)?\*{0,2}\s*([^｜|:：*\n]{1,16}?)\s*\*{0,2}\s*[｜|:：]\s*(.+?)\s*$/;
 
@@ -574,7 +595,12 @@ const flattenHistoryToText = (apiMessages: ApiMessage[]): string =>
  * reroll 的差异只体现在末尾 user 消息的 System Note 里，不在这里分叉。
  * 风格 / 人称 / 自定义补充按 char.dateStyleConfig 动态拼装。
  */
-const buildVNModeBlock = (char: CharacterProfile, userName: string): string => {
+const buildVNModeBlock = (
+    char: CharacterProfile,
+    userName: string,
+    // 真实地点：角色所在城市 + 约会子集清单（buildSessionPayload 里取好传进来）。
+    geo?: { cityName?: string; placeBlock?: string },
+): string => {
     const dateTimeOn = isDateTimeAwarenessOn(char);
     const timeLine = dateTimeOn ? `1. **Time**: 当前时间 ${getRealTimeStr(resolveCharTimeZone(char))}。\n` : '';
     const dateEmotions = getDateEmotions(char);
@@ -599,9 +625,9 @@ ${char.dateVoiceEnabled ? (resolveVoiceGuideSync('voice.date', getVoicePromptOve
 
 ${preset.block}
 
-${digBlock}${povBlock}${extraBlock}### 场景上下文
-${timeLine}- **Location**: 你们现在**面对面**。
-- **Context**: 参考历史记录。如果刚刚才看到开场白（Opening），请自然接话。
+ ${digBlock}${povBlock}${extraBlock}### 场景上下文
+${timeLine}- **Location**: 你们现在**面对面**${geo?.cityName ? `，在「${geo.cityName}」` : ''}。
+${geo?.placeBlock ? `${geo.placeBlock}\n约会地点优先从上面清单里选（名字照抄，别改字）；没有合适的才用同城真实存在的地方——**严禁编造听起来像真名的假地点**。\n` : ''}- **Context**: 参考历史记录。如果刚刚才看到开场白（Opening），请自然接话。
 ${observeBlock}`;
 };
 
@@ -732,10 +758,21 @@ ${extraBlock ? `\n${extraBlock}` : ''}${isObserveOn(char) ? `\n${buildObserveBlo
             input.useVisionDescriptions === true,
         );
 
+        // 真实地点库与记忆召回并发：角色有城市才拉（约会子集），拉不到本轮纯降级。
+        const placeLibPromise = (() => {
+            const dateCity = (char.location?.city || '').trim();
+            if (!dateCity) return Promise.resolve(null);
+            return getCityLibrary(dateCity, readAmapAuth()).catch(() => null);
+        })();
+
         // 向量召回挂到 char.memoryPalaceInjection，buildCoreContext 会读取
         await injectMemoryPalace(char, allMsgs, undefined, userProfile?.name);
+        const placeLib = await placeLibPromise;
+        const geo = placeLib
+            ? { cityName: placeLib.city, placeBlock: renderPlaceLibraryDating(placeLib) }
+            : ((char.location?.city || '').trim() ? { cityName: (char.location?.city || '').trim() } : undefined);
         const systemPrompt = ContextBuilder.buildCoreContext(char, userProfile, true, undefined, undefined, { skipTimeAwareness: !isDateTimeAwarenessOn(char), conversational: true })
-            + buildVNModeBlock(char, userProfile?.name || '');
+            + buildVNModeBlock(char, userProfile?.name || '', geo);
 
         // 每轮轮换的聚焦线索：把注意力推向不同的具体方向，相邻回复天然有差异
         const focusLine = isDigDeeperOn(char.dateStyleConfig) ? ` 本轮线索：${pickFocusHint()}。` : '';

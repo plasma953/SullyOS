@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { DatePrompts, DATE_STYLE_PRESETS, extractObservation, stripObservation, hasObservation, resolveObserveFields, OBSERVE_OPEN, OBSERVE_CLOSE } from './datePrompts';
+import { DatePrompts, DATE_STYLE_PRESETS, extractObservation, stripObservation, hasObservation, resolveObserveFields, enrichObservationPlace, OBSERVE_OPEN, OBSERVE_CLOSE } from './datePrompts';
 import type { CharacterProfile, UserProfile, Message } from '../types';
+import type { CityPlace } from './amapCore';
 
 const makeChar = (overrides: Partial<CharacterProfile> = {}): CharacterProfile => ({
     id: 'char-1',
@@ -103,6 +104,20 @@ describe('DatePrompts.buildSessionPayload', () => {
         const reroll = await DatePrompts.buildSessionPayload({ ...baseInput(makeChar()), variant: 'reroll' });
         const lastReroll = reroll.messages[reroll.messages.length - 1];
         expect(lastReroll.content).toContain('Reroll');
+    });
+
+    it('角色有城市时 Location 行带城市名；无 Key 不附地点清单', async () => {
+        const char = makeChar({ location: { city: '上海市', province: '上海市', source: 'user', updatedAt: 1 } });
+        const sys = sysOf((await DatePrompts.buildSessionPayload(baseInput(char))).messages);
+        expect(sys).toContain('**面对面**，在「上海市」');
+        // 测试环境无高德 Key → 地点库拉不到，清单不出现（降级链）
+        expect(sys).not.toContain('真实地点参考');
+    });
+
+    it('角色无城市时 Location 行保持原样', async () => {
+        const sys = sysOf((await DatePrompts.buildSessionPayload(baseInput(makeChar()))).messages);
+        expect(sys).toContain('你们现在**面对面**。');
+        expect(sys).not.toContain('**面对面**，在');
     });
 });
 
@@ -347,5 +362,28 @@ describe('DatePrompts.buildPeekPayload', () => {
         const userMsg = messages[messages.length - 1].content as string;
         expect(userMsg).not.toContain(rawHtml);
         expect(userMsg).toContain('一张卡片');
+    });
+});
+
+describe('enrichObservationPlace（观测地点对齐）', () => {
+    const places: CityPlace[] = [{
+        name: '滨江公园', type: '风景名胜;公园广场;公园', typeShort: '公园',
+        category: 'park', address: '滨江大道', district: '浦东新区', lat: 31.24, lng: 121.5,
+    }];
+
+    it('命中挂 placeMeta，原文保留', () => {
+        const out = enrichObservationPlace({ place: '滨江公园散步' }, places);
+        expect(out?.place).toBe('滨江公园散步');
+        expect(out?.placeMeta).toMatchObject({ name: '滨江公园', address: '滨江大道', district: '浦东新区' });
+    });
+
+    it('没命中 / 无库 / 空地点 / 已有 meta 都原样返回', () => {
+        expect(enrichObservationPlace({ place: '火星基地' }, places)?.placeMeta).toBeUndefined();
+        expect(enrichObservationPlace({ place: '滨江公园' }, [])?.placeMeta).toBeUndefined();
+        expect(enrichObservationPlace({ place: '滨江公园' }, null)?.placeMeta).toBeUndefined();
+        expect(enrichObservationPlace({}, places)).toEqual({});
+        expect(enrichObservationPlace(null, places)).toBeNull();
+        const withMeta = { place: '滨江公园', placeMeta: { name: '旧' } };
+        expect(enrichObservationPlace(withMeta, places)).toBe(withMeta);
     });
 });

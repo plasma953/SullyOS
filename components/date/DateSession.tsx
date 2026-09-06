@@ -5,7 +5,9 @@ import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import DateSettings from './DateSettings';
 import ObserveHUD from './ObserveHUD';
-import { extractObservation, hasObservation } from '../../utils/datePrompts';
+import { extractObservation, hasObservation, enrichObservationPlace } from '../../utils/datePrompts';
+import { getCityLibrary, readAmapAuth } from '../../utils/cityPlaces';
+import type { CityPlace } from '../../utils/amapCore';
 import { useBlobRefUrl } from '../../utils/blobRef';
 import TokenImg from '../os/TokenImg';
 import { clearDateResumeAttempt } from '../../utils/dateSessionRecovery';
@@ -217,6 +219,34 @@ const DateSession: React.FC<DateSessionProps> = ({
     // 观测协议 OBSERVE：当前批次解析出的结构化观测，驱动全息 HUD
     const observeEnabled = !!char.dateObserve?.enabled;
     const [observation, setObservation] = useState<DateObservation | null>(initialState?.observation ?? null);
+
+    // 本场见面的地点库（角色所在城市，懒加载一次）：观测地点对齐 + HUD 真实地址用。
+    // 没有城市 / 没配 Key / 拉取失败 → null，本场纯降级（观测块原样显示）。
+    const datePlacesRef = useRef<CityPlace[] | null | undefined>(undefined);
+    const getDatePlaces = async (): Promise<CityPlace[] | null> => {
+        if (datePlacesRef.current !== undefined) return datePlacesRef.current;
+        const city = (char.location?.city || '').trim();
+        if (!city) {
+            datePlacesRef.current = null;
+            return null;
+        }
+        try {
+            const lib = await getCityLibrary(city, readAmapAuth());
+            datePlacesRef.current = lib ? lib.places : null;
+        } catch {
+            datePlacesRef.current = null;
+        }
+        return datePlacesRef.current;
+    };
+    // 解析后对齐地点（HUD 显示真实地址）。对齐失败/无库时原样返回，不挡主流程。
+    const enrichObs = async (obs: DateObservation | null): Promise<DateObservation | null> => {
+        if (!obs) return obs;
+        try {
+            return enrichObservationPlace(obs, await getDatePlaces());
+        } catch {
+            return obs;
+        }
+    };
     
     // Interaction State
     const [input, setInput] = useState('');
@@ -758,7 +788,7 @@ const DateSession: React.FC<DateSessionProps> = ({
             const aiContent = await onSendMessage(text, kind);
             // 先剥出观测块更新 HUD，再解析剩余正文
             const { observation: obs, rest } = extractObservation(aiContent, { lenient: observeEnabled, custom: char.dateObserve?.custom });
-            if (hasObservation(obs)) setObservation(obs);
+            if (hasObservation(obs)) setObservation(await enrichObs(obs));
             const items = parseDialogue(rest, 'normal');
             setDialogueBatch(items);
             setDialogueQueue(items);
@@ -785,7 +815,7 @@ const DateSession: React.FC<DateSessionProps> = ({
         try {
             const aiContent = await onReroll();
             const { observation: obs, rest } = extractObservation(aiContent, { lenient: observeEnabled, custom: char.dateObserve?.custom });
-            if (hasObservation(obs)) setObservation(obs);
+            if (hasObservation(obs)) setObservation(await enrichObs(obs));
             const items = parseDialogue(rest, 'normal');
             setDialogueBatch(items);
             setDialogueQueue(items);

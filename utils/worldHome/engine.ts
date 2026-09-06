@@ -31,6 +31,24 @@ import {
 } from './prompts';
 import { ensureThreads, applyBeatToThreads, applyNpcGroupLines, applyNpcDms, npcInboxes } from './threads';
 import { shouldCloseChapter, summarizeChapter, SIM_CHAPTER_CLOCKS } from './chapters';
+import { getCityLibrary, readAmapAuth } from '../cityPlaces';
+import { renderPlaceLibraryDating } from '../amapCore';
+
+/**
+ * 世界真实城市 → 约会子集清单（两处演绎入口共用）。
+ * 世界没设 city / 没配高德 Key / 拉取失败 → undefined，prompt 原样（纯架空世界不受扰）。
+ */
+const resolveWorldPlaceBlock = async (world: WorldProfile): Promise<string | undefined> => {
+    const city = (world.city || '').trim();
+    if (!city) return undefined;
+    try {
+        const lib = await getCityLibrary(city, readAmapAuth());
+        return lib ? renderPlaceLibraryDating(lib) : undefined;
+    } catch (e) {
+        console.warn('[WorldHome] 世界地点库拉取失败:', e instanceof Error ? e.message : e);
+        return undefined;
+    }
+};
 
 interface MemoryConfigLike {
     embedding?: { baseUrl?: string; apiKey?: string; model?: string; dimensions?: number };
@@ -377,6 +395,7 @@ export async function runWorldEpisode(deps: WorldEpisodeDeps): Promise<WorldEpis
                     directive: directive ? { impulseText: directive.impulseText, text: directive.text } : undefined,
                     priorChapter,
                     userName: userProfile?.name || '',
+                    placeBlock: await resolveWorldPlaceBlock(world),
                 });
                 if (directive) consumedDirectiveIds.push(directive.id);
 
@@ -611,6 +630,7 @@ export async function rerollWorldCharBeat(
             recentPosts: collectRecentPosts(prevEp?.beats || [], otherBeats),
             exposures: buildExposures(world, char.id, char.name),
             priorChapter, userName: userProfile?.name || '',
+            placeBlock: await resolveWorldPlaceBlock(world),
         });
         if (direction && direction.trim()) {
             turn += `\n\n## 重写方向（用户希望这次往这个方向重演，请据此给出全新的一拍）\n${direction.trim()}`;

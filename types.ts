@@ -1671,6 +1671,11 @@ export interface WorldProfile {
     name: string;
     /** 世界观总述（这个世界是什么样的，发生在哪，大家以什么身份生活） */
     worldview: string;
+    /**
+     * 世界发生的真实城市（可选，如"上海"）。填了：演绎里的出门地点优先用这座城市
+     * 真实存在的地方；不填：世界地点完全虚构，不受现实约束。
+     */
+    city?: string;
     mode: WorldHomeMode;
     /** 时间模式（创建时选定，默认 real 真实时间；旧世界无此字段时按 real 处理） */
     timeMode?: WorldTimeMode;
@@ -2191,6 +2196,16 @@ export interface DateObservation {
     time?: string;
     /** 地点：角色此刻所在的具体地点 */
     place?: string;
+    /**
+     * 地点的真实 POI 挂接（解析后与城市地点库对齐命中的结果）。
+     * HUD 在地点行下展示真实地址；原文保留不改。
+     */
+    placeMeta?: {
+        name: string;
+        address?: string;
+        district?: string;
+        typeShort?: string;
+    };
     /** 状态：角色的身心状态 */
     state?: string;
     /** 细节：正在发生的动作 / 微小细节 */

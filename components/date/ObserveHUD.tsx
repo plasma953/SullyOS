@@ -185,15 +185,17 @@ const getTheme = (id?: DateObserveStyleId): Theme => THEMES[id || 'hologram'] ||
 /** 合并默认维度 + 自定义维度，按字段顺序产出渲染行（仅保留有值的） */
 const buildRows = (observation: DateObservation, config?: DateObserveConfig, charName = '') =>
     resolveObserveFields(config, charName)
-        .map(f => ({
-            key: f.key,
-            glyph: f.glyph,
-            en: f.en,
-            cn: f.display,
-            value: (f.isCustom
+        .map(f => {
+            const value = (f.isCustom
                 ? (observation.extra?.[f.key] || '')
-                : ((observation[f.key as keyof DateObservation] as string) || '')).trim(),
-        }))
+                : ((observation[f.key as keyof DateObservation] as string) || '')).trim();
+            // 地点行：对齐命中真实 POI 时，下方小字展示真实地址
+            const meta = !f.isCustom && f.key === 'place' ? observation.placeMeta : undefined;
+            const sub = meta
+                ? [meta.address, meta.district].filter(Boolean).join(' · ') || undefined
+                : undefined;
+            return { key: f.key, glyph: f.glyph, en: f.en, cn: f.display, value, sub };
+        })
         .filter(r => r.value);
 
 const CornerBrackets: React.FC<{ theme: Theme }> = ({ theme }) => (
@@ -205,7 +207,7 @@ const CornerBrackets: React.FC<{ theme: Theme }> = ({ theme }) => (
     </>
 );
 
-const ObserveRow: React.FC<{ theme: Theme; glyph: string; en: string; cn: string; value: string }> = ({ theme, glyph, en, cn, value }) => (
+const ObserveRow: React.FC<{ theme: Theme; glyph: string; en: string; cn: string; value: string; sub?: string }> = ({ theme, glyph, en, cn, value, sub }) => (
     <div className="flex items-start gap-2.5 py-1.5">
         <span className={`mt-0.5 text-sm leading-none w-4 text-center shrink-0 ${theme.glyphClass}`}>{glyph}</span>
         <div className="min-w-0 flex-1">
@@ -214,6 +216,7 @@ const ObserveRow: React.FC<{ theme: Theme; glyph: string; en: string; cn: string
                 <span className={`text-[9px] ${theme.cnClass}`}>{cn}</span>
             </div>
             <p className={`text-[12px] leading-snug tracking-wide whitespace-pre-wrap break-words ${theme.valueClass}`}>{value}</p>
+            {sub && <p className="text-[10px] leading-snug opacity-60 truncate">{sub}</p>}
         </div>
     </div>
 );
@@ -246,7 +249,7 @@ const ObserveHUD: React.FC<ObserveHUDProps> = ({ observation, variant = 'hud', c
     const body = (dense: boolean) => (
         <div className={`${dense ? 'px-3 py-1' : 'px-4 py-2'} ${theme.fontClass}`}>
             {rows.map(r => (
-                <ObserveRow key={r.key} theme={theme} glyph={r.glyph} en={r.en} cn={r.cn} value={r.value} />
+                <ObserveRow key={r.key} theme={theme} glyph={r.glyph} en={r.en} cn={r.cn} value={r.value} sub={r.sub} />
             ))}
         </div>
     );

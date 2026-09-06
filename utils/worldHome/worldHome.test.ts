@@ -356,6 +356,21 @@ describe('buildWorldCharTurn', () => {
         expect(turn).not.toContain('低落');
     });
 
+    it('placeBlock：给了才附真实地点清单与选址指令，不给 prompt 原样', () => {
+        const world = mkWorld();
+        const members = [mkChar('a', '小满')];
+        const base = { world, char: members[0], members, storyTime: '第1天白天', round: 1, beatsSoFar: [], userName: '' };
+        const plain = buildWorldCharTurn(base);
+        expect(plain).not.toContain('真实地点参考');
+        expect(plain).not.toContain('严禁编造');
+
+        const placeBlock = '【上海市真实地点参考】（约会/出游优先从中选，都是真实存在的地方）\n 公园：滨江公园';
+        const withPlaces = buildWorldCharTurn({ ...base, placeBlock });
+        expect(withPlaces).toContain('【上海市真实地点参考】');
+        expect(withPlaces).toContain('滨江公园');
+        expect(withPlaces).toContain('严禁编造听起来像真名的假地点');
+    });
+
     it('当面对话完整传给对话对象，公开动态全员可见', () => {
         const world = mkWorld({ houses: [{ id: 'h1', name: '合租屋', residentIds: ['a', 'b'] }] });
         const members = [mkChar('a', '小满'), mkChar('b', '阿岚')];
