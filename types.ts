@@ -1,3 +1,5 @@
+import type { ShoppingOrder } from './utils/shoppingTypes';
+
 export enum AppID {
   Launcher = 'launcher',
   Settings = 'settings',
@@ -4215,6 +4217,8 @@ export interface Emoji {
 export interface FullBackupData {
     timestamp: number;
     version: number;
+    /** 出包时密钥已脱敏（utils/backupSecrets）：恢复后需重填 API Key 等凭据。 */
+    secretsRedacted?: boolean;
     theme?: OSTheme;
     apiConfig?: APIConfig;
     /** 查手机 App 独立 API；null/缺省时跟随聊天默认。 */
@@ -4324,6 +4328,9 @@ export interface FullBackupData {
 
     // Tarot (塔罗占卜记录 / tarot_readings store)
     tarotReadings?: TarotReadingRecord[];
+
+    // Shopping orders (购物订单 / shopping_orders store)
+    shoppingOrders?: ShoppingOrder[];
 
     // Guidebook (攻略本)
     guidebookSessions?: GuidebookSession[];

@@ -552,8 +552,14 @@ export const DB = {
 
   deleteCharacter: async (id: string): Promise<void> => {
     const db = await openDB();
-    const transaction = db.transaction(STORE_CHARACTERS, 'readwrite');
-    transaction.objectStore(STORE_CHARACTERS).delete(id);
+    // 写操作必须等事务提交：fire-and-forget 会在关页面/配额不足时静默丢数据。
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_CHARACTERS, 'readwrite');
+      transaction.objectStore(STORE_CHARACTERS).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('deleteCharacter aborted'));
+    });
   },
 
   // ---- 角色分组（神经链接"文件夹"，与群聊 groups 无关）----
@@ -2194,14 +2200,24 @@ export const DB = {
 
   saveQuiz: async (quiz: QuizSession): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_QUIZZES, 'readwrite');
-      transaction.objectStore(STORE_QUIZZES).put(quiz);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_QUIZZES, 'readwrite');
+          transaction.objectStore(STORE_QUIZZES).put(quiz);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('saveQuiz aborted'));
+      });
   },
 
   deleteQuiz: async (id: string): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_QUIZZES, 'readwrite');
-      transaction.objectStore(STORE_QUIZZES).delete(id);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_QUIZZES, 'readwrite');
+          transaction.objectStore(STORE_QUIZZES).delete(id);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('deleteQuiz aborted'));
+      });
   },
 
   // --- Tarot readings ---
@@ -2219,14 +2235,24 @@ export const DB = {
 
   saveTarotReading: async (reading: TarotReadingRecord): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_TAROT_READINGS, 'readwrite');
-      transaction.objectStore(STORE_TAROT_READINGS).put(reading);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TAROT_READINGS, 'readwrite');
+          transaction.objectStore(STORE_TAROT_READINGS).put(reading);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('saveTarotReading aborted'));
+      });
   },
 
   deleteTarotReading: async (id: string): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_TAROT_READINGS, 'readwrite');
-      transaction.objectStore(STORE_TAROT_READINGS).delete(id);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TAROT_READINGS, 'readwrite');
+          transaction.objectStore(STORE_TAROT_READINGS).delete(id);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('deleteTarotReading aborted'));
+      });
   },
 
   getAllGames: async (): Promise<GameSession[]> => {
@@ -2243,14 +2269,24 @@ export const DB = {
 
   saveGame: async (game: GameSession): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_GAMES, 'readwrite');
-      transaction.objectStore(STORE_GAMES).put(game);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_GAMES, 'readwrite');
+          transaction.objectStore(STORE_GAMES).put(game);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('saveGame aborted'));
+      });
   },
 
   deleteGame: async (id: string): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_GAMES, 'readwrite');
-      transaction.objectStore(STORE_GAMES).delete(id);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_GAMES, 'readwrite');
+          transaction.objectStore(STORE_GAMES).delete(id);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('deleteGame aborted'));
+      });
   },
 
   getAllWorldbooks: async (): Promise<Worldbook[]> => {
@@ -2267,14 +2303,24 @@ export const DB = {
 
   saveWorldbook: async (book: Worldbook): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_WORLDBOOKS, 'readwrite');
-      transaction.objectStore(STORE_WORLDBOOKS).put(book);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_WORLDBOOKS, 'readwrite');
+          transaction.objectStore(STORE_WORLDBOOKS).put(book);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('saveWorldbook aborted'));
+      });
   },
 
   deleteWorldbook: async (id: string): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_WORLDBOOKS, 'readwrite');
-      transaction.objectStore(STORE_WORLDBOOKS).delete(id);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_WORLDBOOKS, 'readwrite');
+          transaction.objectStore(STORE_WORLDBOOKS).delete(id);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('deleteWorldbook aborted'));
+      });
   },
 
   // --- 见面 · 剧情剧场 ---
@@ -2378,14 +2424,24 @@ export const DB = {
 
   saveNovel: async (novel: NovelBook): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_NOVELS, 'readwrite');
-      transaction.objectStore(STORE_NOVELS).put(novel);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_NOVELS, 'readwrite');
+          transaction.objectStore(STORE_NOVELS).put(novel);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('saveNovel aborted'));
+      });
   },
 
   deleteNovel: async (id: string): Promise<void> => {
       const db = await openDB();
-      const transaction = db.transaction(STORE_NOVELS, 'readwrite');
-      transaction.objectStore(STORE_NOVELS).delete(id);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_NOVELS, 'readwrite');
+          transaction.objectStore(STORE_NOVELS).delete(id);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('deleteNovel aborted'));
+      });
   },
 
   // --- VR World 「彼方」 全局小说库 ---
@@ -2964,15 +3020,25 @@ export const DB = {
   saveShoppingOrder: async (order: ShoppingOrder): Promise<void> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_SHOPPING_ORDERS)) return;
-      const transaction = db.transaction(STORE_SHOPPING_ORDERS, 'readwrite');
-      transaction.objectStore(STORE_SHOPPING_ORDERS).put(order);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_SHOPPING_ORDERS, 'readwrite');
+          transaction.objectStore(STORE_SHOPPING_ORDERS).put(order);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('saveShoppingOrder aborted'));
+      });
   },
 
   deleteShoppingOrder: async (id: string): Promise<void> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_SHOPPING_ORDERS)) return;
-      const transaction = db.transaction(STORE_SHOPPING_ORDERS, 'readwrite');
-      transaction.objectStore(STORE_SHOPPING_ORDERS).delete(id);
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_SHOPPING_ORDERS, 'readwrite');
+          transaction.objectStore(STORE_SHOPPING_ORDERS).delete(id);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('deleteShoppingOrder aborted'));
+      });
   },
 
   // --- Songs (Songwriting App) ---
@@ -3170,16 +3236,18 @@ export const DB = {
           if (!db.objectStoreNames.contains(storeName)) {
               return Promise.resolve([]);
           }
-          return new Promise((resolve) => {
+          return new Promise((resolve, reject) => {
               const tx = db.transaction(storeName, 'readonly');
               const store = tx.objectStore(storeName);
               const req = store.getAll();
               req.onsuccess = () => resolve(req.result || []);
-              req.onerror = () => resolve([]); 
+              // 读失败必须 reject、中止导出：resolve([]) 会把坏备份伪装成空表，
+              // 再导入时 clearAndAdd 会清空好表（坏备份比没备份更危险）。
+              req.onerror = () => reject(req.error || new Error(`export read failed: ${storeName}`));
           });
       };
 
-      const [characters, characterGroups, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, storyTheaters, storyTheaterPresets, storyTheaterMasks, novels, bankTx, bankData, xhsActivities, xhsOwnedPosts, xhsStockImages, songs, quizzes, tarotReadings, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, worlds, worldEpisodes, lifeRecords, medPlans, lifeRecordSettings, promptPresets] = await Promise.all([
+      const [characters, characterGroups, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, storyTheaters, storyTheaterPresets, storyTheaterMasks, novels, bankTx, bankData, xhsActivities, xhsOwnedPosts, xhsStockImages, songs, quizzes, tarotReadings, shoppingOrders, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, worlds, worldEpisodes, lifeRecords, medPlans, lifeRecordSettings, promptPresets] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_CHAR_GROUPS),
           getAllFromStore(STORE_MESSAGES),
@@ -3212,6 +3280,7 @@ export const DB = {
           getAllFromStore(STORE_SONGS),
           getAllFromStore(STORE_QUIZZES),
           getAllFromStore(STORE_TAROT_READINGS),
+          getAllFromStore(STORE_SHOPPING_ORDERS),
           getAllFromStore(STORE_GUIDEBOOK),
           getAllFromStore(STORE_SCHEDULED),
           getAllFromStore(STORE_LIFE_SIM),
@@ -3257,6 +3326,7 @@ export const DB = {
           songs,
           quizSessions: quizzes,
           tarotReadings,
+          shoppingOrders,
           guidebookSessions,
           scheduledMessages,
           lifeSimState: lifeSimStates[0] || null,
@@ -3396,6 +3466,7 @@ export const DB = {
           data.songs !== undefined,
           data.quizSessions !== undefined,
           data.tarotReadings !== undefined,
+          data.shoppingOrders !== undefined,
           data.guidebookSessions !== undefined,
           data.scheduledMessages !== undefined,
           data.lifeSimState !== undefined,
@@ -3786,6 +3857,10 @@ export const DB = {
           await clearAndAdd(STORE_TAROT_READINGS, data.tarotReadings, '塔罗', false);
           data.tarotReadings = undefined as any;
       }, data.tarotReadings?.length || 0);
+      await runSection('购物订单', data.shoppingOrders !== undefined, async () => {
+          await clearAndAdd(STORE_SHOPPING_ORDERS, data.shoppingOrders, '购物订单', false);
+          data.shoppingOrders = undefined as any;
+      }, data.shoppingOrders?.length || 0);
       await runSection('攻略本', data.guidebookSessions !== undefined, async () => {
           await clearAndAdd(STORE_GUIDEBOOK, data.guidebookSessions, '攻略本', false);
           data.guidebookSessions = undefined as any;

@@ -17,6 +17,7 @@ import { SULLY_DEFAULT_AVATAR_URL, shouldMigrateSullyAvatar } from '../utils/sul
 import { exportStoryTheaterAppearanceSetting, restoreStoryTheaterAppearanceSetting } from '../utils/storyTheaterBackup';
 import { createV2ArrayFieldWriter, writeV2Backup, assembleV2Backup, type BackupManifest, type ZipFileWriter, type ZipFileReader } from '../utils/backupFormat';
 import { ensureBackupStoresCovered, knownBackupStoreFieldMap, exportSwitchDefaultCase } from '../utils/backupCoverage';
+import { stripBackupSecrets } from '../utils/backupSecrets';
 import { externalizeVoiceMessageBlobs, restoreVoiceMessageBlobs, shouldIncludeVoiceRelatedAssetInBackup } from '../utils/voiceMessageBackup';
 import { ensureCompanionVoiceAssetsForBackup, isCompanionVoiceAssetId } from '../utils/companionVoiceAssets';
 import { collectCharacterCompanionVoiceAssetIds } from '../utils/companionPresets';
@@ -4086,6 +4087,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               'bank_transactions', 'bank_data',
               'xhs_activities', 'xhs_stock',
               'quizzes', 'guidebook', 'scheduled_messages', 'life_sim',
+              'tarot_readings', 'shopping_orders',
               'handbook', 'trackers', 'tracker_entries', 'hotnews_snapshots',
               'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
               'room_plates', 'digest_reports',
@@ -4459,6 +4461,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               xhs_activities: 'xhsActivities',
               xhs_stock: 'xhsStockImages',
               quizzes: 'quizSessions',
+              tarot_readings: 'tarotReadings',
+              shopping_orders: 'shoppingOrders',
               guidebook: 'guidebookSessions',
               scheduled_messages: 'scheduledMessages',
               handbook: 'handbooks',
@@ -4707,6 +4711,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   case 'xhs_activities': backupData.xhsActivities = processedData; break;
                   case 'xhs_stock': backupData.xhsStockImages = processedData; break;
                   case 'quizzes': backupData.quizSessions = processedData; break;
+                  case 'tarot_readings': backupData.tarotReadings = processedData; break;
+                  case 'shopping_orders': backupData.shoppingOrders = processedData; break;
                   case 'guidebook': backupData.guidebookSessions = processedData; break;
                   case 'scheduled_messages': backupData.scheduledMessages = processedData; break;
                   case 'life_sim': backupData.lifeSimState = Array.isArray(processedData) ? (processedData[0] || null) : (processedData || null); break;
@@ -4757,6 +4763,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               await new Promise(resolve => setTimeout(resolve, 10));
+          }
+
+          // 密钥脱敏：包会被用户到处传，LLM/TTS Key、WebDAV 密码、GitHub Token、
+          // VAPID 私钥、opencode 密码等绝不能进包。只清值、留结构（地址/模型保留），
+          // 恢复后用户重填一次 Key。动过手就在包上打标，导入端据此提醒。
+          // 详见 utils/backupSecrets.ts（新增密钥字段时先补那里的清单）。
+          if (stripBackupSecrets(backupData)) {
+              (backupData as Record<string, any>).secretsRedacted = true;
           }
 
           // 进度条停在 70% 让用户看到接下来的"压缩中 X%"实际推进，而不是卡在 95% 干等。
@@ -5406,7 +5420,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           setSysOperation({ status: 'idle', message: '', progress: 100 });
           clearImportInProgress();
-          addToast('恢复成功，系统即将重启...', 'success');
+          // 脱敏包：密钥没进包，重启后第一次生成会提示配 Key，这里先打招呼。
+          addToast(
+              data.secretsRedacted
+                  ? '恢复成功，系统即将重启…（备份中的密钥已脱敏，重启后请重填 API Key）'
+                  : '恢复成功，系统即将重启...',
+              'success',
+          );
           setTimeout(() => window.location.reload(), 1500);
 
       } catch (e: any) {
