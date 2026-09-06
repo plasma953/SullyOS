@@ -31,9 +31,11 @@ describe('Spark 主页背景与头像存 blobref 令牌', () => {
     it('读端认令牌：背景图走 TokenImg，没有裸 <img src={userBgImage}>', () => {
         expect(SOCIAL_APP).toContain('<TokenImg value={userBgImage}');
         expect(SOCIAL_APP).not.toMatch(/<img\s+src=\{userBgImage\}/);
-        // 头像及其在帖子里的副本本来就走 TokenImg，一并钉住
+        // 头像及其在帖子里的副本本来就走 TokenImg，一并钉住。
+        // 帖子头像包了一层 doubanImgUrl：豆瓣外链转 worker 代理防盗链，
+        // blobref 令牌原样透传，读端依然认令牌。
         expect(SOCIAL_APP).toContain('<TokenImg value={socialProfile.avatar}');
-        expect(SOCIAL_APP).toContain('<TokenImg value={post.authorAvatar}');
+        expect(SOCIAL_APP).toContain('<TokenImg value={doubanImgUrl(post.authorAvatar)}');
     });
 
     it('spark_* 所在的 assets 表在孤儿 GC 的引用面清单里（否则转出的图会被当垃圾删）', () => {

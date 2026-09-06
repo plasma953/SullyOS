@@ -11,6 +11,11 @@ import { safeResponseJson } from '../utils/safeApi';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { House, User, Package, Warning } from '@phosphor-icons/react';
 import { mergeSocialComments, prependUniqueSocialPosts, updateSocialPost } from '../utils/socialFeedMerge';
+import {
+    DoubanGroup, addHiddenDoubanId, doubanImgUrl,
+    fetchDoubanComments, fetchDoubanTopicDetail, fetchDoubanTopics,
+    loadDoubanGroups, parseDoubanGroupInput, saveDoubanGroups,
+} from '../utils/doubanSource';
 import { trackEvent } from '../utils/analytics';
 import TokenImg from '../components/os/TokenImg';
 
@@ -181,6 +186,11 @@ const SocialApp: React.FC = () => {
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareGroupId, setShareGroupId] = useState(GROUP_FILTER_ALL); // 分享帖子弹窗的角色分组筛选
 
+    // Douban groups — 发现页混入的真实内容来源（localStorage 持久化）
+    const [doubanGroups, setDoubanGroups] = useState<DoubanGroup[]>(() => loadDoubanGroups());
+    const [showGroupManager, setShowGroupManager] = useState(false);
+    const [newGroupInput, setNewGroupInput] = useState('');
+
     // Profile Sub-tab
     const [profileTab, setProfileTab] = useState<'notes' | 'collects'>('notes');
 
@@ -206,6 +216,8 @@ const SocialApp: React.FC = () => {
     const refreshRequestRef = useRef<AbortController | null>(null);
     const commentRequestRef = useRef<{ postId: string; controller: AbortController } | null>(null);
     const replyRequestRef = useRef<{ postId: string; controller: AbortController } | null>(null);
+    // 已拉过详情的豆瓣帖 id（应用内记忆，避免重复请求；重启后重新拉一次即可）
+    const doubanDetailLoadedRef = useRef<Set<string>>(new Set());
 
     useEffect(() => {
         mountedRef.current = true;
@@ -332,6 +344,33 @@ const SocialApp: React.FC = () => {
 
     // --- Helpers ---
 
+    // 豆瓣小组管理：刷新推荐流时会混入这些小组的真实帖子
+    const removeDoubanGroup = (groupId: string) => {
+        if (doubanGroups.length <= 1) { addToast('至少保留一个小组', 'error'); return; }
+        const next = doubanGroups.filter(g => g.id !== groupId);
+        setDoubanGroups(next);
+        saveDoubanGroups(next);
+    };
+
+    const addDoubanGroup = async () => {
+        const slug = parseDoubanGroupInput(newGroupInput);
+        if (!slug) { addToast('小组名或链接不对，试试如 meishi 或小组主页链接', 'error'); return; }
+        if (doubanGroups.some(g => g.id.toLowerCase() === slug.toLowerCase())) { addToast('这个小组已经在列表里了', 'error'); return; }
+        const candidate: DoubanGroup = { id: slug, name: slug };
+        // 先校验能拉到内容，再落库
+        try {
+            const posts = await fetchDoubanTopics(candidate, 0);
+            if (posts.length === 0) throw new Error('empty');
+            const next = [...doubanGroups, candidate];
+            setDoubanGroups(next);
+            saveDoubanGroups(next);
+            setNewGroupInput('');
+            addToast(`已添加小组 ${slug}，下次刷新就会混入它的帖子`, 'success');
+        } catch {
+            addToast(`小组 ${slug} 拉不到内容（可能组名不对或被限制），未添加`, 'error');
+        }
+    };
+
     const addSubAccount = (charId: string) => {
         const newAcct: SubAccount = {
             id: `sub-${Date.now()}`,
@@ -429,13 +468,40 @@ const SocialApp: React.FC = () => {
     };
 
     // --- AI Logic (Updated for Multi-Handle) ---
+    // 每次刷新随机挑 2 个小组、每组取最新 8 条混入，避免刷屏和打爆豆瓣
+    const DOUBAN_REFRESH_GROUPS = 2;
+    const DOUBAN_REFRESH_TAKE = 8;
+
     const handleRefresh = async () => {
-        if (!apiConfig.apiKey) { addToast('请配置 API Key', 'error'); return; }
         if (refreshRequestRef.current) return;
         const controller = new AbortController();
         refreshRequestRef.current = controller;
         setIsRefreshing(true);
         trackEvent('刷新 Spark 推荐流');
+        // 1) 豆瓣小组真实帖：无需 API Key，先拉先展示；失败静默（LLM 流照常）
+        let doubanHotTitles: string[] = [];
+        try {
+            const pool = [...doubanGroups];
+            const picked = pool.sort(() => 0.5 - Math.random()).slice(0, Math.min(DOUBAN_REFRESH_GROUPS, pool.length));
+            const batches = await Promise.all(picked.map(g => fetchDoubanTopics(g, 0).catch(() => [] as SocialPost[])));
+            if (!controller.signal.aborted) {
+                const fresh = batches.flat().slice(0, picked.length * DOUBAN_REFRESH_TAKE);
+                if (fresh.length > 0) {
+                    prependPostsToFeed(fresh);
+                    doubanHotTitles = fresh.slice(0, 8).map(p => p.title);
+                    addToast(`已混入 ${fresh.length} 条豆瓣小组热帖`, 'success');
+                }
+            }
+        } catch { /* 豆瓣失败不挡路 */ }
+        // 2) LLM 生成流：需要 API Key
+        if (!apiConfig.apiKey) {
+            if (refreshRequestRef.current === controller) {
+                refreshRequestRef.current = null;
+                if (mountedRef.current) setIsRefreshing(false);
+            }
+            if (doubanHotTitles.length === 0) addToast('请配置 API Key', 'error');
+            return;
+        }
         try {
             const shuffledChars = [...characters].sort(() => 0.5 - Math.random());
             const selectedChars = shuffledChars.slice(0, Math.min(3, characters.length));
@@ -467,7 +533,13 @@ const SocialApp: React.FC = () => {
    - **内容方向**: 公开发言，生活日常、吐槽、或者暗戳戳的记录。
 
 2. **路人/网友发帖 (70%)**: 
-   - 模拟真实的互联网生态：吃瓜群众、技术宅、美妆博主、情感树洞。
+    - 模拟真实的互联网生态：吃瓜群众、技术宅、美妆博主、情感树洞。
+    - 如果下方有【小组实时热点】，优先围绕热点方向编帖子（租房/美食/情感/电影/同城生活等），更像真实信息流。
+
+### 🔥 小组实时热点（真实世界正在聊的话题，可蹭）
+${doubanHotTitles.length > 0 ? doubanHotTitles.map(t => `- ${t}`).join('\n') : '(本次未同步到豆瓣热点)'}
+
+**路人帖可以围绕上面的热点方向自由发挥，但禁止照抄标题原文，禁止冒充豆瓣用户。**
 
 ### 身份配置
 ${identityMap}
@@ -606,7 +678,7 @@ ${charContexts}
             }
 
             const prompt = `### 任务: 模拟社交APP评论区
-**帖子来源**: "Spark" 社区
+**帖子来源**: ${post.origin === 'douban' ? `豆瓣小组「${post.groupTitle || '小组'}」` : '"Spark" 社区'}
 **楼主**: "${post.authorName}" (${authorType})
 **帖子标题**: "${post.title}"
 **帖子正文**:
@@ -825,7 +897,12 @@ ${identityMap}
         addToast('发布成功', 'success');
     };
 
-    const handleDeletePost = (postId: string) => { removePostFromFeed(postId); addToast('帖子已删除', 'success'); trackEvent('删除一条帖子'); };
+    const handleDeletePost = (postId: string) => {
+        // 豆瓣帖删掉后记住 id，下次刷新不再加回来（只记本地，不影响豆瓣本身）
+        const target = feedRef.current.find(p => p.id === postId);
+        if (target?.origin === 'douban' && target.sourceId) addHiddenDoubanId(target.sourceId);
+        removePostFromFeed(postId); addToast('帖子已删除', 'success'); trackEvent('删除一条帖子');
+    };
     const handleLike = (e: any, post: SocialPost) => {
         e.stopPropagation();
         updatePostInFeed(post.id, current => ({
@@ -862,6 +939,38 @@ ${identityMap}
     const handleOpenPost = (post: SocialPost) => {
         const livePost = feedRef.current.find(item => item.id === post.id) || post;
         setSelectedPost(livePost);
+        if (livePost.origin === 'douban' && livePost.sourceId && !doubanDetailLoadedRef.current.has(livePost.id)) {
+            // 豆瓣真实帖：先拉详情（正文/原图）+ 真实评论，再按需补 AI 评论
+            doubanDetailLoadedRef.current.add(livePost.id);
+            void loadDoubanDetail(livePost);
+        } else {
+            generateComments(livePost);
+        }
+    };
+
+    const loadDoubanDetail = async (post: SocialPost) => {
+        if (!post.sourceId) { generateComments(post); return; }
+        setLoadingComments(true);
+        try {
+            const [detail, realComments] = await Promise.all([
+                fetchDoubanTopicDetail(post.sourceId).catch(() => null),
+                fetchDoubanComments(post.sourceId).catch(() => [] as SocialComment[]),
+            ]);
+            if (!mountedRef.current) return;
+            updatePostInFeed(post.id, current => ({
+                ...current,
+                ...(detail ? {
+                    content: detail.content || current.content,
+                    images: detail.images.length > 0 ? detail.images : current.images,
+                    // 用户已点的赞不覆盖（本地 likes = 真实数 + 1）
+                    likes: current.isLiked ? current.likes : detail.likes,
+                } : {}),
+                comments: mergeSocialComments(current.comments || [], realComments || []),
+            }));
+        } catch { /* 详情失败就当普通帖走 LLM 评论 */ }
+        finally { if (mountedRef.current) setLoadingComments(false); }
+        const livePost = feedRef.current.find(item => item.id === post.id) || post;
+        // 真实评论已存在时 generateComments 会直接返回；零评论帖则补 AI 评论
         generateComments(livePost);
     };
 
@@ -885,6 +994,7 @@ ${identityMap}
         feedRef.current = [];
         setFeed([]);
         setSelectedPost(null);
+        doubanDetailLoadedRef.current.clear();
         DB.clearSocialPosts();
         setShowSettings(false);
         addToast('推荐流已清空', 'success');
@@ -893,23 +1003,47 @@ ${identityMap}
 
     // --- Renderers ---
 
+    // 帖子封面：豆瓣真实帖首图是真实图片（经 worker 代理防盗链），加载失败
+    // 自动隐藏露出底下的渐变 + ✨；其他帖沿用 emoji 大字卡。
+    const renderPostCover = (post: SocialPost, emojiClass: string, emojiWrap = 'drop-shadow-xl filter saturate-150 transform transition-transform group-hover:scale-110 duration-500') => {
+        const firstImage = post.images?.[0];
+        if (post.origin === 'douban' && typeof firstImage === 'string' && /^https?:\/\//i.test(firstImage)) {
+            return (
+                <>
+                    <div className="absolute inset-0 flex items-center justify-center"><span className={emojiClass}>✨</span></div>
+                    <img
+                        src={doubanImgUrl(firstImage)}
+                        alt={post.title}
+                        loading="lazy"
+                        className="absolute inset-0 w-full h-full object-cover z-10"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    />
+                </>
+            );
+        }
+        return <div className={`relative z-10 ${emojiClass} ${emojiWrap}`}>{codepointToEmoji(firstImage)}</div>;
+    };
+
     // 1. Feed Item (Glassmorphism)
     const renderFeedItem = (post: SocialPost) => (
         <div key={post.id} onClick={() => handleOpenPost(post)} className="break-inside-avoid mb-3 bg-white/70 backdrop-blur-md rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all cursor-pointer active:scale-[0.98] border border-white/50 relative group">
             <div className="aspect-[4/5] w-full flex items-center justify-center relative overflow-hidden" style={{ background: post.bgStyle }}>
                 {/* Decorative Overlay for "Premium" look */}
                 <div className="absolute inset-0 bg-white/5 backdrop-blur-[1px]"></div>
-                <div className="relative z-10 text-6xl drop-shadow-xl filter saturate-150 transform transition-transform group-hover:scale-110 duration-500">{codepointToEmoji(post.images[0])}</div>
+                {renderPostCover(post, 'text-6xl')}
                 {post.title && (
-                    <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-black/50 via-black/20 to-transparent">
+                    <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-black/50 via-black/20 to-transparent z-20">
                         <h3 className="text-white font-bold text-sm line-clamp-2 drop-shadow-md leading-tight">{post.title}</h3>
                     </div>
+                )}
+                {post.origin === 'douban' && post.groupTitle && (
+                    <div className="absolute top-2 left-2 z-20 text-[10px] font-bold text-white bg-black/30 backdrop-blur-md px-2 py-0.5 rounded-full">豆瓣·{post.groupTitle}</div>
                 )}
             </div>
             <div className="p-3">
                 <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2 min-w-0">
-                        <TokenImg value={post.authorAvatar} className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-white/50" />
+                        <TokenImg value={doubanImgUrl(post.authorAvatar)} className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-white/50" />
                         <span className="text-[11px] text-slate-700 truncate font-medium">{post.authorName}</span>
                     </div>
                     <div className="flex items-center gap-1 text-slate-400 group-hover:text-slate-600 transition-colors">
@@ -942,7 +1076,7 @@ ${identityMap}
                     <div className="flex items-center justify-between px-4 bg-white/60 backdrop-blur-xl border-b border-white/20 shrink-0 relative z-20" style={{ paddingTop: 'max(12px, var(--safe-top))', paddingBottom: '12px' }}>
                         <button onClick={handleClosePost} className="p-2 -m-2 active:opacity-60"><Icons.Back /></button>
                         <div className="flex items-center gap-2">
-                            <TokenImg value={selectedPost.authorAvatar} className="w-8 h-8 rounded-full object-cover border border-white/50" />
+                            <TokenImg value={doubanImgUrl(selectedPost.authorAvatar)} className="w-8 h-8 rounded-full object-cover border border-white/50" />
                             <span className="text-sm font-bold text-slate-800">{selectedPost.authorName}</span>
                         </div>
                         <button onClick={() => { setShowShareModal(true); trackEvent('打开分享帖子面板'); }} className="p-2 -m-2 active:opacity-60"><Icons.Share onClick={() => setShowShareModal(true)} className="w-6 h-6 text-slate-800 cursor-pointer hover:text-[#ff2442]" /></button>
@@ -954,7 +1088,7 @@ ${identityMap}
                         <div className="w-full aspect-square flex items-center justify-center text-[8rem] relative overflow-hidden" style={{ background: selectedPost.bgStyle }}>
                             <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/10"></div>
                             {/* Removed animate-bounce-slow to prevent reflow jitter */}
-                            <div className="relative z-10 drop-shadow-2xl filter saturate-125">{codepointToEmoji(selectedPost.images[0])}</div>
+                            {renderPostCover(selectedPost, 'text-[8rem]', 'drop-shadow-2xl filter saturate-125')}
                         </div>
 
                         <div className="p-6 space-y-4">
@@ -978,7 +1112,7 @@ ${identityMap}
                                 {selectedPost.comments.length === 0 && !loadingComments && <div className="text-center text-slate-300 text-xs py-10">快来抢沙发...</div>}
                                 {selectedPost.comments.map(c => (
                                     <div key={c.id} className="flex gap-3 animate-fade-in group">
-                                        <TokenImg value={c.authorAvatar} className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-100" />
+                                        <TokenImg value={doubanImgUrl(c.authorAvatar)} className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-100" />
                                         <div className="flex-1">
                                             <div className="flex justify-between items-start">
                                                 <span className={`text-xs font-bold ${c.isCharacter ? 'text-slate-800' : 'text-slate-500'}`}>{c.authorName}</span>
@@ -1106,6 +1240,34 @@ ${identityMap}
                 </div>
             </Modal>
 
+            <Modal isOpen={showGroupManager} title="豆瓣小组" onClose={() => setShowGroupManager(false)}>
+                <div className="space-y-4">
+                    <p className="text-xs text-slate-400 bg-slate-50 p-2 rounded-lg">
+                        刷新推荐流时会混入这些小组的真实帖子。小组越多内容越杂，建议留 3-8 个。
+                    </p>
+                    <div className="max-h-[36vh] overflow-y-auto no-scrollbar space-y-2 px-1">
+                        {doubanGroups.map(g => (
+                            <div key={g.id} className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-100 shadow-sm">
+                                <span className="text-sm font-bold text-slate-800">{g.name}</span>
+                                <span className="text-[10px] text-slate-400 font-mono truncate">{g.id}</span>
+                                <button onClick={() => removeDoubanGroup(g.id)} className="ml-auto text-slate-300 hover:text-red-400 text-lg leading-none px-1" title="移除">×</button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex gap-2">
+                        <input
+                            value={newGroupInput}
+                            onChange={(e) => setNewGroupInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') void addDoubanGroup(); }}
+                            placeholder="小组名或主页链接，如 meishi"
+                            className="flex-1 text-sm text-slate-800 bg-slate-50 rounded-xl px-3 py-2.5 outline-none focus:bg-white focus:ring-1 focus:ring-[#ff2442]/30 border border-transparent focus:border-[#ff2442]/30"
+                        />
+                        <button onClick={() => void addDoubanGroup()} className="px-4 py-2.5 bg-[#ff2442] text-white font-bold rounded-xl text-xs shadow-lg shadow-red-200 active:scale-95 transition-transform shrink-0">添加</button>
+                    </div>
+                    <button onClick={() => setShowGroupManager(false)} className="w-full py-3 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs active:bg-slate-200">完成</button>
+                </div>
+            </Modal>
+
             {/* --- Create Post Modal (Full Screen Overlay) --- */}
             {isCreateOpen && (
                 <div className="absolute inset-0 z-50 bg-white flex flex-col animate-slide-up">
@@ -1181,15 +1343,20 @@ ${identityMap}
                     {activeTab === 'home' && (
                         <div className="p-2 min-h-full">
                             {/* Refresh Button - Above Posts */}
-                            <div className="flex items-center justify-center py-3">
+                            <div className="flex items-center justify-center py-3 gap-2">
                                 {isRefreshing ? (
                                     <div className="text-center text-xs text-[#ff2442] font-bold animate-pulse flex items-center gap-2">
                                         <div className="w-4 h-4 border-2 border-[#ff2442] border-t-transparent rounded-full animate-spin"></div> 正在获取新鲜事...
                                     </div>
                                 ) : (
-                                    <button onClick={handleRefresh} className="px-6 py-2 bg-white/80 backdrop-blur-md rounded-full text-xs font-bold text-slate-500 shadow-sm border border-white hover:text-[#ff2442] active:scale-95 transition-all">
-                                        点击刷新推荐流
-                                    </button>
+                                    <>
+                                        <button onClick={handleRefresh} className="px-6 py-2 bg-white/80 backdrop-blur-md rounded-full text-xs font-bold text-slate-500 shadow-sm border border-white hover:text-[#ff2442] active:scale-95 transition-all">
+                                            点击刷新推荐流
+                                        </button>
+                                        <button onClick={() => setShowGroupManager(true)} className="px-4 py-2 bg-white/80 backdrop-blur-md rounded-full text-xs font-bold text-slate-500 shadow-sm border border-white hover:text-[#ff2442] active:scale-95 transition-all">
+                                            小组
+                                        </button>
+                                    </>
                                 )}
                             </div>
                             <div className="columns-2 gap-2 space-y-2 pb-24">
@@ -1286,11 +1453,11 @@ ${identityMap}
                                 <div className="columns-2 gap-2 space-y-2">
                                     {feed.filter(p => profileTab === 'notes' ? (p.authorType === 'user' || (!p.authorType && p.authorName === socialProfile.name)) : p.isCollected).map(post => (
                                         <div key={post.id} onClick={() => handleOpenPost(post)} className="break-inside-avoid bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer">
-                                            <div className="aspect-[4/5] flex items-center justify-center text-4xl" style={{ background: post.bgStyle }}>{codepointToEmoji(post.images[0])}</div>
+                                            <div className="aspect-[4/5] flex items-center justify-center text-4xl relative overflow-hidden" style={{ background: post.bgStyle }}>{renderPostCover(post, 'text-4xl')}</div>
                                             <div className="p-3">
                                                 <h4 className="text-xs font-bold text-slate-800 line-clamp-2 leading-tight">{post.title}</h4>
                                                 <div className="flex justify-between items-center mt-2">
-                                                    <div className="flex items-center gap-1"><TokenImg value={post.authorAvatar} className="w-3 h-3 rounded-full" /><span className="text-[9px] text-slate-400 truncate w-12">{post.authorName}</span></div>
+                                                    <div className="flex items-center gap-1"><TokenImg value={doubanImgUrl(post.authorAvatar)} className="w-3 h-3 rounded-full" /><span className="text-[9px] text-slate-400 truncate w-12">{post.authorName}</span></div>
                                                     <div className="flex items-center gap-0.5 text-slate-400"><Icons.Heart filled={post.isLiked} className="w-3 h-3" /><span className="text-[9px]">{post.likes}</span></div>
                                                 </div>
                                             </div>

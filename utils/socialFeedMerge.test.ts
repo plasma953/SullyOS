@@ -48,4 +48,11 @@ describe('social feed race-safe merging', () => {
         const existing = comment('same');
         expect(mergeSocialComments([existing], [existing])).toEqual([existing]);
     });
+
+    it('豆瓣真实帖与 AI 帖混排：同 id 去重（douban: 前缀防撞）', () => {
+        const live = [post('douban:1'), post('post-ai')];
+        const incoming = [post('douban:1'), post('douban:2')];
+        expect(prependUniqueSocialPosts(live, incoming).map(item => item.id))
+            .toEqual(['douban:2', 'douban:1', 'post-ai']);
+    });
 });
