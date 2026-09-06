@@ -11,6 +11,10 @@ const XHS_PUBLISH_HOST_CANDIDATES = [
   "https://www.xiaohongshu.com",
 ];
 
+// /social/douban/topics 的跨请求内存缓存（handler 内 const 每次请求重建，
+// 缓存 Map 必须放模块级）。key `${group}:${start}` → { expires, body }。
+const doubanListCache = new Map();
+
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
@@ -2650,6 +2654,302 @@ export default {
       } catch (e) {
         const aborted = e && e.name === 'AbortError';
         return jsonResponse({ error: aborted ? '展开超时' : `展开失败: ${String((e && e.message) || e)}` }, { status: aborted ? 504 : 502, origin });
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    // ========== B站内容抓取代理 (/bilibili/*) ==========
+    // 聊天里发 B站链接 / b23.tv 短链 / 裸 BV 号 → 前端 utils/bilibiliCard.ts 经这组
+    // 端点拿稿件元数据、字幕列表、预览帧雪碧图，拼成 webpage_card 让角色"看完"视频。
+    // 见 utils/bilibiliCard.ts。无 cookie 设计：只用无需登录的公开接口
+    //（CC 字幕 / 简介 / 预览帧；AI 小结接口要登录，实测无 cookie 必 -403，不接），
+    // 拿不到就报失败，前端降级 apizero video-parse（utils/videoParser.ts）→ 通用网页抓取。
+    const BILI_API = 'https://api.bilibili.com';
+    const BILI_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+    const BILI_REFERER = 'https://www.bilibili.com';
+    const BVID_RE = /^BV[0-9A-Za-z]{10}$/;
+    // /bilibili/asset 允许透传的 CDN 域名（帧雪碧图 / 字幕 JSON 都落在这里），防开放代理。
+    const BILI_ASSET_HOSTS = ['hdslb.com', 'bilivideo.com', 'bilivideo.cn', 'akamaized.net'];
+    const BILI_ASSET_MAX_BYTES = 2 * 1024 * 1024;
+
+    function biliUpstreamHeaders() {
+      return { 'User-Agent': BILI_UA, 'Referer': BILI_REFERER, 'Accept': 'application/json' };
+    }
+
+    // B站 JSON 接口统一转发：包 {success:true,data} 信封；上游业务失败（code!=0）
+    // 不包 success，直接 502 报错，让前端走降级链。
+    async function biliGetJson(upstreamUrl, origin, timeoutMs) {
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), timeoutMs || 10000);
+      try {
+        const res = await fetch(upstreamUrl, { headers: biliUpstreamHeaders(), signal: c.signal });
+        const text = await res.text().catch(() => '');
+        let parsed = null;
+        try { parsed = text ? JSON.parse(text) : null; } catch (e) { /* non-json */ }
+        if (!res.ok || !parsed) {
+          return jsonResponse({ error: `B站接口无响应 (HTTP ${res.status})` }, { status: 502, origin });
+        }
+        if (typeof parsed.code !== 'undefined' && Number(parsed.code) !== 0) {
+          const msg = parsed.message || parsed.msg || ('code ' + parsed.code);
+          return jsonResponse({ error: `B站接口返回错误：${msg}` }, { status: 502, origin });
+        }
+        return jsonResponse({ success: true, data: (parsed.data !== undefined ? parsed.data : parsed) }, { origin });
+      } catch (e) {
+        const aborted = e && e.name === 'AbortError';
+        return jsonResponse({ error: aborted ? 'B站接口超时' : `B站接口请求失败: ${String((e && e.message) || e)}` }, { status: aborted ? 504 : 502, origin });
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    function badBiliParam(origin, msg) {
+      return jsonResponse({ error: msg }, { status: 400, origin });
+    }
+
+    function readBiliBvid(url) {
+      const bvid = (url.searchParams.get('bvid') || '').trim();
+      return BVID_RE.test(bvid) ? bvid : '';
+    }
+
+    if (url.pathname === '/bilibili/view') {
+      const bvid = readBiliBvid(url);
+      if (!bvid) return badBiliParam(origin, '缺少合法的 bvid 参数');
+      console.log('bilibili/view', bvid);
+      return await biliGetJson(`${BILI_API}/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, origin);
+    }
+
+    if (url.pathname === '/bilibili/player') {
+      const bvid = readBiliBvid(url);
+      if (!bvid) return badBiliParam(origin, '缺少合法的 bvid 参数');
+      const cid = (url.searchParams.get('cid') || '').trim();
+      if (!/^\d+$/.test(cid)) return badBiliParam(origin, '缺少合法的 cid 参数');
+      console.log('bilibili/player', bvid, cid);
+      return await biliGetJson(`${BILI_API}/x/player/v2?bvid=${encodeURIComponent(bvid)}&cid=${encodeURIComponent(cid)}`, origin);
+    }
+
+    if (url.pathname === '/bilibili/storyboard') {
+      const bvid = readBiliBvid(url);
+      if (!bvid) return badBiliParam(origin, '缺少合法的 bvid 参数');
+      const cid = (url.searchParams.get('cid') || '').trim();
+      if (!/^\d+$/.test(cid)) return badBiliParam(origin, '缺少合法的 cid 参数');
+      console.log('bilibili/storyboard', bvid, cid);
+      return await biliGetJson(`${BILI_API}/x/player/videoshot?bvid=${encodeURIComponent(bvid)}&cid=${encodeURIComponent(cid)}&index=1`, origin);
+    }
+
+    // 二进制 / JSON 资源透传（帧雪碧图 webp、字幕 JSON）。白名单 + 大小上限，
+    // 保留上游 content-type，附 CORS 头让前端 canvas 能读像素（不污染画布）。
+    if (url.pathname === '/bilibili/asset') {
+      const raw = (url.searchParams.get('u') || '').trim();
+      if (!raw) return badBiliParam(origin, '缺少 u 参数');
+      let target;
+      try { target = new URL(raw); } catch (e) { return badBiliParam(origin, 'u 不是合法 URL'); }
+      if (isUnsafeFetchTarget(target)) return badBiliParam(origin, '只允许代理公网 http(s) 资源');
+      const host = target.hostname.toLowerCase();
+      if (!BILI_ASSET_HOSTS.some(d => host === d || host.endsWith('.' + d))) {
+        return badBiliParam(origin, '不在 B站 CDN 白名单内');
+      }
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), 15000);
+      try {
+        const res = await fetch(target.toString(), {
+          headers: { 'User-Agent': BILI_UA, 'Referer': BILI_REFERER },
+          signal: c.signal,
+        });
+        if (!res.ok) {
+          return jsonResponse({ error: `资源获取失败 (HTTP ${res.status})` }, { status: 502, origin });
+        }
+        const reader = (res.body && res.body.getReader) ? res.body.getReader() : null;
+        let bytes;
+        if (!reader) {
+          const ab = await res.arrayBuffer();
+          bytes = new Uint8Array(ab);
+          if (bytes.length > BILI_ASSET_MAX_BYTES) bytes = bytes.slice(0, BILI_ASSET_MAX_BYTES);
+        } else {
+          const chunks = [];
+          let total = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              total += value.length;
+              chunks.push(value);
+              if (total >= BILI_ASSET_MAX_BYTES) { try { await reader.cancel(); } catch (e) { /* ignore */ } break; }
+            }
+          }
+          const capped = Math.min(total, BILI_ASSET_MAX_BYTES);
+          bytes = new Uint8Array(capped);
+          let offset = 0;
+          for (const ch of chunks) {
+            const take = Math.min(ch.length, capped - offset);
+            bytes.set(ch.subarray(0, take), offset);
+            offset += take;
+            if (offset >= capped) break;
+          }
+        }
+        return new Response(bytes, {
+          status: 200,
+          headers: {
+            'Content-Type': res.headers.get('content-type') || 'application/octet-stream',
+            'Cache-Control': 'public, max-age=86400',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        const aborted = e && e.name === 'AbortError';
+        return jsonResponse({ error: aborted ? '资源获取超时' : `资源获取失败: ${String((e && e.message) || e)}` }, { status: aborted ? 504 : 502, origin });
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    // ========== Spark 社交流 · 豆瓣小组内容代理 (/social/douban/*, /social/img) ==========
+    // Spark「发现」页混入豆瓣小组真实帖子。见 utils/doubanSource.ts。
+    // 只读公开接口，无需 cookie：小组话题列表 / 话题详情 / 话题评论 全部匿名可读
+    // （rexxar api，iPhone UA + m 站 Referer 过风控）。话题列表 120s 内存缓存降频，
+    // 详情/评论不缓存（点开才拉）。图片走 /social/img 透传（豆瓣图床偶发 Referer 校验）。
+    const DOUBAN_M = 'https://m.douban.com';
+    const DOUBAN_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+    const DOUBAN_GROUP_RE = /^[A-Za-z0-9_-]{1,64}$/;
+    const DOUBAN_TID_RE = /^\d{1,16}$/;
+    const DOUBAN_START_RE = /^\d{1,6}$/;
+    const DOUBAN_LIST_TTL_MS = 120 * 1000;
+    // /social/img 允许透传的图床（防开放代理）。豆瓣头像/话题图都在 doubanio 下。
+    const SOCIAL_IMG_HOSTS = ['doubanio.com'];
+    const SOCIAL_IMG_MAX_BYTES = 3 * 1024 * 1024;
+
+    function doubanListHeaders(group) {
+      return {
+        'User-Agent': DOUBAN_UA,
+        'Referer': `${DOUBAN_M}/group/${group}/`,
+        'Accept': 'application/json',
+      };
+    }
+
+    function doubanTopicHeaders(tid) {
+      return {
+        'User-Agent': DOUBAN_UA,
+        'Referer': `${DOUBAN_M}/group/topic/${tid}/`,
+        'Accept': 'application/json',
+      };
+    }
+
+    // 豆瓣 JSON 接口统一抓取：包 {success:true,data} 信封；失败直接 502，
+    // 让前端走降级（LLM 生成流照常工作）。
+    async function doubanGetJson(upstreamUrl, headers, origin, timeoutMs) {
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), timeoutMs || 10000);
+      try {
+        const res = await fetch(upstreamUrl, { headers, signal: c.signal });
+        const text = await res.text().catch(() => '');
+        let parsed = null;
+        try { parsed = text ? JSON.parse(text) : null; } catch (e) { /* non-json */ }
+        if (!res.ok || !parsed) {
+          return { response: jsonResponse({ error: `豆瓣接口无响应 (HTTP ${res.status})` }, { status: 502, origin }), data: null };
+        }
+        return { response: null, data: parsed };
+      } catch (e) {
+        const aborted = e && e.name === 'AbortError';
+        return { response: jsonResponse({ error: aborted ? '豆瓣接口超时' : `豆瓣接口请求失败: ${String((e && e.message) || e)}` }, { status: aborted ? 504 : 502, origin }), data: null };
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    function badDoubanParam(origin, msg) {
+      return jsonResponse({ error: msg }, { status: 400, origin });
+    }
+
+    // 小组话题列表：GET /social/douban/topics?group=<slug>&start=0
+    if (url.pathname === '/social/douban/topics') {
+      const group = (url.searchParams.get('group') || '').trim();
+      if (!DOUBAN_GROUP_RE.test(group)) return badDoubanParam(origin, '缺少合法的 group 参数');
+      const start = (url.searchParams.get('start') || '0').trim();
+      if (!DOUBAN_START_RE.test(start)) return badDoubanParam(origin, 'start 非法');
+      const cacheKey = `${group}:${start}`;
+      const now = Date.now();
+      const hit = doubanListCache.get(cacheKey);
+      if (hit && hit.expires > now) {
+        return jsonResponse({ success: true, data: hit.body, cached: true }, { origin });
+      }
+      console.log('social/douban/topics', group, start);
+      const { response, data } = await doubanGetJson(
+        `${DOUBAN_M}/rexxar/api/v2/group/${encodeURIComponent(group)}/topics?start=${encodeURIComponent(start)}&count=20`,
+        doubanListHeaders(group),
+        origin,
+      );
+      if (response) return response;
+      doubanListCache.set(cacheKey, { expires: now + DOUBAN_LIST_TTL_MS, body: data });
+      return jsonResponse({ success: true, data }, { origin });
+    }
+
+    // 话题详情（含正文/原图/点赞数）：GET /social/douban/topic?id=<tid>
+    if (url.pathname === '/social/douban/topic') {
+      const tid = (url.searchParams.get('id') || '').trim();
+      if (!DOUBAN_TID_RE.test(tid)) return badDoubanParam(origin, '缺少合法的 id 参数');
+      console.log('social/douban/topic', tid);
+      const { response, data } = await doubanGetJson(
+        `${DOUBAN_M}/rexxar/api/v2/group/topic/${encodeURIComponent(tid)}?start=0&count=1`,
+        doubanTopicHeaders(tid),
+        origin,
+      );
+      if (response) return response;
+      return jsonResponse({ success: true, data }, { origin });
+    }
+
+    // 话题评论：GET /social/douban/comments?id=<tid>&start=0
+    // 评论端点形态未经长期验证，失败就 502，前端静默跳过（帖子正文照常展示）。
+    if (url.pathname === '/social/douban/comments') {
+      const tid = (url.searchParams.get('id') || '').trim();
+      if (!DOUBAN_TID_RE.test(tid)) return badDoubanParam(origin, '缺少合法的 id 参数');
+      const start = (url.searchParams.get('start') || '0').trim();
+      if (!DOUBAN_START_RE.test(start)) return badDoubanParam(origin, 'start 非法');
+      console.log('social/douban/comments', tid, start);
+      const { response, data } = await doubanGetJson(
+        `${DOUBAN_M}/rexxar/api/v2/group/topic/${encodeURIComponent(tid)}/comments?start=${encodeURIComponent(start)}&count=20`,
+        doubanTopicHeaders(tid),
+        origin,
+      );
+      if (response) return response;
+      return jsonResponse({ success: true, data }, { origin });
+    }
+
+    // 图片透传：GET /social/img?u=<url>。白名单 + 大小上限，保留 content-type，
+    // 附 CORS 头。Referer 固定 www.douban.com 过图床校验。
+    if (url.pathname === '/social/img') {
+      const raw = (url.searchParams.get('u') || '').trim();
+      if (!raw) return badDoubanParam(origin, '缺少 u 参数');
+      let target;
+      try { target = new URL(raw); } catch (e) { return badDoubanParam(origin, 'u 不是合法 URL'); }
+      if (isUnsafeFetchTarget(target)) return badDoubanParam(origin, '只允许代理公网 http(s) 资源');
+      const host = target.hostname.toLowerCase();
+      if (!SOCIAL_IMG_HOSTS.some(d => host === d || host.endsWith('.' + d))) {
+        return badDoubanParam(origin, '不在图片白名单内');
+      }
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), 15000);
+      try {
+        const res = await fetch(target.toString(), {
+          headers: { 'User-Agent': DOUBAN_UA, 'Referer': 'https://www.douban.com/' },
+          signal: c.signal,
+        });
+        if (!res.ok) {
+          return jsonResponse({ error: `资源获取失败 (HTTP ${res.status})` }, { status: 502, origin });
+        }
+        const ab = await res.arrayBuffer();
+        let bytes = new Uint8Array(ab);
+        if (bytes.length > SOCIAL_IMG_MAX_BYTES) bytes = bytes.slice(0, SOCIAL_IMG_MAX_BYTES);
+        return new Response(bytes, {
+          status: 200,
+          headers: {
+            'Content-Type': res.headers.get('content-type') || 'application/octet-stream',
+            'Cache-Control': 'public, max-age=86400',
+            ...corsHeaders(origin),
+          },
+        });
+      } catch (e) {
+        const aborted = e && e.name === 'AbortError';
+        return jsonResponse({ error: aborted ? '图片获取超时' : `图片获取失败: ${String((e && e.message) || e)}` }, { status: aborted ? 504 : 502, origin });
       } finally {
         clearTimeout(t);
       }

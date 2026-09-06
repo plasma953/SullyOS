@@ -93,6 +93,9 @@ export function theaterWhenPhrase(dateStr?: string, slotTime?: string): string {
     return `${dayWord}${period}${time}`;
 }
 
+/** B站字幕全文注入的保险上限：正常视频碰不到，只防多小时讲座撑爆上下文。 */
+export const BILIBILI_SUBTITLE_SAFETY_CAP = 100000;
+
 /** 仅返回内容体（不加 sender / timestamp）。调用方自行拼外层。 */
 export function normalizeMessageContent(
     msg: Message,
@@ -285,6 +288,9 @@ export function normalizeMessageContent(
         const url = meta.finalUrl || meta.url || '';
         // 视频平台分享（videoParser 解析路径）：没有可读正文，喂给角色的是
         // 「标题 + 作者 + 热度数据」，并明确告知看不到画面内容，防止对着标题瞎编剧情。
+        // B站官方接口路径（utils/bilibiliCard.ts 产出，video 带 subtitles/desc/
+        // visionDescription）：简介/字幕/画面描述全量注入，角色是真的"看完"了视频。
+        // 无 cookie 能稳定拿到的就这些；AI 小结接口要登录（无 cookie 必 -403），不接。
         if (meta.video) {
             const v: any = meta.video;
             const plat = v.platformLabel || v.platform || '视频平台';
@@ -298,13 +304,27 @@ export function normalizeMessageContent(
                 v.commentCount ? `评论 ${formatStatCount(v.commentCount)}` : '',
                 v.collectCount ? `收藏 ${formatStatCount(v.collectCount)}` : '',
             ].filter(Boolean);
-            const note = isImage
-                ? '（注：你能看到的是这个图文的标题、作者和热度数据，看不到图片内容本身，别假装看过图。）'
-                : '（注：你能看到的是这个视频的标题、作者和热度数据，看不到视频画面和声音，别假装看过视频内容。）';
+            const descPart = (typeof v.desc === 'string' && v.desc.trim()) ? `简介：${v.desc.trim()}` : '';
+            // 字幕全量注入（总不能只看一半）；仅留 10 万字符保险上限防超长讲座撑爆上下文。
+            const subsRaw = (typeof v.subtitles === 'string' && v.subtitles.trim()) ? v.subtitles.trim() : '';
+            const subsPart = subsRaw
+                ? `视频字幕全文：\n${subsRaw.length > BILIBILI_SUBTITLE_SAFETY_CAP ? subsRaw.slice(0, BILIBILI_SUBTITLE_SAFETY_CAP) + '…（字幕过长已截断）' : subsRaw}`
+                : '';
+            const visionPart = (typeof v.visionDescription === 'string' && v.visionDescription.trim())
+                ? `画面速览：${v.visionDescription.trim()}`
+                : '';
+            const note = subsRaw
+                ? '（注：上面是这个视频的完整字幕，你已经看完视频全部内容，聊剧情时以此为准，别编造字幕里没有的情节。）'
+                : isImage
+                    ? '（注：你能看到的是这个图文的标题、作者和热度数据，看不到图片内容本身，别假装看过图。）'
+                    : '（注：你能看到的是这个视频的标题、作者和热度数据，看不到视频画面和声音，别假装看过视频内容。）';
             return [
                 head,
                 stats.length ? `热度：${stats.join(' · ')}` : '',
                 v.publishTime ? `发布时间：${v.publishTime}` : '',
+                descPart,
+                subsPart,
+                visionPart,
                 note,
             ].filter(Boolean).join('\n');
         }

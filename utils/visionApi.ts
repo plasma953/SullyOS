@@ -2,7 +2,7 @@ import type { ApiPreset, Message, VisionApiConfig } from '../types';
 import { DB } from './db';
 import { extractContent, safeFetchJson } from './safeApi';
 import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from './apiConfigNormalize';
-import { isBlobRef } from './blobRef';
+import { isBlobRef, resolveRefToDataUrl } from './blobRef';
 
 export const VISION_DESCRIPTION_METADATA_KEY = 'visionDescription';
 
@@ -104,6 +104,73 @@ export async function describeImageWithVisionApi(
 }
 
 /**
+ * B站卡片预览帧拼图识图：frames（blobref / data URL）拼成一张 3 列网格图，
+ * 单次调用拿到覆盖全部画面的描述，写回 metadata.webpage.video.visionDescription。
+ *
+ * 计费红线：每张卡终身只花 1 次识图调用（已有缓存直接返回；失败返回原消息，
+ * 加分项永不破坏聊天）。
+ */
+async function materializeWebpageCardFrames(message: Message, config: VisionApiConfig): Promise<Message> {
+    try {
+        const video: any = message.metadata?.webpage?.video;
+        if (!video || typeof video !== 'object') return message;
+        if (typeof video.visionDescription === 'string' && video.visionDescription.trim()) return message;
+        const frames = Array.isArray(video.frames) ? video.frames.filter(canDescribeImage) : [];
+        if (!frames.length) return message;
+        if (typeof document === 'undefined') return message;
+        const canvas = document.createElement('canvas');
+        if (typeof canvas.getContext !== 'function') return message;
+        const ctx = canvas.getContext('2d');
+        if (!ctx || typeof createImageBitmap === 'undefined') return message;
+
+        const dataUrls: string[] = [];
+        for (const f of frames.slice(0, 6)) {
+            try {
+                const url = isBlobRef(f) ? await resolveRefToDataUrl(f) : f;
+                if (url) dataUrls.push(url);
+            } catch { /* 单帧解析失败跳过 */ }
+        }
+        if (!dataUrls.length) return message;
+        const bitmaps: ImageBitmap[] = [];
+        for (const url of dataUrls) {
+            try {
+                bitmaps.push(await createImageBitmap(await (await fetch(url)).blob()));
+            } catch { /* 单帧加载失败跳过 */ }
+        }
+        if (!bitmaps.length) return message;
+        const cols = 3, cellW = 320, cellH = 180;
+        canvas.width = cols * cellW;
+        canvas.height = Math.ceil(bitmaps.length / cols) * cellH;
+        bitmaps.forEach((bm, i) => {
+            try {
+                ctx.drawImage(bm, (i % cols) * cellW, Math.floor(i / cols) * cellH, cellW, cellH);
+                bm.close();
+            } catch { /* ignore */ }
+        });
+        const description = await describeImageWithVisionApi(canvas.toDataURL('image/jpeg', 0.75), config);
+
+        const prevWebpage: any = message.metadata?.webpage || {};
+        const prevVideo: any = prevWebpage.video || {};
+        const patch = {
+            webpage: {
+                ...prevWebpage,
+                video: {
+                    ...prevVideo,
+                    [VISION_DESCRIPTION_METADATA_KEY]: description,
+                    visionRecognizedAt: Date.now(),
+                    visionModel: config.model.trim(),
+                },
+            },
+        };
+        // 先写回 DB 再调用主模型：下一轮与刷新页面后都会直接命中，不重复扣识图额度。
+        await DB.updateMessageMetadata(message.id, prev => ({ ...(prev || {}), ...patch }));
+        return { ...message, metadata: { ...(message.metadata || {}), ...patch } };
+    } catch {
+        return message;
+    }
+}
+
+/**
  * 为聊天历史里的图片补齐识图描述。
  *
  * 描述写回消息 metadata，因此同一条图片消息后续聊天、重 roll、主动消息都只识别一次；
@@ -121,11 +188,18 @@ export async function materializeVisionDescriptions(
   const descriptionByImage = new Map<string, string>();
   const prepared: Message[] = [];
 
-  for (const message of messages) {
-    if (message.type !== 'image') {
-      prepared.push(message);
-      continue;
-    }
+    for (const message of messages) {
+        // B站预览帧（webpage_card.metadata.webpage.video.frames）：纯文本主模型 + 开识图时，
+        // 把多帧拼成 1 张图调 1 次识图（按调用次数计费，帧再多也只花 1 次），描述写回卡片
+        // metadata 永久缓存。无 canvas 的运行时（测试 / SSR / worker）直接跳过。
+        if (message.type === 'webpage_card') {
+            prepared.push(await materializeWebpageCardFrames(message, config));
+            continue;
+        }
+        if (message.type !== 'image') {
+            prepared.push(message);
+            continue;
+        }
 
     const cached = readVisionDescription(message);
     if (cached) {

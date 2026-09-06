@@ -100,4 +100,43 @@ describe('independent vision API', () => {
     expect(JSON.stringify(apiMessages)).toContain('image_url');
     expect(JSON.stringify(apiMessages)).toContain(image);
   });
+
+  describe('webpage_card 帧拼图识图（B站预览帧）', () => {
+    const card = (id: number, video: any): Message => ({
+      id,
+      charId: 'char-1',
+      role: 'user',
+      type: 'webpage_card',
+      content: '测试视频',
+      timestamp: 1_700_000_000_000 + id,
+      metadata: {
+        webpage: {
+          title: '测试视频', siteName: '哔哩哔哩', content: '',
+          finalUrl: 'https://www.bilibili.com/video/BV1xx411c7mD', video,
+        },
+      },
+    } as Message);
+
+    it('已有画面描述缓存时不调用识图', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const prepared = await materializeVisionDescriptions(
+        [card(11, { frames: [image], visionDescription: '街景与人群' })],
+        config,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect((prepared[0].metadata as any)?.webpage?.video?.visionDescription).toBe('街景与人群');
+    });
+
+    it('无 canvas 环境跳过拼图：不调用识图、不写库、消息原样返回', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const updateSpy = vi.spyOn(DB, 'updateMessageMetadata').mockResolvedValue(undefined);
+      const input = card(12, { frames: [image] });
+      const prepared = await materializeVisionDescriptions([input], config);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
+      expect(prepared[0]).toBe(input);
+    });
+  });
 });

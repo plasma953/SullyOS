@@ -27,6 +27,7 @@ import { getUpcomingAnniversaries } from './anniversaryEngine';
 import { getDailyScheduleForChar } from './dailySchedule';
 import { formatRelativeAge } from './groupChat/relativeTime';
 import { isBlobRef } from './blobRef';
+import { BILIBILI_FRAME_COUNT } from './bilibiliCard';
 import { voiceLanguagePromptLabel } from './voiceLanguage';
 import { buildBleDevicesLiveBlock } from './bleToolBridge';
 
@@ -1450,6 +1451,33 @@ ${(await resolveVoiceActingGuide()) ?? ''}`;
                         note.shareCount != null ? `${note.shareCount}分享` : '',
                     ].filter(Boolean).join(' ');
                     content = `${timeStr} [${sender}分享了小红书笔记]\n标题: ${note.title || '无标题'}\n作者: ${note.author || '未知'}\n互动: ${interactions}\n简介: ${note.desc || '无'}${commentsLine}\n${m.role === 'user' ? '(请根据你的性格对这个帖子发表看法)' : ''}`;
+                }
+                else if ((m.type as string) === 'webpage_card') {
+                    // 网页卡片：正文走 normalizeMessageContent 全文（网页正文 / B站字幕全量），
+                    // 与归档/记忆宫殿的可见性对齐——之前主历史只给了标题，角色在聊天里读不到卡片内容。
+                    const wpMeta: any = m.metadata?.webpage || {};
+                    const wpText = `${timeStr} ${sourceTag} ${normalizeMessageContent(m, char?.name || '你', userProfile?.name || '用户')}`;
+                    const wpTail = (index === historySlice.length - 1 && timeGapHint && m.role === 'user') ? `\n\n${timeGapHint}` : '';
+                    // B站预览帧：多模态主模型随主请求 image_url 白看（零额外调用）；
+                    // 有画面描述缓存 + 开识图时只给文本（照图片消息模式，省 token）。
+                    const wpVisionDesc = (options?.useVisionDescriptions && typeof wpMeta?.video?.visionDescription === 'string')
+                        ? wpMeta.video.visionDescription.trim()
+                        : '';
+                    const wpFrames = Array.isArray(wpMeta?.video?.frames)
+                        ? wpMeta.video.frames.filter((f: any) => typeof f === 'string'
+                            && (f.startsWith('data:') || f.startsWith('http') || isBlobRef(f))).slice(0, BILIBILI_FRAME_COUNT)
+                        : [];
+                    if (wpVisionDesc || !wpFrames.length) {
+                        content = `${wpText}${wpTail}`;
+                    } else {
+                        return {
+                            role: m.role,
+                            content: [
+                                { type: 'text', text: `${wpText}${wpTail}` },
+                                ...wpFrames.map((url: string) => ({ type: 'image_url', image_url: { url } })),
+                            ],
+                        };
+                    }
                 }
                 else if ((m.type as string) === 'vr_card') {
                     // vr_card：你自己进入 VR 社交游戏《彼方》时留下的动态。

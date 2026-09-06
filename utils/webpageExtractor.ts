@@ -42,6 +42,42 @@ export interface VideoShareInfo {
   publishTime?: string;
   /** 图集张数（contentType === 'image' 时）。 */
   imageCount?: number;
+  // ── B站官方接口路径（utils/bilibiliCard.ts 产出）的附加字段 ──
+  /** 稿件 BV 号。 */
+  bvid?: string;
+  /** 稿件 aid / cid（cid 取 view 主分 P）。 */
+  aid?: number;
+  cid?: number;
+  /** 视频时长（秒，view.duration）。 */
+  durationSec?: number;
+  /** 视频简介（view.desc，全量注入喂 LLM）。 */
+  desc?: string;
+  /** 字幕全文（时间轴纯文本，全量注入喂 LLM）。 */
+  subtitles?: string;
+  /** 字幕行数。 */
+  subtitleCount?: number;
+  /** 喂角色的预览帧（blobref 令牌 / data URL，buildMessageHistory 挂 image_url）。 */
+  frames?: string[];
+  /** 预览帧雪碧图信息（切帧坐标用）。 */
+  storyboard?: BilibiliStoryboard;
+  /** 拼图识图描述（visionApi 单次调用后写回，永久缓存）。 */
+  visionDescription?: string;
+}
+
+/** B站进度条预览帧雪碧图（x/player/videoshot 返回的几何信息归一化后）。 */
+export interface BilibiliStoryboard {
+  /** 雪碧图 URL（经 /bilibili/asset 代理可读像素）。 */
+  spriteUrl: string;
+  /** 每张雪碧图的列数 / 行数。 */
+  imgXLen: number;
+  imgYLen: number;
+  /** 单帧宽高（像素）。 */
+  imgX: number;
+  imgY: number;
+  /** 该雪碧图覆盖的总帧数。 */
+  frameCount: number;
+  /** 相邻两帧的时间间隔（秒）。 */
+  intervalSec: number;
 }
 
 /** 抓取并解析后的网页结构。卡片 metadata 存这一份。 */
@@ -65,7 +101,7 @@ export interface ExtractedWebpage {
   /** 抓取时间戳。 */
   fetchedAt: number;
   /** 实际命中的抓取来源，便于诊断和实时展示，不参与角色提示词。 */
-  provider?: 'apizero-content' | 'apizero-video' | 'firecrawl' | 'jina' | 'worker-raw' | 'direct';
+  provider?: 'apizero-content' | 'apizero-video' | 'bilibili-api' | 'firecrawl' | 'jina' | 'worker-raw' | 'direct';
   /** 视频平台分享时的附加信息（走 videoParser 解析路径才有）。 */
   video?: VideoShareInfo;
 }
