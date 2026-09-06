@@ -3,6 +3,7 @@ import React from 'react';
 import { OSProvider } from './context/OSContext';
 import { MusicProvider } from './context/MusicContext';
 import PhoneShell from './components/PhoneShell';
+import { DesktopHost } from './components/desktop/DesktopHost';
 import BuildBadge from './components/BuildBadge';
 import DevDebugPanel from './components/DevDebugPanel';
 import Amsg2DebugPanel from './components/Amsg2DebugPanel';
@@ -37,20 +38,22 @@ const App: React.FC = () => {
           style={{ transform: 'translateZ(0)' }}
         >
           <OSProvider>
+            <DesktopHost>
             <MusicProvider>
               <PhoneShell />
             </MusicProvider>
             {/* 挂在 Provider 里面才能直接读 characters（省掉轮询 IndexedDB），
                 面板自身用 portal 渲染到 body，绕开上面那层 transform 对 fixed 定位的影响。 */}
             <Amsg2DebugPanel />
+            <VRBroadcast />
+            <WorldBroadcast />
+            <ChatBroadcast />
+            </DesktopHost>
           </OSProvider>
         </div>
       </div>
       <BuildBadge />
       <DevDebugPanel />
-      <VRBroadcast />
-      <WorldBroadcast />
-      <ChatBroadcast />
     </>
   );
 };
