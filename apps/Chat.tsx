@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalHost } from '../utils/portalHost';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot } from '../types';
@@ -21,6 +22,7 @@ import { getRoomLabel } from '../utils/memoryPalace/types';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeXhsLiteDetail } from '../utils/xhsMcpClient';
 import { extractWebpageContent, detectFirstUrl, detectXhsShortUrl, extractXhsShareTitle, isXhsUrl, extractXhsNoteId, expandShortUrl, type ExtractedWebpage } from '../utils/webpageExtractor';
 import { isVideoShareUrl, parseVideoShareUrl } from '../utils/videoParser';
+import { detectBilibiliShare, fetchBilibiliWebpage } from '../utils/bilibiliCard';
 import { isDevDebugAvailable } from '../utils/devDebug';
 import { isImageValue, migrateDataUrlToRef, putImageBlob, useBlobRefUrl } from '../utils/blobRef';
 import { buildReplySnapshotContent } from '../utils/applyAssistantPostProcessing';
@@ -1575,23 +1577,44 @@ const Chat: React.FC = () => {
             // 视频平台链接（抖音/B站/快手…）Jina 基本抓不到东西（SPA+登录墙），
             // 优先走 apizero 视频解析拿标题/作者/封面/热度；失败降级回通用网页抓取。
             const sharedUrl = detectFirstUrl(text);
-            if (sharedUrl && !isXhsUrl(sharedUrl) && !(xhsFullNoteId || xhsShortUrl)) {
-                let webpage: ExtractedWebpage | null = null;
-                if (isVideoShareUrl(sharedUrl)) {
-                    try {
-                        addToast('正在解析视频链接…', 'info');
-                        webpage = await parseVideoShareUrl(sharedUrl);
-                    } catch (e) {
-                        console.warn('Video parse failed, fallback to webpage fetch:', e);
-                    }
+            // B站分享（完整链接 / b23.tv 短链 / 裸 BV 号）：优先走官方接口拿字幕/简介/预览帧
+            //（utils/bilibiliCard.ts，无需登录）；失败降级下面的 apizero/通用抓取链路。
+            const biliShare = detectBilibiliShare(text);
+            let biliWebpage: ExtractedWebpage | null = null;
+            let biliFallbackUrl: string | null = null;
+            if (biliShare && !(xhsFullNoteId || xhsShortUrl)) {
+                try {
+                    addToast('正在读取B站视频内容…', 'info');
+                    biliWebpage = await fetchBilibiliWebpage(biliShare);
+                } catch (e) {
+                    console.warn('Bilibili fetch failed, fallback to generic chain:', e);
+                    // 已知 bvid 时用标准视频页走 apizero 兜底（标题/封面/热度至少能建卡）；
+                    // 短链展开失败时退回原文里的链接走通用链路。
+                    biliFallbackUrl = (biliShare.kind === 'bvid' && biliShare.bvid)
+                        ? `https://www.bilibili.com/video/${biliShare.bvid}`
+                        : sharedUrl;
                 }
-                if (!webpage) {
-                    try {
-                        addToast('正在读取网页内容…', 'info');
-                        webpage = await extractWebpageContent(sharedUrl);
-                    } catch (e: any) {
-                        console.warn('Webpage fetch failed:', e);
-                        addToast(`网页抓取失败：${e?.message || '可能被这个站点拦截了，换个链接或稍后再试。'}`, 'error');
+            }
+            const targetUrl = biliFallbackUrl || sharedUrl;
+            if (biliWebpage || (targetUrl && !isXhsUrl(targetUrl) && !(xhsFullNoteId || xhsShortUrl))) {
+                let webpage: ExtractedWebpage | null = biliWebpage;
+                if (!webpage && targetUrl && !isXhsUrl(targetUrl)) {
+                    if (isVideoShareUrl(targetUrl)) {
+                        try {
+                            addToast('正在解析视频链接…', 'info');
+                            webpage = await parseVideoShareUrl(targetUrl);
+                        } catch (e) {
+                            console.warn('Video parse failed, fallback to webpage fetch:', e);
+                        }
+                    }
+                    if (!webpage) {
+                        try {
+                            addToast('正在读取网页内容…', 'info');
+                            webpage = await extractWebpageContent(targetUrl);
+                        } catch (e: any) {
+                            console.warn('Webpage fetch failed:', e);
+                            addToast(`网页抓取失败：${e?.message || '可能被这个站点拦截了，换个链接或稍后再试。'}`, 'error');
+                        }
                     }
                 }
                 if (webpage) {
@@ -3969,7 +3992,7 @@ const Chat: React.FC = () => {
                     onSendCard={(exposed) => handleSendTheaterCard(theaterSlotIdx, exposed)}
                     onClose={() => setTheaterSlotIdx(null)}
                 />,
-                document.body,
+                        getPortalHost(),
              )}
 
              <ChatHeader
@@ -4539,7 +4562,7 @@ const Chat: React.FC = () => {
                         <button
                             onClick={() => setFineTunePanelOpen(v => !v)}
                             className={`fixed right-3 z-[106] flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all active:scale-90 ${fineTunePanelOpen ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-white/95 text-primary ring-1 ring-primary/30 backdrop-blur'}`}
-                            style={{ top: 'calc(var(--safe-top) + 35vh)' }}
+                            style={{ top: 'calc(var(--safe-top) + 35%)' }}
                             aria-label={fineTunePanelOpen ? '收起聊天装扮面板' : '展开聊天装扮面板'}
                         >
                             <FadersHorizontal className="h-6 w-6" weight="bold" />
@@ -4635,7 +4658,7 @@ const Chat: React.FC = () => {
                                 }}
                             >⟲ 还原此角色白框</button>
                         </>,
-                        document.body,
+                getPortalHost(),
                     )}
                 </div>
             )}
