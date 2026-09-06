@@ -1,4 +1,4 @@
-import { bleEngine, matchByName } from './bleEngine';
+import { bleEngine, buildBlePromptBlock, matchByName } from './bleEngine';
 import { loadBleDevices } from './bleRegistry';
 import type { BleSavedCommand, BleSavedDevice } from './bleRegistry';
 
@@ -94,7 +94,6 @@ export async function executeBleSendCommand(args: {
   const devices = await loadBleDevices();
   const target = resolveBleSendTarget(devices, bleEngine.connectedDeviceIds(), dq, cq);
   if (!target.ok) {
-    lastSent = { key, ts: now };
     return target.errorText;
   }
   const { device, command } = target;
@@ -111,6 +110,5 @@ export async function executeBleSendCommand(args: {
 }
 
 export async function buildBleDevicesLiveBlock(): Promise<string> {
-  const { buildBlePromptBlock } = await import('./bleEngine');
   return buildBlePromptBlock(await loadBleDevices(), bleEngine.connectedDeviceIds());
 }

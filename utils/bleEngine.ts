@@ -100,6 +100,7 @@ class BleEngine {
   private devices = new Map<string, any>();
   private states = new Map<string, BleConnState>();
   private notifyCleanups = new Map<string, Array<() => void>>();
+  private disconnectListeners = new Map<string, EventListener>();
   private logs: BleLogEntry[] = [];
   private version = 0;
   private listeners = new Set<() => void>();
@@ -213,11 +214,17 @@ class BleEngine {
     this.setState(deviceId, 'connecting');
     try {
       await device.gatt.connect();
-      device.addEventListener('gattserverdisconnected', () => {
+      const prevDisconnectHandler = this.disconnectListeners.get(deviceId);
+      if (prevDisconnectHandler) {
+        try { device.removeEventListener('gattserverdisconnected', prevDisconnectHandler); } catch { /* ignore */ }
+      }
+      const disconnectHandler = () => {
         this.teardownNotify(deviceId);
         this.setState(deviceId, 'disconnected');
         this.log('sys', deviceId, '设备断开连接');
-      });
+      };
+      device.addEventListener('gattserverdisconnected', disconnectHandler);
+      this.disconnectListeners.set(deviceId, disconnectHandler as unknown as EventListener);
       this.setState(deviceId, 'connected');
       this.log('sys', deviceId, '已连接');
     } catch (e) {

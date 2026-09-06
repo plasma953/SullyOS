@@ -116,4 +116,10 @@ describe('executeBleSendCommand', () => {
     const text = await executeBleSendCommand({ device: '卧室灯' });
     expect(text).toMatch(/不完整|需要/);
   });
+  it('does not fingerprint failed resolves', async () => {
+    const first = await executeBleSendCommand({ device: '不存在的设备', command: '开灯' });
+    const second = await executeBleSendCommand({ device: '不存在的设备', command: '开灯' });
+    expect(first).toContain('找不到');
+    expect(second).toContain('找不到');
+  });
 });

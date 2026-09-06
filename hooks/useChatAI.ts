@@ -974,7 +974,7 @@ export const useChatAI = ({
             // 拼进 tools，但参数取舍必须现在就定）。角色级开关关掉的不注入——否则被用户显式
             // 关掉的功能会被角色一次工具调用重新打开。
             const amsg2ToolsInjected = isAmsg2EnabledForChar(char) && await isAmsg2GlobalReady();
-            const btToolsInjected = bleEngine.hasConnectedDevice();
+            const btToolsInjected = bleEngine.hasConnectedDevice() && realtimeConfig?.bluetoothEnabled !== false;
             if (shouldSendThinkingParams({
                 thinkingActive: !!payload.flags.thinkingActive,
                 legacyToolModeActive: !!toolModeActive,
