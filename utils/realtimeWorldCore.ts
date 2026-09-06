@@ -49,6 +49,48 @@ const readJson = async (res: Response): Promise<any> => {
 // Open-Meteo 地名解析缓存：城市名 → 坐标，避免每次取天气都多打一次 geocoding
 const geocodeCache = new Map<string, { latitude: number; longitude: number; name: string }>();
 
+/** Open-Meteo 完整地名命中（含行政区/国家，海外城市回落用）。 */
+export interface OpenMeteoGeoHit {
+    name: string;
+    latitude: number;
+    longitude: number;
+    admin1?: string;
+    country?: string;
+    countryCode?: string;
+}
+
+const geoFullCache = new Map<string, OpenMeteoGeoHit>();
+
+/**
+ * Open-Meteo 地名解析（完整命中：admin1/国家都在）。
+ * MOVE_TO 搬到海外城市时用——高德无海外权限（20011），这里是回落链。
+ * 查无结果返回 null。
+ */
+export const geocodeCityOpenMeteo = async (city: string): Promise<OpenMeteoGeoHit | null> => {
+    const name = city.trim();
+    if (!name) return null;
+    const hit = geoFullCache.get(name);
+    if (hit) return hit;
+    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`;
+    const geoRes = await fetch(geoUrl);
+    if (!geoRes.ok) {
+        throw new Error(`Open-Meteo geocoding HTTP ${geoRes.status}`);
+    }
+    const geoData = await readJson(geoRes);
+    const raw = geoData.results?.[0];
+    if (!raw) return null;
+    const full: OpenMeteoGeoHit = {
+        name: raw.name,
+        latitude: raw.latitude,
+        longitude: raw.longitude,
+        ...(typeof raw.admin1 === 'string' ? { admin1: raw.admin1 } : {}),
+        ...(typeof raw.country === 'string' ? { country: raw.country } : {}),
+        ...(typeof raw.country_code === 'string' ? { countryCode: raw.country_code } : {}),
+    };
+    geoFullCache.set(name, full);
+    return full;
+};
+
 // WMO weather code（Open-Meteo 返回的 weather_code）→ 中文描述 + 近似 OWM icon 码
 // 完整码表见 https://open-meteo.com/en/docs（WMO Weather interpretation codes）
 const WMO_WEATHER_CODES: Record<number, { description: string; icon: string }> = {
@@ -431,6 +473,19 @@ export interface RealtimeWorldRenderInput {
     weather?: WeatherData | null;
     /** 本轮要注入的热点（抽样交给调用方，渲染保持纯净好测）。 */
     news?: NewsItem[];
+    /**
+     * 角色所在省（神经链接地点卡 / MOVE_TO 回填来的结构化字段）。
+     * 有才出「你所在的城市」行——天气行里已有城市名，这里只补省一级。
+     */
+    charProvince?: string;
+    /** 角色所在城市（与 weather.city 同源，主要用来拼「省+市」行）。 */
+    charCity?: string;
+    /** 用户所在城市（用户档案，只到城市级）：「用户那边」段用。 */
+    userCity?: string;
+    /** 用户城市天气（与角色天气同一链路取的）；没拉到则「用户那边」整段消失。 */
+    userWeather?: WeatherData | null;
+    /** 把用户那边告诉角色。未显式 false 即开（与 RealtimeConfig 注释同口径）。 */
+    userPerceptionEnabled?: boolean;
 }
 
 /**
@@ -443,8 +498,12 @@ export const renderRealtimeWorldBlock = (input: RealtimeWorldRenderInput): strin
     const specialDates = input.specialDates?.filter(Boolean) ?? [];
     const weather = input.weather ?? null;
     const news = input.news ?? [];
+    const charProvince = input.charProvince?.trim();
+    const charCity = input.charCity?.trim() || weather?.city || '';
+    const showUserSide = input.userPerceptionEnabled !== false
+        && !!input.userCity?.trim() && !!input.userWeather;
 
-    if (!timeLine && specialDates.length === 0 && !weather && news.length === 0) {
+    if (!timeLine && specialDates.length === 0 && !weather && news.length === 0 && !charProvince && !showUserSide) {
         return '';
     }
 
@@ -466,12 +525,26 @@ export const renderRealtimeWorldBlock = (input: RealtimeWorldRenderInput): strin
         parts.push(`🎉 今日特殊: ${specialDates.join('、')}`);
     }
 
+    // 2b. 角色所在城市（结构化）：天气行已有城市名，这里只补省一级。
+    //     省市连起来角色才知道自己到底在真实世界的哪一块（"上海" vs "上海市"的行政感）。
+    if (charProvince) {
+        parts.push(`📍 你现在在${charProvince}${charCity}。`);
+    }
+
     // 3. 天气信息
     if (weather) {
         parts.push('');
         parts.push(`🌤️ 【${weather.city}实时天气】`);
         parts.push(`现在外面: ${weather.description}，气温 ${weather.temp}°C（体感 ${weather.feelsLike}°C），湿度 ${weather.humidity}%`);
         parts.push(`你的建议: ${generateWeatherAdvice(weather)}`);
+    }
+
+    // 3b. 用户那边（用户所在城市 + 天气）：天气没拉到整段消失，跟天气段同哲学。
+    if (showUserSide) {
+        const uw = input.userWeather as WeatherData;
+        parts.push('');
+        parts.push(`🏠 【对方所在的城市 · ${input.userCity?.trim()}】`);
+        parts.push(`对方那边现在: ${uw.description}，气温 ${uw.temp}°C（体感 ${uw.feelsLike}°C），湿度 ${uw.humidity}%`);
     }
 
     // 4. 新闻热点（背景认知）
@@ -500,6 +573,9 @@ export const renderRealtimeWorldBlock = (input: RealtimeWorldRenderInput): strin
     tips.push(`这些信息都是真实的，可以直接引用；如果对方问"你怎么知道的"，就说你刚刷到 / 刚看到的。`);
     if (weather) {
         tips.push(`天气是真实的，可以自然地关心对方（"外面在下雨，带伞了吗？"）。`);
+    }
+    if (showUserSide) {
+        tips.push(`对方那边的天气也是真实的，可以自然地关心（"你那边下雨了，记得带伞"）；但你只知道对方在哪个城市——别揣测具体位置，更别说出街道小区。`);
     }
     tips.push(`别假装不知道这些，这是你真能感知到的外部世界。`);
     tips.forEach((t, i) => parts.push(`${i + 1}. ${t}`));

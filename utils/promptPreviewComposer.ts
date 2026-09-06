@@ -126,10 +126,14 @@ export const composePromptPreview = async (
     options: PromptPreviewOptions = {},
 ): Promise<PromptPreviewResult> => {
     const blocks: PromptPreviewBlock[] = [];
-    let userProfile = { name: '用户', bio: '' } as { name: string; bio: string };
+    let userProfile = { name: '用户', bio: '' } as { name: string; bio: string; location?: { city: string } };
     try {
         const profile = await DB.getUserProfile();
-        if (profile) userProfile = { name: profile.name || '用户', bio: profile.bio || '' };
+        if (profile) userProfile = {
+            name: profile.name || '用户',
+            bio: profile.bio || '',
+            ...(profile.location?.city ? { location: { city: profile.location.city } } : {}),
+        };
     } catch { /* 预览降级 */ }
 
     const charTz = resolveCharTimeZone(char);
@@ -328,7 +332,11 @@ export const composePromptPreview = async (
         if (config.weatherEnabled || config.newsEnabled) {
             const realtimeText = await RealtimeContextManager.buildFullContext(config, charTz, {
                 includeTime: char.timeAwarenessEnabled !== false,
-            }, resolveCharCity(char, config));
+            }, resolveCharCity(char, config), {
+                charProvince: char.location?.province || undefined,
+                userCity: userProfile.location?.city || undefined,
+                userPerceptionEnabled: config.userPerceptionEnabled,
+            });
             const city = resolveCharCity(char, config) || '（默认城市未配置）';
             blocks.push(mkBlock({
                 id: 'volatile.realtime',

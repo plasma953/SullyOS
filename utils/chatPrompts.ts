@@ -427,6 +427,9 @@ export const ChatPrompts = {
         // 角色活在自己的城市（与自定义时区同构）：天气按角色级 location.city 取，
         // 全局默认城市只兜没填地点的角色。与 realtimeContext.resolveCharCity 同口径。
         const charCity = (char.location?.city || config.weatherCity || '').trim();
+        const charProvince = (char.location?.province || '').trim() || undefined;
+        // 用户那边：用户档案里的所在城市（只到城市级）；开关默认开。
+        const userCity = (userProfile.location?.city || '').trim() || undefined;
         const charNow = nowInTimeZone(charTz);
         const today = getLocalDateKey(charNow);
 
@@ -491,7 +494,7 @@ ${lines.join('\n')}
                     // 「当前真实时间」，那是这个开关本来要挡住的东西。
                     const realtimeContext = await RealtimeContextManager.buildFullContext(config, charTz, {
                         includeTime: char.timeAwarenessEnabled !== false,
-                    }, charCity);
+                    }, charCity, { charProvince, userCity, userPerceptionEnabled: config.userPerceptionEnabled });
                     return `\n${realtimeContext}\n`;
                 }
                 // 基础当前时间 + 时差提示已由 ContextBuilder.buildCoreContext 统一注入（受 timeAwarenessEnabled
@@ -761,11 +764,14 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
         }
 
         // 蓝牙外设：真有已连接的 BLE 设备时才注入（易变状态）。零设备时整块为空，零 token 开销。
-        try {
-            const bleBlock = await buildBleDevicesLiveBlock();
-            if (bleBlock) volatileState += bleBlock;
-        } catch (e) {
-            console.warn('[ble] 蓝牙状态块注入失败（忽略）', e);
+        // 开关关闭时整块跳过（含 buildBleDevicesLiveBlock 调用），与工具注入同口径。
+        if (realtimeConfig?.bluetoothEnabled !== false) {
+            try {
+                const bleBlock = await buildBleDevicesLiveBlock();
+                if (bleBlock) volatileState += bleBlock;
+            } catch (e) {
+                console.warn('[ble] 蓝牙状态块注入失败（忽略）', e);
+            }
         }
 
         const emojiContextStr = ChatPrompts.buildEmojiContext(emojis, categories);

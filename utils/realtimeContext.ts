@@ -57,6 +57,11 @@ export interface RealtimeConfig {
     weatherApiKey: string;  // OpenWeatherMap API Key（可选；留空走免 key 的 Open-Meteo）
     weatherCity: string;    // 城市名 (如 "北京"、"Beijing"，Open-Meteo 支持中文)
 
+    // 真实地点配置（高德 Web 服务：地理编码 / 逆地理 / POI 检索 / 输入提示）
+    amapApiKey?: string;    // 高德 Web 服务 Key（个人认证免费；留空则地点只走 Open-Meteo 城市级）
+    /** 把「用户那边」（用户所在城市 + 天气）告诉角色。未显式 false 即开。 */
+    userPerceptionEnabled?: boolean;
+
     // 新闻配置
     newsEnabled: boolean;
     newsApiKey?: string;    // 可选，Brave Search 回落源用
@@ -132,6 +137,19 @@ export const resolveCharCity = (
     char: { location?: { province?: string; city: string; source: 'user' | 'char'; updatedAt: number } },
     config: RealtimeConfig,
 ): string => (char.location?.city || config.weatherCity || '').trim();
+
+/**
+ * 角色所在省市（结构化）：省从角色档案来（高德回填/MOVE_TO 验证），城市与
+ * resolveCharCity 同口径。实时世界块的「你所在的城市」行用它。
+ */
+export const resolveCharPlace = (
+    char: { location?: { province?: string; city?: string } },
+    config: RealtimeConfig,
+): { province?: string; city: string } => {
+    const province = (char.location?.province || '').trim() || undefined;
+    const city = (char.location?.city || config.weatherCity || '').trim();
+    return province ? { province, city } : { city };
+};
 
 
 export const RealtimeContextManager = {
@@ -440,6 +458,12 @@ export const RealtimeContextManager = {
         // 角色级城市（resolveCharCity 的结果）。天气按它取：每个角色各是各的天气，
         // 全局默认城市只兜没填地点的角色。
         charCity?: string,
+        // 扩展（可选，老调用方不用改）：角色所在省 + 用户那边。
+        extra?: {
+            charProvince?: string;
+            userCity?: string;
+            userPerceptionEnabled?: boolean;
+        },
     ): Promise<string> => {
         const includeTime = opts.includeTime;
 
@@ -451,16 +475,30 @@ export const RealtimeContextManager = {
         const specialDates = includeTime ? RealtimeContextManager.checkSpecialDates(tz) : [];
 
         // 2. 天气（有没有 OWM key 都能取：无 key 走 Open-Meteo）。城市按角色自己的家优先。
-        const weather = (config.weatherEnabled && charCity)
-            ? await RealtimeContextManager.fetchWeather(config, charCity)
-            : null;
+        //    用户那边同链路再取一次：同城时命中同一缓存零开销，异地各拉各的。
+        const showUserSide = extra?.userPerceptionEnabled !== false && !!extra?.userCity?.trim();
+        const [weather, userWeather] = await Promise.all([
+            (config.weatherEnabled && charCity)
+                ? RealtimeContextManager.fetchWeather(config, charCity)
+                : Promise.resolve(null),
+            (config.weatherEnabled && showUserSide && extra?.userCity?.trim() !== charCity)
+                ? RealtimeContextManager.fetchWeather(config, extra?.userCity?.trim())
+                : Promise.resolve(null),
+        ]);
 
         // 3. 新闻热点（背景认知）
         //    完整快照存 IndexedDB 给「热点」App；这里每轮随机抽几条打散注入，控 token + 保持新鲜感。
         const newsPool = config.newsEnabled ? await RealtimeContextManager.fetchNews(config) : [];
         const picks = pickRandomNews(newsPool, REALTIME_NEWS_PICK_COUNT);
 
-        const fullContext = renderRealtimeWorldBlock({ timeLine, specialDates, weather, news: picks });
+        const fullContext = renderRealtimeWorldBlock({
+            timeLine, specialDates, weather, news: picks,
+            charProvince: extra?.charProvince,
+            charCity,
+            userCity: showUserSide ? extra?.userCity?.trim() : undefined,
+            userWeather: showUserSide ? userWeather : null,
+            userPerceptionEnabled: extra?.userPerceptionEnabled,
+        });
 
         // ── F12 探针：本轮真正注入 prompt 的热点 + 文本量（评估 token 用）──
         try {

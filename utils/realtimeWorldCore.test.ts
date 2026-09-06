@@ -65,6 +65,37 @@ describe('renderRealtimeWorldBlock', () => {
         expect(out).toContain('- 某某官宣（微博）：一句简介');
         expect(out).toContain('[[NEWS_CARD: 来源|标题]]');
     });
+
+    it('有省才出「你所在的城市」行（天气行已有城市名，不重复）', () => {
+        const without = renderRealtimeWorldBlock({ weather });
+        expect(without).not.toContain('你现在在');
+
+        const withProvince = renderRealtimeWorldBlock({ weather, charProvince: '上海市', charCity: '上海市' });
+        expect(withProvince).toContain('📍 你现在在上海市上海市。');
+    });
+
+    it('用户那边：城市+天气齐了才出整段，开关可关', () => {
+        const userWeather: WeatherData = {
+            temp: 18, feelsLike: 16, humidity: 80,
+            description: '小雨', icon: '10d', city: '北京',
+        };
+        const out = renderRealtimeWorldBlock({ weather, userCity: '北京市', userWeather });
+        expect(out).toContain('🏠 【对方所在的城市 · 北京市】');
+        expect(out).toContain('对方那边现在: 小雨');
+        expect(out).toContain('别揣测具体位置');
+
+        // 天气没拉到 → 整段消失
+        const noWx = renderRealtimeWorldBlock({ weather, userCity: '北京市', userWeather: null });
+        expect(noWx).not.toContain('对方所在的城市');
+
+        // 开关关掉 → 整段消失
+        const off = renderRealtimeWorldBlock({ weather, userCity: '北京市', userWeather, userPerceptionEnabled: false });
+        expect(off).not.toContain('对方所在的城市');
+
+        // 没设用户城市 → 整段消失
+        const noCity = renderRealtimeWorldBlock({ weather, userWeather });
+        expect(noCity).not.toContain('对方所在的城市');
+    });
 });
 
 describe('getHotNewsSlot', () => {
