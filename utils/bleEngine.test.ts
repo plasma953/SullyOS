@@ -34,7 +34,7 @@ describe('encodePayload', () => {
 
 describe('decodeValue', () => {
   it('returns uppercase hex and utf8 text', () => {
-    expect(decodeValue(dvOf([0xaa, 0x41]))).toEqual({ hex: 'AA 41', text: '�A' });
+    expect(decodeValue(dvOf([0xaa, 0x41]))).toEqual({ hex: 'AA 41', text: '\uFFFDA' });
   });
   it('handles empty buffer', () => {
     expect(decodeValue(dvOf([]))).toEqual({ hex: '', text: '' });
