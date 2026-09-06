@@ -139,6 +139,7 @@ export const openPipShell = async (opts?: { width?: number; height?: number }): 
     cloneStylesTo(pipWin.document);
     if (document.title) pipWin.document.title = document.title;
     syncPipVars(pipWin);
+    snapshotPlayingMedia();
     moveRootTo(pipWin.document);
     setPortalHost(pipWin.document.body);
     installPipBridge(pipWin);
@@ -153,7 +154,95 @@ export const closePipShell = (): void => {
     if (isPipActive()) restorePipShell();
 };
 
-// ─── 事件桥与音频 resume（Task 2 实现） ───
-// open/restore 已预留钩子；本 Task 先给空实现保编译，Task 2 补全。
-export const installPipBridge = (_pipWin: Window): void => {};
-export const uninstallPipBridge = (): void => {};
+// ─── 事件桥与音频 resume ───
+// PiP 文档有自己的事件系统：主 window 上的全局监听（keydown 快捷键、
+// visibilitychange 前后台逻辑）在 PiP 聚焦时收不到事件。桥把 PiP 的事件
+// 转发回主 window；会话结束全部拆除。所有转发包 try/catch，桥失败不阻断开窗。
+let bridgeOff: Array<() => void> | null = null;
+let playingBeforeMove: HTMLMediaElement[] = [];
+let origVisibilityDesc: PropertyDescriptor | undefined;
+let visibilityOverridden = false;
+
+/** move 前记录正在播放的媒体（测试钩子，open 内部调用）。 */
+export const snapshotPlayingMedia = (): void => {
+    playingBeforeMove = [];
+    try {
+        document.querySelectorAll('audio,video').forEach((el) => {
+            const media = el as HTMLMediaElement;
+            if (!media.paused && !media.ended) playingBeforeMove.push(media);
+        });
+    } catch { playingBeforeMove = []; }
+};
+
+const resumePlayingMedia = (): void => {
+    const list = playingBeforeMove;
+    playingBeforeMove = [];
+    list.forEach((media) => {
+        try {
+            // 跨文档 move 可能暂停媒体；还在播的不碰（避免重播闪断）。
+            if (media.isConnected && media.paused) {
+                void media.play()?.catch?.(() => {});
+            }
+        } catch { /* 自动播放策略拦截则保持暂停，用户点一次即恢复 */ }
+    });
+};
+
+const VIS_EVENT = 'visibilitychange';
+
+export const installPipBridge = (pipWin: Window): void => {
+    uninstallPipBridge();
+    const off: Array<() => void> = [];
+    (['keydown', 'keyup'] as const).forEach((type) => {
+        const handler = (e: Event) => {
+            try {
+                const src = e as KeyboardEvent;
+                window.dispatchEvent(new KeyboardEvent(type, {
+                    key: src.key,
+                    code: src.code,
+                    location: src.location,
+                    ctrlKey: src.ctrlKey,
+                    shiftKey: src.shiftKey,
+                    altKey: src.altKey,
+                    metaKey: src.metaKey,
+                    repeat: src.repeat,
+                    bubbles: true,
+                    cancelable: true,
+                }));
+            } catch { /* 合成失败就丢掉，不阻断 */ }
+        };
+        pipWin.addEventListener(type, handler);
+        off.push(() => pipWin.removeEventListener(type, handler));
+    });
+    const visHandler = () => {
+        try { document.dispatchEvent(new Event(VIS_EVENT)); } catch { /* ignore */ }
+    };
+    try { pipWin.document.addEventListener(VIS_EVENT, visHandler); } catch { /* ignore */ }
+    off.push(() => { try { pipWin.document.removeEventListener(VIS_EVENT, visHandler); } catch { /* ignore */ } });
+    // visibilityState 是只读属性，读它的代码（回到前台补收、音频图恢复）需要 PiP 的值。
+    try {
+        origVisibilityDesc =
+            Object.getOwnPropertyDescriptor(document, 'visibilityState') ??
+            Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+        Object.defineProperty(document, 'visibilityState', {
+            configurable: true,
+            get: () => (pipWin.closed ? 'hidden' : pipWin.document.visibilityState),
+        });
+        visibilityOverridden = true;
+    } catch { visibilityOverridden = false; }
+    bridgeOff = off;
+    resumePlayingMedia();
+};
+
+export const uninstallPipBridge = (): void => {
+    if (bridgeOff) {
+        bridgeOff.forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+        bridgeOff = null;
+    }
+    if (!visibilityOverridden) return;
+    visibilityOverridden = false;
+    try {
+        if (origVisibilityDesc) Object.defineProperty(document, 'visibilityState', origVisibilityDesc);
+        else delete (document as unknown as Record<string, unknown>).visibilityState;
+    } catch { /* 恢复失败则保持，下次会话覆盖 */ }
+    origVisibilityDesc = undefined;
+};
