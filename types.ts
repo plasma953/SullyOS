@@ -3375,6 +3375,17 @@ export interface UserProfile {
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
      */
     vrState?: UserVRState;
+    /**
+     * 用户本人所在城市（档案 App「所在城市」卡填写，或 GPS 定位回填）。
+     * 隐私只到城市级：只存省/市，不存坐标——prompt 里的「用户那边」段只用它。
+     * 'gps' = GPS 定位回填；'user' = 手填。
+     */
+    location?: {
+        province?: string;
+        city: string;
+        source: 'gps' | 'user';
+        updatedAt: number;
+    };
 }
 
 export interface UserVRState {
@@ -3393,17 +3404,6 @@ export interface UserVRState {
         scale?: number;
         offsetY?: number;
         flip?: boolean;
-    };
-    /**
-     * 用户本人所在城市（档案 App「所在城市」卡填写，或 GPS 定位回填）。
-     * 隐私只到城市级：只存省/市，不存坐标——prompt 里的「用户那边」段只用它。
-     * 'gps' = GPS 定位回填；'user' = 手填。
-     */
-    location?: {
-        province?: string;
-        city: string;
-        source: 'gps' | 'user';
-        updatedAt: number;
     };
 }
 

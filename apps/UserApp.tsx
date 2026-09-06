@@ -5,6 +5,7 @@ import { processImage } from '../utils/file';
 import { migrateDataUrlToRef } from '../utils/blobRef';
 import LifeRecordPanel from '../components/lifeRecord/LifeRecordPanel';
 import PerCharAvatarPicker from '../components/user/PerCharAvatarPicker';
+import UserCityCard from '../components/user/UserCityCard';
 import TokenImg from '../components/os/TokenImg';
 import { trackEvent } from '../utils/analytics';
 
@@ -148,6 +149,8 @@ const UserApp: React.FC = () => {
                         placeholder="如：北京市朝阳区望京SOHO T1"
                     />
                 </div>
+                {/* 所在城市（实时感知「用户那边」用，只到城市级） */}
+                <UserCityCard />
                 </>}
             </div>
         </div>
