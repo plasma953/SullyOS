@@ -246,7 +246,7 @@ const fetchOffloadedXhsSession = async (
  * （见 OffloadedCleanup）。
  *
  * 取不回来只返回 null、**不抛错**：这条消息本身（角色说的那句话）已经完整送到了，
- * 为了一次情绪更新 / 一张心象卡片把它压回收件箱反复重试，用户看到的��回复迟迟不上屏。
+ * 为了一次情绪更新 / 一张心象卡片把它压回收件箱反复重试，用户看到的是回复迟迟不上屏。
  *
  * XHS 那份不走这里：卡片数据缺了角色的话就和内容对不上，得抛错重试，见
  * fetchOffloadedXhsSession。
@@ -336,7 +336,7 @@ export const cancelLateEmotionPoll = (charId: string): void => {
   }
 };
 
-/** 晚投情绪的补落轮询。intervalMs / maxTries 仅供测试收窄，生产���用不传。 */
+/** 晚投情绪的补落轮询。intervalMs / maxTries 仅供测试收窄，生产调用不传。 */
 export const startLateEmotionPoll = (
   charId: string,
   ref: string,
@@ -418,7 +418,7 @@ export const handleInstantErrorPushMessage = async (data: unknown): Promise<void
  * 还原。`reason` 说的是这一条为什么废了（amsg-sw 2.4.0-next.4 起带；见 shared 的
  * `MULTIPART_FAILURE_REASON`），值得分开说：
  *
- *   - 等超时是**最��见也最无害**的一种——分片在路上、设备刚好离线了，跟用户说
+ *   - 等超时是**最常见也最无害**的一种——分片在路上、设备刚好离线了，跟用户说
  *     「没等齐」就够，他重开一下多半就好；
  *   - 其余几种（分片对不上、超出本地限额、拼不回来、存储写不进去、本地把分片关了）
  *     说明发送端或链路真出了问题，重开没用，得让用户知道这不是网络抖一下。
@@ -497,7 +497,7 @@ export const findInboxArtifacts = <T extends { role: string; metadata?: any }>(
 export const PURGEABLE_ARTIFACT_TYPES: ReadonlySet<string> = new Set(['text', 'emoji', 'html_card']);
 
 /**
- * 把这条 push 上一趟写下的**渲染���气泡**从聊天记录里删掉。
+ * 把这条 push 上一趟写下的**渲染型气泡**从聊天记录里删掉。
  *
  * 返回两个数，别混为一谈：
  *   - removed：这次真删了几条（只数渲染型气泡）；
@@ -776,7 +776,7 @@ const processInboxMessageWithPostProcessing = async (
   // 熄灯，不另写第二套解析。
   //
   // 排在正文落库之后：这一条消息的本体是角色说的那句话，情绪只是附赠，
-  // 顺序反了的���正文出问题时情绪已经先落了。
+  // 顺序反了的话正文出问题时情绪已经先落了。
   //
   // amsgEmotionDone 是「这一轮的评估已经有结论了」，成败都带：只在有结果时才发信号的话，
   // 评估一失败徽章就得亮到十几分钟后才由安全网熄，而用户看到的是「情绪永远不更新」。
@@ -905,7 +905,7 @@ async function evaluateScheduledPushExpired(message: ActiveMsg2InboxMessage): Pr
     messageId: message.messageId,
     charId: message.charId,
     taskId: message.taskId,
-    // 判定本身已经不看任务类型了（一次性和循环同一条���则），但排查时得认得出这是哪种任务。
+    // 判定本身已经不看任务类型了（一次性和循环同一条规则），但排查时得认得出这是哪种任务。
     recurrenceType: message.recurrenceType ?? undefined,
     ...input,
   });
@@ -985,7 +985,7 @@ export const revokeSwallowedSelfLogEntry = async (
 export const AMSG2_TASKS_ADOPTED_EVENT = 'amsg2-tasks-adopted';
 
 /**
- * 把 worker 带回来的「角色自排���务」补进该角色的本地清单。
+ * 把 worker 带回来的「角色自排任务」补进该角色的本地清单。
  *
  * 幂等: 同 uuid 已经在清单里就不重复加(同一条 push 重放、或者 fire 重跑发了两次都可能撞上).
  * best-effort: 写不进去不影响这条消息本身——任务在远端好好的, 下次面板拉远端清单还能看见,
@@ -1314,7 +1314,7 @@ export const shouldRenderInstantly = (
  *
  * 标 sentAt 不会打乱聊天流的顺序：气泡位置只看自增 id（db.ts 按 charId 索引游标读、
  * Chat.tsx 的 displayMessages 不排序），timestamp 只决定气泡上显示的那个数字。
- * 唯一要防的是「位置在下、数字往回走���的倒挂，那个交给 resolveBackfillTimestamp
+ * 唯一要防的是「位置在下、数字往回走」的倒挂，那个交给 resolveBackfillTimestamp
  * 精确判定，实际落库口径以 resolveInboxPersistTimestampForMessage 为准。
  *
  * 为什么不用「用户设定的触发时刻」（occurrenceMs）：云端喂给模型的「现在是几点」用的是
@@ -1413,7 +1413,7 @@ const scheduleInboxRetry = (attempts: number) => {
   }, resolveInboxRetryDelay(attempts));
 };
 
-/** ���回收件箱等下次处理（带上失败次数），并排一次自动重试。 */
+/** 写回收件箱等下次处理（带上失败次数），并排一次自动重试。 */
 /**
  * 这一趟冲刷里被写回收件箱、还要再处理一次的消息。
  *
@@ -1496,7 +1496,7 @@ export const findMissingChunkIndexes = (messageIndex: number, seen: Set<number>)
 };
 
 /**
- * 前面的分段还没着落 → 写回收件箱、过几秒再看，返��� true 表示这条这次先不处理。
+ * 前面的分段还没着落 → 写回收件箱、过几秒再看，返回 true 表示这条这次先不处理。
  *
  * 三种情况一律放行（返回 false）：没有 session / 本来就是第一段、前面的段都齐了、
  * 扣到上限了。查近史或写回收件箱失败也放行——扣住的代价是消息迟迟不出现，比顺序错更重。
@@ -1684,7 +1684,7 @@ export type FlushTrigger =
   | '原生推送'       // 原生壳收到推送后触发
   | '本地巡查';       // 前台每几秒数一眼本地收件箱，自己发现躺着的消息
 
-const flushInboxToChatImpl = async (trigger: FlushTrigger = 启动): Promise<string[]> => {
+const flushInboxToChatImpl = async (trigger: FlushTrigger = '上线补收'): Promise<string[]> => {
   const pendingMessages = await ActiveMsgStore.consumeInboxMessages();
   // 这一趟真正落进聊天流的那几条（见 flushInboxToChat 的返回值说明）。
   const landedMessageIds: string[] = [];
@@ -2083,7 +2083,7 @@ const flushInboxToChatImpl = async (trigger: FlushTrigger = 启动): Promise<str
   }
   } finally {
     // 有着落的那些去云端账本上销账。这一步是纯收尾：销不掉只是下次会再拉回来一趟，
-    // 落库那层的去重会把它挡下，所以不 await、失败也只 warn，不连累��经落库的事实。
+    // 落库那层的去重会把它挡下，所以不 await、失败也只 warn，不连累已经落库的事实。
     const settled = pendingMessages
       .map((m) => m.messageId)
       .filter((id) => !!id && !retainedInboxMessageIds.has(id));
@@ -2128,7 +2128,7 @@ let flushChain: Promise<unknown> = Promise.resolve();
  * （导出仅为让 activeMsgRuntime.test.ts 走真库钉「主路径 / 降级路径落库时间戳同口径」，
  *   运行时入口仍是 ActiveMsgRuntime.init 挂的监听器。）
  */
-export const flushInboxToChat = (trigger: FlushTrigger = 启动): Promise<string[]> => {
+export const flushInboxToChat = (trigger: FlushTrigger = '上线补收'): Promise<string[]> => {
   const next = flushChain.then(async () => {
     try {
       return await flushInboxToChatImpl(trigger);
@@ -2287,7 +2287,7 @@ const notifyOutboxStaleDropped = (count: number): void => {
 /**
  * 拉一次云端账本、把补收到的冲刷进聊天流。
  *
- * 返回这一趟���到的全部条目；**读失败返回 null**。两者不能混：「没读成」不构成任何
+ * 返回这一趟读到的全部条目；**读失败返回 null**。两者不能混：「没读成」不构成任何
  * 结论，调用方要拿它下「回复取不回」的判决时只能认前者（docs/instant-push-dual-channel.md）。
  */
 const drainOutboxAndFlush = async (): Promise<AmsgOutboxEntry[] | null> => {
@@ -2457,7 +2457,7 @@ const scheduleNextInstantChatStatusCheck = () => {
 /**
  * 即时对话的「一直等」状态机。客户端不按时长宣判——worker 一次 fire 最长 10 分钟、
  * 失败重试间隔 2/4/6 分钟，任何固定的客户端超时都会抢在云端结论之前把还在路上的
- * 回��判死（甚至顺手 cancel 掉）。这里的做法是：还欠着回复时，前台每 60s 点名问一次
+ * 回复判死（甚至顺手 cancel 掉）。这里的做法是：还欠着回复时，前台每 60s 点名问一次
  * 那条任务行：
  *   pending → 继续等（云端还在跑或在排队重试；nextSendAt 过期是重试中的常态，不当信号）；
  *   completed（一次性任务 = 已失败）→ 补收兜底后落一条带 lastError 的失败说明；
@@ -2515,7 +2515,7 @@ export const runInstantChatStatusCheck = async (): Promise<void> => {
       //
       // 这条路跟 completed / gone 不一样：那两条是云端亲口给的结论（行已失败 / 行没了），
       // 没什么可取消的；而这里从头到尾没问出过话，那行完全可能正挂在 2/4/6 分钟的重试
-      // 梯子上。不取消就宣判的话，用户照着说明重发���遍，原来那行随后又跑成功——一轮
+      // 梯子上。不取消就宣判的话，用户照着说明重发一遍，原来那行随后又跑成功——一轮
       // 对话烧两次 LLM，聊天流里冒出两份几乎一样的回复。
       //
       // 取消失败**不改判**：会走到这里的典型场景（worker 被删、共享密钥被换）正是取消
@@ -2753,7 +2753,7 @@ export const ActiveMsgRuntime = {
         }
 
         if (type === 'active-msg-reasoning') {
-          // 先确保已到的 content 落库 (flush 链串行), 再尝试把思维链回填到首���回复上.
+          // 先确保已到的 content 落库 (flush 链串行), 再尝试把思维链回填到首条回复上.
           void flushInboxToChat().then(() =>
             backfillReasoningSafely(event.data?.sessionId, event.data?.charId),
           );

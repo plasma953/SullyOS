@@ -403,7 +403,7 @@ export function renderLocalContextGuidance(analysis: LocalContextAnalysis | unde
         '对方这轮更像是在承接刚才或既有事件，并省略了部分对象。先把它当作当前话题的后续，结合紧邻对话和本轮已经召回的记忆理解；不要因为句子短就把它当成无关的新话题。',
     ];
     if (analysis.signals.resultUpdate >= 0.4) {
-        lines.push('这也像一次结果落地或进展更新。先接住结果和对方此刻的情绪，再决定是否追问细节；不要���输出分析报告。');
+        lines.push('这也像一次结果落地或进展更新。先接住结果和对方此刻的情绪，再决定是否追问细节；不要先输出分析报告。');
     }
     if (analysis.signals.ambiguity >= 0.5) {
         lines.push('若现有线索共同指向同一件事，可以自然接住，不必解释检索过程；若线索互相冲突，保留不确定或自然确认，不要擅自补成唯一答案。');

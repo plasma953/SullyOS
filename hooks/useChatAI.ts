@@ -174,7 +174,7 @@ export async function evaluateEmotionBackground(
 ): Promise<string | null> {
     // 全局横幅「xx 正在感受…」（ChatBroadcast）。这里是所有本地评估路径的汇聚点
     // （主链路 fire & forget / post-push 补跑 / OSContext 主动消息），在函数级
-    // start/finally 派发一次即可全覆盖��instant 模式的 worker 评估另行点灯。
+    // start/finally 派发一次即可全覆盖；instant 模式的 worker 评估另行点灯。
     announceChatGen(CHAT_GEN_EVENTS.emotionStart, { charId: charData.id, charName: charData.name });
     try {
         const ambientSection = shouldRequestAmbient(charData.id) ? buildAmbientEvalSection(charData) : '';
@@ -320,7 +320,7 @@ export const useChatAI = ({
 
     // triggerAI 的 finally 在 AI 流式回复完后才跑记忆宫殿后台任务。
     // 闭包里捕获的 char 是 hook 调用时那一份，如果用户在流式中途把宫殿关了，
-    // 这里读 char.memoryPalaceEnabled 仍然是 true，导致关掉后���会再触发一次
+    // 这里读 char.memoryPalaceEnabled 仍然是 true，导致关掉后还会再触发一次
     // LLM 提取（+ 50 轮认知消化）。用 ref 在 finally 里读最新状态。
     const charRef = useRef(char);
     charRef.current = char;
@@ -590,7 +590,7 @@ export const useChatAI = ({
             );
             const result = await executeAmsg2Tool(fname, args, amsg2Session);
             // 新增了哪几条不看工具回话（那是给模型读的散文），直接比对清单前后差异——
-            // schedule 与 renew 都��这里，补发/替换出来的新任务一并算进去。
+            // schedule 与 renew 都走这里，补发/替换出来的新任务一并算进去。
             for (const task of amsg2Session.getConfig()?.tasks ?? []) {
                 if (!taskUuidsBefore.has(task.taskUuid)) amsg2CreatedThisTurn.add(task.taskUuid);
             }
@@ -745,7 +745,7 @@ export const useChatAI = ({
                 console.warn('[AmsgInstantChat] 全局配置读不出来（开没开都不知道），但这一轮本就不走即时对话，照原路继续');
             }
 
-            // 这���轮到底走了哪条路，播给输入框上方那条小提示。**每轮都发**，包括走成了云端
+            // 这一轮到底走了哪条路，播给输入框上方那条小提示。**每轮都发**，包括走成了云端
             // 那一轮（reason=null，提示自己收起来）——只在出问题时发的话，用户会一直盯着一条
             // 早就过期的提示，猜不出来「现在到底恢复了没有」。
             announceInstantChatRoute({
@@ -858,7 +858,7 @@ export const useChatAI = ({
             // 即时对话放任务 metadata.amsgEmotionEval（那份走加密信封）。
             const cloudEmotionEval = (emotionEvalEnabled && cloudGenRoute && emotionApi)
                 ? {
-                    // includeContext=false: 不嵌 system prompt + 对���历史 (worker 复用本次请求的 messages 作前文),
+                    // includeContext=false: 不嵌 system prompt + 对话历史 (worker 复用本次请求的 messages 作前文),
                     // 把 emotionEval 块压到最小, 让请求体留在 keepalive 64KB 上限内 (关前端也能跑完).
                     prompt: await buildEmotionEvalPrompt(
                         charForGen, userProfile, systemPrompt, cleanedApiMessages, false,
@@ -1241,7 +1241,7 @@ export const useChatAI = ({
 
             // 流式预览：仅在用户开了 stream、且非工具/双语模式时启用。
             // 工具模式的首轮响应可能是 tool_calls（无正文可预览）；双语模式正文包在
-            // 跨�� <翻译> 标签里。这两类连正文/思考钩子都不挂，完整走原有整包路径。
+            // 跨行 <翻译> 标签里。这两类连正文/思考钩子都不挂，完整走原有整包路径。
             // 语音、日记、HTML 等由内容标签动态识别，computeStreamPreviewBubbles 会扣住控制块，
             // 只允许标签外确实属于普通文字的部分预览。
             // 每次 onDelta 基于累计全文全量重算（safeFetchJson 重试会重开流，天然重置）；
@@ -1421,7 +1421,7 @@ export const useChatAI = ({
                                 loopMessages.push({
                                     role: 'tool',
                                     tool_call_id: tc.id,
-                                    content: `菜单还没加��� (用户当前在选模式 / 选地址门店阶段, 还没进入菜单页)。请先用文字陪用户聊, 等用户在小程序里选完地址/门店、菜单加载出来后再调 propose_cart_items。所有 code 必须从加载后的"当前门店在售"清单里挑, 不能凭印象编。`,
+                                    content: `菜单还没加载 (用户当前在选模式 / 选地址门店阶段, 还没进入菜单页)。请先用文字陪用户聊, 等用户在小程序里选完地址/门店、菜单加载出来后再调 propose_cart_items。所有 code 必须从加载后的"当前门店在售"清单里挑, 不能凭印象编。`,
                                 } as any);
                                 continue;
                             }
@@ -1653,7 +1653,7 @@ export const useChatAI = ({
                             }
                             lastMcpCallSignature = callSignature;
                             setSearchStatus(`正在调用 MCP 工具：${fname}...`);
-                            // 懒加载 stub 约定参数形如 {args:{...}}；兼容直接���完整��数两种写法
+                            // 懒加载 stub 约定参数形如 {args:{...}}；兼容直接给完整参数两种写法
                             let execArgs: any = args;
                             if (execArgs && typeof execArgs === 'object' && !Array.isArray(execArgs)
                                 && Object.keys(execArgs).length === 1 && 'args' in execArgs
@@ -1932,7 +1932,7 @@ export const useChatAI = ({
                 id: data.id,
             }, null, 2));
 
-            // ��── 后处理管线 (13 步) ───
+            // ─── 后处理管线 (13 步) ───
             // 详见 utils/applyAssistantPostProcessing.ts。Phase 0 行为字节级不变;
             // Phase 1 会让 instant push 路径也调它 (skipSecondPassLLM=true);
             // Phase 2 会让 worker 端把识别的副作用打包成 directives 传过来重放。
@@ -2060,7 +2060,7 @@ export const useChatAI = ({
             // POST 的路径都不会调 onInstantPosted, 头部「发送中…」徽章会卡死到刷新
             // —— 2026-07 安卓用户实测: 订阅失败弹了错, 但三个小点到角色回复了都不消失。
             onInstantPosted?.();
-            setStreamingBubbles([]);  // 错误/��断路径兜底清预览
+            setStreamingBubbles([]);  // 错误/中断路径兜底清预览
             setStreamingThinking('');
             setRecallStatus('');
             setSearchStatus('');

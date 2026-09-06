@@ -691,7 +691,7 @@ async function executeActions(
                         distillCount++;
                         submitToPlate(room as PlateRoom, action.reflection);
                         result.distilled.push({ id: episode.id, content: action.reflection, category: room });
-                        console.log(`�� [Digest] Distill → 门牌候选(${room}): "${action.reflection.slice(0, 30)}..."`);
+                        console.log(`🚪 [Digest] Distill → 门牌候选(${room}): "${action.reflection.slice(0, 30)}..."`);
                     }
                     break;
                 }
@@ -859,7 +859,7 @@ export async function runCognitiveDigestion(
         // 没有任何新节点，整理只会让 LLM 对着旧材料重排——纯烧钱。
         emptyResult.plateUpdated = [];
         await saveDigestReport(charId, trigger, userName, null, emptyResult, {}, []);
-        // 计数器已在进场时归零（见函数开头）���这里只推进 lastDigestTs
+        // 计数器已在进场时归零（见函数开头），这里只推进 lastDigestTs
         markDigested(charId);
         return emptyResult;
     }
@@ -1004,7 +1004,7 @@ export async function detectPersonalityStyle(
         const usage = data.usage;
         console.log(`🎭 [PersonalityDetect] ${charName} LLM 原始返回 (finish=${finishReason}, usage=${JSON.stringify(usage || {})}):\n${reply}`);
 
-        // 带引��意�����大括号栈扫描：从 reply 里提取所有顶层 {...} 候选
+        // 带引号意识的大括号栈扫描：从 reply 里提取所有顶层 {...} 候选
         // 老版本用 /\{[\s\S]*?\}/ 非贪婪匹配，遇到思考型模型 reasoning 里的
         // "{迷茫,焦虑}" 之类 stray braces 会匹配错对象，JSON.parse 恰好成功
         // 但 parsed.style / ruminationTendency 都是 undefined，然后被下面的

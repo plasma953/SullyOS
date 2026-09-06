@@ -628,7 +628,7 @@ const PhoneShell: React.FC = () => {
   }, [showDisclaimer, showImportRecoveryPrompt, showAuthorLetter, showUpdateNotification, isDataLoaded, isLocked]);
 
   // 七夕特别活动推送：严格按北京时间 2026-08-19 判断，用户处理后永久不再弹。
-  // 排在版本更新之后、日常维护提醒之前；按钮只带到「特别时光」，不���用户选择角色。
+  // 排在版本更新之后、日常维护提醒之前；按钮只带到「特别时光」，不替用户选择角色。
   const [showQixiLaunchPopup, setShowQixiLaunchPopup] = useState(false);
   const qixiLaunchAsked = useRef(false);
   useEffect(() => {
@@ -957,7 +957,7 @@ const PhoneShell: React.FC = () => {
     }
   };
 
-  // 安全区策略（方案 B）：自理名单里的 App 已全屏铺底、自己给控件让位，外壳不再加 padding��
+  // 安全区策略（方案 B）：自理名单里的 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
   // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
   // 自理名单见 utils/safeAreaApps.ts（迁移一个 App = 把它加进名单 + 顶栏用 --chrome-top 自己让位）。
   // TODO(safe-area-A): 把剩余「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
@@ -1012,7 +1012,7 @@ const PhoneShell: React.FC = () => {
           </div>
 
           {/* Overlays: Status Bar (Top) —— 常驻渲染：时钟/电量条由开关+平台默认决定显隐（StatusBar 内部 isStatusBarHidden），
-              错误指示器、系统调试终端与开关无关���始终在。 */}
+              错误指示器、系统调试终端与开关无关、始终在。 */}
           <StatusBar />
           
           {/* Overlays: Suspended Call Bar */}

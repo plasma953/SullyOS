@@ -131,7 +131,7 @@ const getChatModeTransition = (message: Message): ChatModeTransition | null => {
 /**
  * 判断当前是不是「从特殊互动模式回到 ChatApp 后，尚未产生普通聊天回复」的第一轮。
  *
- * 用户可能连续发送多个气泡再点生成，所以普通 user 消���不会截断搜索；一旦已经出现
+ * 用户可能连续发送多个气泡再点生成，所以普通 user 消息不会截断搜索；一旦已经出现
  * 普通 assistant 回复，就说明格式切换已经完成，不应在后续每一轮重复提醒。
  * 普通 system 日志也不参与判断，避免挂断卡片与其他后台提示把真正的来源隔开。
  */
@@ -521,7 +521,7 @@ ${lines.join('\n')}
             ? RealtimeContextManager.fetchWeather(config, charCity).catch(() => null)
             : Promise.resolve(null);
 
-        // 3. 群聊上下文：并发拉取所有成员群���消息
+        // 3. 群聊上下文：并发拉取所有成员群的消息
         // 关键：每个群单独取最后 N 条，避免某个活跃群把其他群完全挤掉
         // （之前是把所有群消息混合后切前 200 条，活跃群会吃光配额，安静群完全不出现）
         const groupContextPromise: Promise<string> = (async () => {
@@ -652,7 +652,7 @@ ${groupLogStr}\n`;
         volatileState += realtimeText;
 
         // 2a. 日程注入（完整今日日程 + 当前时段 + 意识流独白，每轮都可能变）
-        //     fire_pack 不烤：改由 worker 到点用 AMSG_SLOT_SCENE 现挑���段（见 amsgFireScene）。
+        //     fire_pack 不烤：改由 worker 到点用 AMSG_SLOT_SCENE 现挑时段（见 amsgFireScene）。
         //     includeClock 跟着角色的「时间感知」开关走：关掉的角色不该从日程块里读到
         //     「23:00」这种精确钟点，那是这个开关本来要挡住的东西（同上面天气块的 includeTime）。
         //     日程本身照给——它有自己的总开关。
@@ -732,7 +732,7 @@ ${groupLogStr}\n`;
         baseSystemPrompt += lifeRecordText;
 
         // 彼方常驻设定：仅对启用了「彼方」的角色注入。让角色在聊天里始终知道彼方是什么，
-        // 不再依赖累积的 vr_card 动态 / 记忆总��（那些会被压缩、丢掉"彼方=VR游戏"的框定，
+        // 不再依赖累积的 vr_card 动态 / 记忆总结（那些会被压缩、丢掉"彼方=VR游戏"的框定，
         // 导致角色把"彼方·留言簿"之类当成现实地名）。措辞与 vrWorld/prompts.ts 的世界观一致。
         if (char.vrState?.enabled) {
             baseSystemPrompt += `\n### 关于《彼方》
@@ -836,7 +836,7 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
    - 如果用户发送了图片，请对图片内容进行评论。
 6. **可用动作**:
    - 回戳用户: \`[[ACTION:POKE]]\`
-   - 转账: 必须使用且只使用 \`[[ACTION:TRANSFER|to=user|amount=100]]\`（to 固定写 user，金额���写数字）；不要写成 \`[系统: 你向某人转账 100]\` 等系统日志文本。
+   - 转账: 必须使用且只使用 \`[[ACTION:TRANSFER|to=user|amount=100]]\`（to 固定写 user，金额只写数字）；不要写成 \`[系统: 你向某人转账 100]\` 等系统日志文本。
    - **处理用户转账**: 当历史里出现 \`[[记录:TRANSFER|to=char|...|status=待处理]]\`（用户转给你、还没处理）时，你可以决定收下或退回。收下: \`[[ACTION:TRANSFER_ACCEPT]]\`；退回: \`[[ACTION:TRANSFER_RETURN]]\`。请结合人设和情境自然选择（比如害羞地退回、开心地收下），并配上一句话。
    - **【重要】\`[[记录:...]]\` 是系统日志**: 历史里以 \`[[记录:\` 开头的标签是已经发生的事实（谁转给谁、什么状态），只供你了解，**严禁**在回复里照抄输出。你要做动作时只能用 \`[[ACTION:...]]\`。
    - 调取记忆: \`[[RECALL: YYYY-MM]]\`，请注意，当用户提及具体某个月份时，或者当你想仔细想某个月份的事情时，欢迎你随时使该动作
@@ -881,7 +881,7 @@ ${notionEnabled ? `8. **📔 日记系统（你的私人 Notion 日记本）**:
 
    [!heart] 这是一个粉色的重点标记
    [!想法] 突然冒出的灵感
-   [!秘密] 不想让别人知道���事
+   [!秘密] 不想让别人知道的事
 
    **加粗的重要内容** 和 *斜体的心情*
 
@@ -1288,7 +1288,7 @@ ${(await resolveVoiceActingGuide()) ?? ''}`;
                     // 双语消息存储为 `原文\n%%BILINGUAL%%\n译文` —— 引用摘要只取原文侧。
                     // 关键：绝不能让 %%BILINGUAL%% 标记混进引用头。下游 cleanApiMessages 会把整条
                     // 消息在该标记处截断，用户引用双语消息时「并回复了 ↓」和用户的实际回复会被
-                    // 一起截掉（= 翻���模式下"角色只看到引用、看不到回复"）。
+                    // 一起截掉（= 翻译模式下"角色只看到引用、看不到回复"）。
                     if (/%%BILINGUAL%%/i.test(rawQuote)) {
                         const sides = rawQuote.split(/%%BILINGUAL%%/i).map(s => s.trim());
                         rawQuote = sides.find(s => !!s) || '';
@@ -1406,7 +1406,7 @@ ${(await resolveVoiceActingGuide()) ?? ''}`;
                     if (authoredByChar) authorshipLine = '\n(注意：这条 Spark 笔记的楼主是你自己的马甲，用户在向你转发你自己发的帖子。)';
                     else if (authoredByUser) authorshipLine = '\n(注意：这条 Spark 笔记是用户本人发的。)';
 
-                    content = `${timeStr} [用户分享了 Spark ��记]\n楼主: ${postAuthorTag}\n标题: ${post.title}\n内容: ${post.content}\n热评: ${commentsSample}${identityHint}${authorshipLine}\n(请根据你的性格对这个帖子发表看法，比如吐槽、感兴趣或者不屑)`;
+                    content = `${timeStr} [用户分享了 Spark 笔记]\n楼主: ${postAuthorTag}\n标题: ${post.title}\n内容: ${post.content}\n热评: ${commentsSample}${identityHint}${authorshipLine}\n(请根据你的性格对这个帖子发表看法，比如吐槽、感兴趣或者不屑)`;
                 }
                 else if ((m.type as string) === 'xhs_card') {
                     const note = m.metadata?.xhsNote || {};
