@@ -4,6 +4,7 @@ import {
     __seedLibraryForTest,
     clearCachedLibraries,
     deleteCachedLibrary,
+    enrichMoveToPlace,
     getCityLibrary,
     listCachedLibraries,
     resolveStructuredPlace,
@@ -21,6 +22,15 @@ const mockFetch = (opts?: { failAll?: boolean; emptyGeocode?: boolean }) => {
         calls.push(url);
         if (opts?.failAll) throw new Error('network down');
         const u = new URL(url);
+        if (u.hostname.includes('open-meteo')) {
+            // Open-Meteo 侧默认有命中（扮演海外城市）；failAll 时上面已抛
+            return json({
+                results: [{
+                    name: '东京', latitude: 35.6895, longitude: 139.69171,
+                    admin1: '东京都', country: '日本', country_code: 'JP',
+                }],
+            });
+        }
         if (u.pathname.includes('/v3/geocode/geo')) {
             if (opts?.emptyGeocode) return json({ status: '1', info: 'OK', count: '0', geocodes: [] });
             return json({
@@ -142,6 +152,37 @@ describe('resolveStructuredPlace', () => {
 
         mockFetch({ emptyGeocode: true });
         expect(await resolveStructuredPlace('不存在的城市', AUTH)).toBeNull();
+    });
+});
+
+describe('enrichMoveToPlace', () => {
+    it('有 key 时走高德，落 adcode 与坐标', async () => {
+        mockFetch();
+        const p = await enrichMoveToPlace('上海', AUTH);
+        expect(p?.city).toBe('上海市');
+        expect(p?.adcode).toBe('310000');
+        expect(p?.lat).toBeCloseTo(31.231706, 4);
+    });
+
+    it('高德查无结果时回落 Open-Meteo（海外城市）', async () => {
+        mockFetch({ emptyGeocode: true });
+        const p = await enrichMoveToPlace('东京', AUTH);
+        expect(p?.city).toBe('东京');
+        expect(p?.province).toBe('东京都');
+        expect(p?.lat).toBeDefined();
+    });
+
+    it('无 key 直接走 Open-Meteo', async () => {
+        const calls = mockFetch();
+        const p = await enrichMoveToPlace('东京', { proxyUrl: 'https://proxy.example', key: '' });
+        expect(p?.city).toBe('东京');
+        expect(calls.some((u) => u.includes('/v3/'))).toBe(false);
+    });
+
+    it('两边都失败返回 null（调用方保留原文）', async () => {
+        mockFetch({ failAll: true });
+        // failAll 下 Open-Meteo 也挂 → null
+        expect(await enrichMoveToPlace('上海', AUTH)).toBeNull();
     });
 });
 

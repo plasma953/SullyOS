@@ -5,6 +5,7 @@ import { sanitizeForBubble } from './sanitize';
 import { extractTransferCommands } from './transferFormat';
 import { executeLifeDirectives } from './lifeRecords';
 import { wallClockToTimestamp } from './timezone';
+import { enrichMoveToPlace, readAmapAuth } from './cityPlaces';
 import { CollaborationStore } from '../features/collaboration/store';
 import {
     collaborationFileMessageMetadata,
@@ -473,6 +474,8 @@ export const ChatParser = {
         // MOVE_TO — 角色搬去 / 到了另一个城市：更新自己档案里的 location（与用户手填同一字段）。
         // 纯本地：改内存态（经广播）+ 落库，不弹确认——沿用 AI 自主更新人设的仓库惯例。
         // 城市为空 / 新旧相同都静默跳过：这不是必须执行的动作，宁可不做也别做错。
+        // 写库前先地理编码验证（高德→Open-Meteo，4 秒封顶）：LLM 可能编出不存在的城市，
+        // 验出来就落标准省市 + adcode/坐标，验不出保留原文——验证永远不阻塞聊天。
         const moveMatch = content.match(/\[\[ACTION:MOVE_TO\s*\|\s*([^\]|]+?)(?:\s*\|\s*([^\]]+?))?\s*\]\]/);
         if (moveMatch) {
             const city = moveMatch[1].trim();
@@ -482,22 +485,30 @@ export const ChatParser = {
                     const chars = await DB.getAllCharacters();
                     const self = chars.find(c => c.id === charId);
                     if (self && (self.location?.city || '') !== city) {
+                        const enriched = await enrichMoveToPlace(city, readAmapAuth()).catch(() => null);
+                        const finalProvince = enriched?.province ?? province;
+                        const finalCity = enriched?.city || city;
                         const next: CharacterProfile = {
                             ...self,
+                            // 注意：城市变了，旧坐标/adcode 一律丢掉（它们属于上一座城市），
+                            // 不从旧 location spread——否则新城市会顶着旧坐标过日子。
                             location: {
-                                ...(self.location || {}),
-                                province: province ?? self.location?.province,
-                                city,
+                                ...(finalProvince ? { province: finalProvince } : {}),
+                                city: finalCity,
+                                ...(enriched?.district ? { district: enriched.district } : {}),
+                                ...(enriched?.lat != null && enriched?.lng != null
+                                    ? { lat: enriched.lat, lng: enriched.lng } : {}),
+                                ...(enriched?.adcode ? { adcode: enriched.adcode } : {}),
                                 source: 'char',
                                 updatedAt: Date.now(),
                             },
                         };
                         await DB.saveCharacter(next);
-                        addToast(`${charName} 现在住在${province ? `${province} ` : ''}${city}`, 'info');
-                        await persist({ charId, role: 'system', type: 'text', content: `[系统: ${charName} 搬到了${city}，之后的生活与天气都按新城市算]` });
+                        addToast(`${charName} 现在住在${finalProvince ? `${finalProvince} ` : ''}${finalCity}`, 'info');
+                        await persist({ charId, role: 'system', type: 'text', content: `[系统: ${charName} 搬到了${finalCity}，之后的生活与天气都按新城市算]` });
                         try {
                             // OSContext 监听并把内存态合并上（字段级 merge，避免整对象反向覆盖）。
-                            window.dispatchEvent(new CustomEvent('char-location-updated', { detail: { charId, city, province } }));
+                            window.dispatchEvent(new CustomEvent('char-location-updated', { detail: { charId, city: finalCity, province: finalProvince } }));
                         } catch { /* 非浏览器环境忽略 */ }
                     }
                 } catch (e) {

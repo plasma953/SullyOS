@@ -25,7 +25,9 @@ import { normalizeElevenLabsVoiceId, synthesizeSpeechElevenLabsDetailed } from '
 import { normalizeUserImpression } from '../utils/impression';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { COMMON_TIMEZONES } from '../utils/timezone';
-import { fetchOpenMeteoWeather } from '../utils/realtimeWorldCore';
+import { fetchOpenMeteoWeather, geocodeCityOpenMeteo } from '../utils/realtimeWorldCore';
+import { fetchInputTips, geocodeCity, regeoCity, wgs84ToGcj02 } from '../utils/amapCore';
+import { getProxyWorkerUrl } from '../utils/proxyWorker';
 import { toMountedWorldbook } from '../utils/worldbook';
 import { stripSensitiveCardFields } from '../utils/characterCard';
 import { shareOrDownloadFile } from '../utils/shareExport';
@@ -92,7 +94,7 @@ const CharacterCard: React.FC<{
 );
 
 const Character: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, characterGroups, createCharacterGroup, renameCharacterGroup, deleteCharacterGroup, apiConfig, addToast, userProfile, worldbooks, addWorldbook } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, characterGroups, createCharacterGroup, renameCharacterGroup, deleteCharacterGroup, apiConfig, addToast, userProfile, worldbooks, addWorldbook, realtimeConfig } = useOS();
   const launchIntent = characterLaunch.peek();
   const [view, setView] = useState<'list' | 'detail'>(() => launchIntent ? 'detail' : 'list');
   const [charPage, setCharPage] = useState(0); // 角色列表分页（每页 6 个，仅未建分组时）
@@ -118,7 +120,11 @@ const Character: React.FC = () => {
 
   // ── 地理位置（省市）：Open-Meteo geocoding 联想 + 该城市当前天气小预览 ──
   const [locDraft, setLocDraft] = useState('');
-  const [locSuggestions, setLocSuggestions] = useState<Array<{ name: string; admin1?: string; country?: string }>>([]);
+  const [locSuggestions, setLocSuggestions] = useState<Array<{
+      name: string; admin1?: string; country?: string;
+      district?: string; adcode?: string; lat?: number; lng?: number;
+      source: 'amap' | 'openmeteo';
+  }>>([]);
   const [locSearching, setLocSearching] = useState(false);
   const [locWeather, setLocWeather] = useState<{ description: string; temp: number; feelsLike: number } | null>(null);
   const [locEditing, setLocEditing] = useState(false);
@@ -475,7 +481,8 @@ const Character: React.FC = () => {
       setEditingRelId(null);
   };
 
-  // ── 地理位置（省市）：Open-Meteo geocoding 城市联想（免 key，支持中文）──
+  // ── 地理位置（省市）：有高德 Key 走 inputtips 联想（中文行政数据准，顺手拿 adcode/坐标），
+  //    无 Key 回落 Open-Meteo geocoding（免 key，全球覆盖）──
   const LOC_SEARCH_DEBOUNCE_MS = 350;
   useEffect(() => {
       const q = locDraft.trim();
@@ -486,41 +493,122 @@ const Character: React.FC = () => {
       const timer = setTimeout(async () => {
           setLocSearching(true);
           try {
-              const ctrl = new AbortController();
-              const kill = setTimeout(() => ctrl.abort(), 5000);
-              const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=zh&format=json`;
-              const res = await fetch(url, { signal: ctrl.signal });
-              clearTimeout(kill);
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              const json = await res.json();
-              const results = Array.isArray(json?.results) ? json.results : [];
-              if (!cancelled) {
-                  setLocSuggestions(results.map((r: any) => ({
-                      name: String(r.name || ''),
-                      admin1: r.admin1 ? String(r.admin1) : undefined,
-                      country: r.country ? String(r.country) : undefined,
-                  })).filter((s: any) => s.name));
+              const key = realtimeConfig.amapApiKey?.trim();
+              if (key) {
+                  const tips = await fetchInputTips(q, { proxyUrl: getProxyWorkerUrl(), key });
+                  if (!cancelled) {
+                      setLocSuggestions(tips.slice(0, 6).map((t) => ({
+                          name: t.name,
+                          district: t.district,
+                          adcode: t.adcode,
+                          lat: t.lat,
+                          lng: t.lng,
+                          source: 'amap' as const,
+                      })));
+                  }
+              } else {
+                  const ctrl = new AbortController();
+                  const kill = setTimeout(() => ctrl.abort(), 5000);
+                  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=zh&format=json`;
+                  const res = await fetch(url, { signal: ctrl.signal });
+                  clearTimeout(kill);
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const json = await res.json();
+                  const results = Array.isArray(json?.results) ? json.results : [];
+                  if (!cancelled) {
+                      setLocSuggestions(results.map((r: any) => ({
+                          name: String(r.name || ''),
+                          admin1: r.admin1 ? String(r.admin1) : undefined,
+                          country: r.country ? String(r.country) : undefined,
+                          lat: typeof r.latitude === 'number' ? r.latitude : undefined,
+                          lng: typeof r.longitude === 'number' ? r.longitude : undefined,
+                          source: 'openmeteo' as const,
+                      })).filter((s: any) => s.name));
+                  }
               }
           } catch { /* 联想失败静默：输入框照常手填 */ }
           finally { if (!cancelled) setLocSearching(false); }
       }, LOC_SEARCH_DEBOUNCE_MS);
       return () => { cancelled = true; clearTimeout(timer); };
-  }, [locDraft, formData?.id]);
+  }, [locDraft, formData?.id, realtimeConfig.amapApiKey]);
 
-  // 选中联想项（或手填后失焦）：写进 formData（走 handleChange → 自动保存链），并预览该城市天气。
-  const applyLocation = (city: string, province?: string) => {
-      const c = city.trim();
-      if (!formData || !c) return;
+  // 写进 formData（走 handleChange → 自动保存链）。location.lat/lng 恒为 GCJ-02
+  //（Open-Meteo 来的 WGS-84 在写入前已转换，datum 混用会让距离展示偏几百米）。
+  const writeLocation = (data: { province?: string; city: string; district?: string; lat?: number; lng?: number; adcode?: string }) => {
+      if (!formData) return;
       handleChange('location', {
           ...(formData.location || {}),
-          province: (province || undefined),
-          city: c,
+          province: data.province || undefined,
+          city: data.city,
+          ...(data.district ? { district: data.district } : {}),
+          ...(data.lat != null && data.lng != null ? { lat: data.lat, lng: data.lng } : {}),
+          ...(data.adcode ? { adcode: data.adcode } : {}),
           source: 'user' as const,
           updatedAt: Date.now(),
       });
       setLocSuggestions([]);
       setLocEditing(false);
       setLocDraft('');
+  };
+
+  // 选中联想项：高德项可能是具体 POI，用坐标反查出所在城市（档案只记城市）；
+  // Open-Meteo 项自带坐标与 admin1，直接落。
+  const applySuggestion = async (s: { name: string; admin1?: string; district?: string; adcode?: string; lat?: number; lng?: number; source: 'amap' | 'openmeteo' }) => {
+      if (!formData) return;
+      const key = realtimeConfig.amapApiKey?.trim();
+      if (s.source === 'amap' && key) {
+          const auth = { proxyUrl: getProxyWorkerUrl(), key };
+          if (s.lat != null && s.lng != null) {
+              try {
+                  const p = await regeoCity(s.lat, s.lng, auth, 5000);
+                  if (p) {
+                      writeLocation({ province: p.province, city: p.city, district: p.district, lat: p.lat, lng: p.lng, adcode: p.adcode });
+                      return;
+                  }
+              } catch { /* 往下走名字直解 */ }
+          }
+          try {
+              const g = await geocodeCity(s.name, auth, 5000);
+              if (g) {
+                  writeLocation({ province: g.province, city: g.city, district: g.district, lat: g.lat, lng: g.lng, adcode: g.adcode });
+                  return;
+              }
+          } catch { /* 往下走原文 */ }
+          writeLocation({ city: s.name });
+          return;
+      }
+      const gcj = s.lat != null && s.lng != null ? wgs84ToGcj02(s.lat, s.lng) : undefined;
+      writeLocation({
+          city: s.name,
+          province: s.admin1,
+          ...(gcj ? { lat: gcj.lat, lng: gcj.lng } : {}),
+      });
+  };
+
+  // 手填后回车：有 Key 走高德地理编码验成标准省市，无 Key 走 Open-Meteo（海外也认），都失败原样存。
+  const applyManualLocation = async (name: string) => {
+      const c = name.trim();
+      if (!formData || !c) return;
+      const key = realtimeConfig.amapApiKey?.trim();
+      if (key) {
+          try {
+              const g = await geocodeCity(c, { proxyUrl: getProxyWorkerUrl(), key }, 5000);
+              if (g) {
+                  writeLocation({ province: g.province, city: g.city, district: g.district, lat: g.lat, lng: g.lng, adcode: g.adcode });
+                  return;
+              }
+          } catch { /* 往下走原文 */ }
+      } else {
+          try {
+              const g = await geocodeCityOpenMeteo(c);
+              if (g) {
+                  const gcj = wgs84ToGcj02(g.latitude, g.longitude);
+                  writeLocation({ province: g.admin1 || g.country, city: g.name, lat: gcj.lat, lng: gcj.lng });
+                  return;
+              }
+          } catch { /* 往下走原文 */ }
+      }
+      writeLocation({ city: c });
   };
 
   // 清空地点：天气小卡一起收起。
@@ -1657,7 +1745,7 @@ ${isInitialGeneration ? `
                                            <input
                                                value={locDraft}
                                                onChange={(e) => { setLocDraft(e.target.value); }}
-                                               onKeyDown={(e) => { if (e.key === 'Enter' && locDraft.trim()) { applyLocation(locDraft); } }}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' && locDraft.trim()) { void applyManualLocation(locDraft); } }}
                                                placeholder="输入城市名，如 上海 / Tokyo…"
                                                className="w-full bg-slate-50 rounded-2xl px-3 py-2.5 text-xs border border-slate-200 outline-none focus:ring-1 focus:ring-primary/30"
                                            />
@@ -1665,14 +1753,14 @@ ${isInitialGeneration ? `
                                            {locSuggestions.length > 0 && (
                                                <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-2xl border border-slate-200 shadow-lg overflow-hidden">
                                                    {locSuggestions.map((s, i) => (
-                                                       <button
-                                                           key={`${s.name}-${i}`}
-                                                           onClick={() => applyLocation(s.name, s.admin1)}
-                                                           className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 transition-colors"
-                                                       >
-                                                           <span className="font-bold text-slate-700">{s.name}</span>
-                                                           <span className="text-slate-400 ml-1.5">{[s.admin1, s.country].filter(Boolean).join(' · ')}</span>
-                                                       </button>
+                                                        <button
+                                                            key={`${s.name}-${i}`}
+                                                            onClick={() => void applySuggestion(s)}
+                                                            className="w-full text-left px-3 py-2 text-xs hover:bg-violet-50 transition-colors"
+                                                        >
+                                                            <span className="font-bold text-slate-700">{s.name}</span>
+                                                            <span className="text-slate-400 ml-1.5">{s.source === 'amap' ? (s.district || '高德联想') : [s.admin1, s.country].filter(Boolean).join(' · ')}</span>
+                                                        </button>
                                                    ))}
                                                </div>
                                            )}
@@ -1681,10 +1769,11 @@ ${isInitialGeneration ? `
                                        <div className="mt-3 flex items-center justify-between gap-3 bg-slate-50 rounded-2xl px-3 py-2.5 border border-slate-200">
                                            <div className="min-w-0">
                                                <p className="text-xs font-bold text-slate-700 truncate">📍 {formData.location!.province ? `${formData.location!.province} · ` : ''}{formData.location!.city}</p>
-                                               <p className="text-[10px] text-slate-400 mt-0.5">
-                                                   {locWeather ? `${locWeather.description} ${Math.round(locWeather.temp)}°C（体感 ${Math.round(locWeather.feelsLike)}°C）` : '天气加载中…'}
-                                                   {formData.location!.source === 'char' ? ' · 角色自述' : ''}
-                                               </p>
+                                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                                    {locWeather ? `${locWeather.description} ${Math.round(locWeather.temp)}°C（体感 ${Math.round(locWeather.feelsLike)}°C）` : '天气加载中…'}
+                                                    {formData.location!.source === 'char' ? ' · 角色自述' : ''}
+                                                    {formData.location!.adcode ? ' · 已验证' : ''}
+                                                </p>
                                            </div>
                                            <button onClick={() => { setLocEditing(true); setLocDraft(''); }} className="text-[11px] text-slate-400 hover:text-primary shrink-0 transition-colors">修改</button>
                                            <button onClick={clearLocation} className="text-[11px] text-slate-400 hover:text-red-400 shrink-0 transition-colors">清除</button>

@@ -66,13 +66,22 @@ const geoFullCache = new Map<string, OpenMeteoGeoHit>();
  * MOVE_TO 搬到海外城市时用——高德无海外权限（20011），这里是回落链。
  * 查无结果返回 null。
  */
-export const geocodeCityOpenMeteo = async (city: string): Promise<OpenMeteoGeoHit | null> => {
+export const geocodeCityOpenMeteo = async (city: string, timeoutMs = 8000): Promise<OpenMeteoGeoHit | null> => {
     const name = city.trim();
     if (!name) return null;
     const hit = geoFullCache.get(name);
     if (hit) return hit;
-    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`;
-    const geoRes = await fetch(geoUrl);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    let geoRes: Response;
+    try {
+        geoRes = await fetch(
+            `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`,
+            { signal: ctrl.signal },
+        );
+    } finally {
+        clearTimeout(timer);
+    }
     if (!geoRes.ok) {
         throw new Error(`Open-Meteo geocoding HTTP ${geoRes.status}`);
     }

@@ -13,10 +13,13 @@
 import {
     fetchCityLibrary,
     geocodeCity,
+    wgs84ToGcj02,
     type AmapAuth,
     type CityPlaceLibrary,
     type StructuredPlace,
 } from './amapCore';
+import { geocodeCityOpenMeteo } from './realtimeWorldCore';
+import { getProxyWorkerUrl } from './proxyWorker';
 
 const GEO_DB_NAME = 'sully_geo_cache';
 const GEO_STORE = 'city_places';
@@ -173,6 +176,57 @@ export const resolveStructuredPlace = async (
         return await geocodeCity(name, auth);
     } catch (e) {
         console.warn(`[cityPlaces] ${name} 地理编码失败:`, e instanceof Error ? e.message : e);
+        return null;
+    }
+};
+
+/**
+ * 浏览器侧读高德调用凭证：key（localStorage realtimeConfig）+ 代理地址。
+ * Node/测试环境读不到存储时返回空 key（调用方按无 key 降级）。
+ */
+export const readAmapAuth = (): AmapAuth => {
+    let key = '';
+    try {
+        const raw = localStorage.getItem('os_realtime_config');
+        if (raw) {
+            const cfg = JSON.parse(raw);
+            if (typeof cfg?.amapApiKey === 'string') key = cfg.amapApiKey.trim();
+        }
+    } catch { /* 非浏览器/存储不可用：无 key 降级 */ }
+    return { proxyUrl: getProxyWorkerUrl(), key };
+};
+
+/**
+ * MOVE_TO 验证：城市名 → 结构化地点。
+ * 高德（国内，验出 adcode/坐标）→ Open-Meteo（海外回落，admin1 当省）→ null（调用方保留原文）。
+ * 抛错一律内部吞掉返回 null：搬家验证永远不能阻塞聊天。
+ */
+export const enrichMoveToPlace = async (
+    city: string,
+    auth: AmapAuth,
+    timeoutMs = 4000,
+): Promise<StructuredPlace | null> => {
+    const name = city.trim();
+    if (!name) return null;
+    if (auth.key) {
+        try {
+            const hit = await geocodeCity(name, auth, timeoutMs);
+            if (hit) return hit;
+        } catch (e) {
+            console.warn(`[cityPlaces] MOVE_TO 高德验证失败，回落 Open-Meteo:`, e instanceof Error ? e.message : e);
+        }
+    }
+    try {
+        const g = await geocodeCityOpenMeteo(name, timeoutMs);
+        if (!g) return null;
+        const gcj = wgs84ToGcj02(g.latitude, g.longitude);
+        return {
+            province: g.admin1 || g.country,
+            city: g.name,
+            lat: gcj.lat,
+            lng: gcj.lng,
+        };
+    } catch {
         return null;
     }
 };
