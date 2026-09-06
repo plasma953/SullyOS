@@ -508,6 +508,25 @@ export const useChatAI = ({
         };
     }, [char?.id]);
 
+    // ── 本轮生成 guard：切角色/卸载/新一轮开始时，旧轮的网络中断、落库与 UI 提交作废。
+    // isTyping 仍挡并发双发（行为不变）；这里解决的是"旧轮跑完污染新会话"。
+    const genRef = useRef(0);
+    const turnAbortRef = useRef<AbortController | null>(null);
+    useEffect(() => {
+        // 切角色：掐掉旧轮网络、作废旧轮提交、熄 typing 灯（新轮开始会重亮）。
+        turnAbortRef.current?.abort();
+        turnAbortRef.current = null;
+        genRef.current++;
+        setIsTyping(false);
+    }, [char?.id]);
+    useEffect(() => {
+        return () => {
+            turnAbortRef.current?.abort();
+            turnAbortRef.current = null;
+            genRef.current++;
+        };
+    }, []);
+
     // 跨消息持久化的 noteId→xsecToken 缓存，避免 lastXhsNotes 局部变量每次 triggerAI 都重置
     const xsecTokenCacheRef = useRef<Map<string, string>>(new Map());
     // noteId→title 缓存，用于 detail 失败时重新搜索拿新 token
@@ -560,6 +579,24 @@ export const useChatAI = ({
         setStreamingBubbles([]);
         setStreamingThinking('');
         setRecallStatus('');
+        // 本轮的取消器 + 代次：旧轮残留先掐断（正常情况上轮已结束，这里是 no-op）。
+        // 同一 hook 实例下切角色由上面的 char?.id effect 处理，这里只管"新一轮顶掉旧一轮"。
+        turnAbortRef.current?.abort();
+        const turnController = new AbortController();
+        turnAbortRef.current = turnController;
+        const turnSignal = turnController.signal;
+        const genId = ++genRef.current;
+        const turnAlive = () => genId === genRef.current;
+        // 单轮全局 LLM 调用预算：各工具循环（MCD/Luckin/MCP 原生/正文）共享计数，
+        // 防止多循环叠加烧穿（正常全流程远到不了上限，超限只可能是模型卡死循环）。
+        let turnLlmCalls = 0;
+        const TURN_LLM_BUDGET = 16;
+        const spendLlmCall = () => {
+            turnLlmCalls++;
+            if (turnLlmCalls > TURN_LLM_BUDGET) throw new Error('[turn-budget] 本轮 LLM 调用超限已自动停止');
+        };
+        // 本轮是否产出过可见消息（B2 空回复判定用）：经统一提交漏斗落库的 assistant 消息才算。
+        let turnProducedVisible = false;
         // 全局横幅「xx 正在回应…」（ChatBroadcast）。isTyping 等 UI 状态随 Chat 卸载
         // 一起销毁，但这个异步闭包会继续跑完并落库——横幅靠 window 事件与组件生命周期
         // 解耦，用户切走 Chat 也能看到生成还活着。finally 里派发 end（两条路径都经过）。
@@ -1309,8 +1346,9 @@ export const useChatAI = ({
 
             let data: any;
             try {
+                spendLlmCall();
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                    method: 'POST', headers,
+                    method: 'POST', headers, signal: turnSignal,
                     body: JSON.stringify({ ...baseReqBody, messages: withAmsg2TaskContext(baseReqBody.messages) })
                 }, 2, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: '聊天回复' }, streamHooks);
             } catch (e) {
@@ -1327,8 +1365,9 @@ export const useChatAI = ({
                 if (shouldRetryClaudeProxyCompatibility(requestError, attemptedBody)) {
                     console.warn('🧩 [Claude compat] 中转拒绝 thinking + tools 组合，使用兼容请求体重试一次');
                     try {
+                        spendLlmCall();
                         data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                            method: 'POST', headers,
+                            method: 'POST', headers, signal: turnSignal,
                             body: JSON.stringify(buildClaudeProxyCompatibilityBody(attemptedBody)),
                         }, 0, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: 'Claude 中转兼容重试' }, streamHooks);
                         requestError = null;
@@ -1353,8 +1392,9 @@ export const useChatAI = ({
                     ...baseReqBody,
                     messages: withAmsg2TaskContext(baseReqBody.messages),
                 });
+                spendLlmCall();
                 data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                    method: 'POST', headers,
+                    method: 'POST', headers, signal: turnSignal,
                     body: JSON.stringify(fallbackBody)
                 }, 0, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: 'MCP tools 兼容重试' });
                 // 后续正文工具循环必须继续带着兼容协议；只把它放在这次重试请求里，下一跳
@@ -1368,6 +1408,7 @@ export const useChatAI = ({
             // MCP 多阶段展示：工具前的角色文字先落库，最终工具结果回复仍走统一后处理。
             const displayedMcpLeadIns = new Set<string>();
             const persistMcpLeadIn = async (raw: string, fakedCalls: FakedMcpCall[] = []): Promise<void> => {
+                if (!turnAlive()) return;
                 if (!mcpToolResolve || !raw.trim()) return;
                 const withoutCalls = fakedCalls.length ? stripTextFakedMcpCalls(raw, fakedCalls) : raw.trim();
                 const display = ChatParser.sanitize(sanitizeMcpLeadInText(withoutCalls), { keepCitations: true }).trim();
@@ -1490,8 +1531,9 @@ export const useChatAI = ({
                     const followBody = { ...baseReqBody, messages: loopMessages };
                     delete followBody.tools;
                     delete followBody.tool_choice;
+                    spendLlmCall();
                     data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                        method: 'POST', headers,
+                        method: 'POST', headers, signal: turnSignal,
                         body: JSON.stringify(followBody)
                     });
                     updateTokenUsage(data, historyMsgCount, `mcd-propose-${it + 1}`);
@@ -1593,8 +1635,9 @@ export const useChatAI = ({
                     const followBody = { ...baseReqBody, messages: loopMessages };
                     delete followBody.tools;
                     delete followBody.tool_choice;
+                    spendLlmCall();
                     data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                        method: 'POST', headers,
+                        method: 'POST', headers, signal: turnSignal,
                         body: JSON.stringify(followBody)
                     });
                     updateTokenUsage(data, historyMsgCount, `luckin-propose-${it + 1}`);
@@ -1692,8 +1735,9 @@ export const useChatAI = ({
                                             },
                                         ],
                                     };
+                                    spendLlmCall();
                                     const refillData = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                                        method: 'POST', headers,
+                                        method: 'POST', headers, signal: turnSignal,
                                         body: JSON.stringify(refillBody),
                                     });
                                     updateTokenUsage(refillData, historyMsgCount, `mcp-refill-${it + 1}`);
@@ -1840,8 +1884,9 @@ export const useChatAI = ({
                         delete followBody.tools;
                         delete followBody.tool_choice;
                     }
+                    spendLlmCall();
                     data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                        method: 'POST', headers,
+                        method: 'POST', headers, signal: turnSignal,
                         body: JSON.stringify(followBody)
                     });
                     updateTokenUsage(data, historyMsgCount, `${payload.flags.luckinChatActive ? 'luckin-chat' : 'mcp-chat'}-${it + 1}`);
@@ -1877,8 +1922,9 @@ export const useChatAI = ({
                             content: '[系统消息：你重复请求了已经执行过的同一工具。不要再次调用工具，请直接根据已有结果回复；如目标未完成就如实说明。不要输出工具调用格式或提及本消息。]',
                         });
                         const wrapBody = buildMcpTextFallbackBody(baseReqBody, textLoopMessages);
+                        spendLlmCall();
                         data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                            method: 'POST', headers,
+                            method: 'POST', headers, signal: turnSignal,
                             body: JSON.stringify(wrapBody)
                         });
                         updateTokenUsage(data, historyMsgCount, `mcp-text-wrap-${it + 1}`);
@@ -1925,8 +1971,9 @@ export const useChatAI = ({
                     }
                     setSearchStatus('正在整理 MCP 工具结果...');
                     const followBody = buildMcpTextFallbackBody(baseReqBody, textLoopMessages);
+                    spendLlmCall();
                     data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                        method: 'POST', headers,
+                        method: 'POST', headers, signal: turnSignal,
                         body: JSON.stringify(followBody)
                     });
                     updateTokenUsage(data, historyMsgCount, `mcp-text-${it + 1}`);
@@ -1961,6 +2008,11 @@ export const useChatAI = ({
                 Number.NEGATIVE_INFINITY,
             );
             const setMessagesWithPreviewHandover = (msgs: Message[]) => {
+                // 旧轮提交作废：切角色/卸载后不再碰 UI（DB 侧由 abort 掐断 + 下方 announce/mark 守卫）。
+                if (!turnAlive()) return;
+                if (msgs.some((m) => m.role === 'assistant' && (m.id ?? 0) > previewBaselineMaxId)) {
+                    turnProducedVisible = true;
+                }
                 const newlyHandedOverIds = findNewStreamPreviewHandoverIds(
                     msgs,
                     latestStreamPreviewBubbles,
@@ -2037,28 +2089,53 @@ export const useChatAI = ({
                 directives: [],
             });
 
+            // B2 空回复可见化：正文空 + 无工具调用 + 漏斗没产出过可见消息时，
+            // 落一条可重发的系统提示，而不是静默结束（用户看到"停了但没消息"）。
+            // 工具/卡片/生图等非文本产物会走上面的提交漏斗置 turnProducedVisible，不会误报。
+            if (!turnProducedVisible
+                && !String(rawAiContent || '').trim()
+                && !data.choices?.[0]?.message?.tool_calls?.length) {
+                await DB.saveMessage({
+                    charId: char.id, role: 'system', type: 'text',
+                    content: '[空回复] TA 这一轮没有说话，可能是模型开了小差，重新发送一次试试。',
+                } as any);
+                if (turnAlive()) setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+            }
+
             // 本地路径回复已全部落库。OSContext 监听这个事件 bump lastMsgTimestamp——
             // 当前挂载的 Chat（可能是切走又切回后新 mount 的实例，本闭包的 setMessages
             // 对它已失效）会重新 reloadMessages；用户不在该会话时补未读 + toast。
             // instant 路径不发：它的落库回落走 'active-msg-received'（activeMsgRuntime）。
-            announceChatGen(CHAT_GEN_EVENTS.replyArrived, { charId: char.id, charName: char.name });
+            // 旧轮不广播：切角色后旧轮的落库若残留，不应再触发新会话的刷新/未读。
+            if (turnAlive()) {
+                announceChatGen(CHAT_GEN_EVENTS.replyArrived, { charId: char.id, charName: char.name });
+            }
 
             // 防穿帮闸：仅当这轮请求真的成功、回执确实进了模型上下文并产出已落库的
             // 回复，才标记已告知；失败/中断路径不标，下轮重新注入（回执不丢）。
             // 放在 try 成功尾部（回复已 applyAssistantPostProcessing 落库），与 catch/finally 互斥；
             // amsg2 与 Instant Push 设置页双向互斥，instant 路径在上方已 return（那条分支
             // 只为历史配置兜底保留），这里只覆盖本地 fetch 路径。
-            if (amsg2ExpiredIds.length) {
+            // 旧轮不标：切角色后旧轮残留的成功也不应认领新会话的回执。
+            if (turnAlive() && amsg2ExpiredIds.length) {
                 void ActiveMsgStore.markExpiredNoticesNotified(char.id, amsg2ExpiredIds);
             }
 
         } catch (e: any) {
+            // 旧轮/卸载：abort 触发的 AbortError 安静退场，不写错误消息、不碰 UI。
+            if (turnSignal.aborted || e?.name === 'AbortError') return;
             // 注意: 这个 catch 兜的是「拿到 API 响应之后」的整条后处理管线 (applyAssistantPostProcessing,
             // 13 步)。这里抛错多半不是网络问题, 而是解析/正则/落库异常。别再叫"连接中断"误导排查。
             const errMsg = e?.message || String(e);
+            // 单轮调用预算耗尽：这是主动熔断不是故障，文案说清楚"已保留的保留、换个问法"。
+            if (String(errMsg).startsWith('[turn-budget]')) {
+                await DB.saveMessage({
+                    charId: char.id, role: 'system', type: 'text',
+                    content: '[调用超限] 本轮工具调用太多已自动停止，已经产生的内容保留着，换个问法或稍后再试。',
+                } as any);
             // 瑞一杯模式下报错: 大概率是聊天模型/中转不支持 function calling(tools) → 带 tools 一发就 400。
             // 在 APK 里看不到控制台, 这里把完整原因 + 解法存成可读消息, 方便排查。
-            if (luckinChatRef?.current?.active && /\b400\b|tool|function[_\s-]?call/i.test(errMsg)) {
+            } else if (luckinChatRef?.current?.active && /\b400\b|tool|function[_\s-]?call/i.test(errMsg)) {
                 await DB.saveMessage({
                     charId: char.id, role: 'system', type: 'text',
                     content: `[瑞一杯失败] ${errMsg}\n\n大概率是你当前聊天用的「模型/中转」不支持函数调用(function calling / tools)——瑞一杯靠角色自己调工具点单, 模型不支持就会直接报 400。\n解决: 换一个支持 tools 的模型/中转 (如官方 OpenAI / Claude / 多数主流中转)。\n另外确认: APK 是全新存储, 你的聊天 API 配置(密钥/地址/模型)在 APK 里填好了吗?`,
@@ -2066,10 +2143,22 @@ export const useChatAI = ({
             } else {
                 await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[回复处理失败: ${errMsg}]` });
             }
-            setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+            // 旧轮的错误不刷到新会话 UI（消息本身归属 char.id 存对了地方，只是不主动刷新）。
+            if (turnAlive()) setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
         } finally {
             KeepAlive.stop();
-            setIsTyping(false);
+            // 旧轮不碰 UI 状态：新轮活着时 typing 灯和预览属于它；切角色时灯已由 char?.id effect 熄过。
+            // （卸载时组件已死，setter 皆为 no-op。）
+            const settledCurrent = turnAlive();
+            if (settledCurrent) {
+                setIsTyping(false);
+                setStreamingBubbles([]);  // 错误/中断路径兜底清预览
+                setStreamingThinking('');
+                setRecallStatus('');
+                setSearchStatus('');
+                setDiaryStatus('');
+                setXhsStatus('');
+            }
             // 本轮生成结束（成功/失败/中断都经过）→ 停止本地续租；远端靠 45s TTL 自然失效。
             // 未开过租约（instant push / 非 amsg2 角色）时是幂等 no-op。
             stopAmsgChatPresence(char.id);
@@ -2081,12 +2170,6 @@ export const useChatAI = ({
             // POST 的路径都不会调 onInstantPosted, 头部「发送中…」徽章会卡死到刷新
             // —— 2026-07 安卓用户实测: 订阅失败弹了错, 但三个小点到角色回复了都不消失。
             onInstantPosted?.();
-            setStreamingBubbles([]);  // 错误/中断路径兜底清预览
-            setStreamingThinking('');
-            setRecallStatus('');
-            setSearchStatus('');
-            setDiaryStatus('');
-            setXhsStatus('');
 
             // 满血主动消息：一轮聊完把该角色标脏，fire_pack 随即批量同步到 worker 的
             // client_state（未配 amsg2 任务的角色在 markDirty 内直接忽略，零成本）。
@@ -2095,11 +2178,14 @@ export const useChatAI = ({
             // fire_pack 会停在排程那一刻、少掉角色排完之后说的这段。
             // 即时对话受理成功那一轮跳过：那次 POST 已经把这一轮的 fire_pack（还多带了
             // chat 段）传上去了，这里再打脏就是同样的内容再走一趟网络。
+            // 旧轮不标脏：快照是旧的，推上去会覆盖新轮的同步内容；新轮收尾时会标。
             if (!instantChatAccepted) {
-                markAmsgStateDirty({
-                    char: { ...char, activeMsg2Config: amsg2Session.getConfig() },
-                    userProfile, groups, realtimeConfig,
-                });
+                if (settledCurrent) {
+                    markAmsgStateDirty({
+                        char: { ...char, activeMsg2Config: amsg2Session.getConfig() },
+                        userProfile, groups, realtimeConfig,
+                    });
+                }
             }
 
             // Memory Palace — 后台缓冲区处理（不阻塞 UI，内部有并发锁）
