@@ -18,27 +18,21 @@ const SectionHead: React.FC<{ title: string; count: string }> = ({ title, count 
   </div>
 );
 
-const CardCell: React.FC<{ card: TarotCard; featured?: boolean; onOpen: (c: TarotCard) => void }> = ({ card, featured, onOpen }) => (
+const CardCell: React.FC<{ card: TarotCard; onOpen: (c: TarotCard) => void }> = ({ card, onOpen }) => (
   <button
     onClick={() => onOpen(card)}
-    className={`group overflow-hidden rounded border border-[#8b7355]/30 bg-[#f5f0e1]/[0.04] text-left transition-all active:scale-[0.98] ${featured ? 'col-span-2' : ''}`}
+    className="group flex w-full items-center gap-3 rounded border border-[#8b7355]/30 bg-[#f5f0e1]/[0.04] p-2.5 text-left transition-all active:scale-[0.99]"
   >
-    {featured ? (
-      <div className="flex gap-3 p-3">
-        <TarotThumb card={card} className="w-20 shrink-0 rounded-[4px] grayscale-[25%] transition-all duration-300 group-hover:grayscale-0" />
-        <div className="min-w-0 py-1">
-          <p className="font-serif text-[10px] tracking-widest text-[#c9a227]/70">{String(card.num).padStart(2, '0')}</p>
-          <p className="font-serif text-base text-[#f5f0e1] transition-colors group-hover:text-[#e8c96a]">{card.nameCn}</p>
-          <p className="font-serif text-[11px] italic text-[#f5f0e1]/45">{card.nameEn}</p>
-          <p className="mt-1 truncate font-serif text-[11px] text-[#f5f0e1]/55">{card.upright.keywords.join(' · ')}</p>
-        </div>
-      </div>
-    ) : (
-      <div className="p-2">
-        <TarotThumb card={card} className="w-full rounded-[4px] grayscale-[25%] transition-all duration-300 group-hover:scale-[1.02] group-hover:grayscale-0" />
-        <p className="mt-1.5 truncate text-center font-serif text-xs text-[#f5f0e1]/85 transition-colors group-hover:text-[#e8c96a]">{card.nameCn}</p>
-      </div>
-    )}
+    <TarotThumb card={card} className="w-12 shrink-0 rounded-[4px] grayscale-[25%] transition-all duration-300 group-hover:grayscale-0" />
+    <div className="min-w-0 flex-1 py-0.5">
+      <p className="truncate font-serif text-sm text-[#f5f0e1] transition-colors group-hover:text-[#e8c96a]">
+        {card.nameCn}
+        <span className="ml-2 font-serif text-[10px] tracking-widest text-[#c9a227]/60">{String(card.num).padStart(2, '0')}</span>
+      </p>
+      <p className="truncate font-serif text-[11px] italic text-[#f5f0e1]/45">{card.nameEn}</p>
+      <p className="mt-0.5 truncate font-serif text-[11px] text-[#f5f0e1]/55">{card.upright.keywords.join(' · ')}</p>
+    </div>
+    <span className="shrink-0 font-serif text-base text-[#f5f0e1]/25 transition-colors group-hover:text-[#e8c96a]">›</span>
   </button>
 );
 
@@ -130,14 +124,15 @@ export const LibraryView: React.FC = () => {
         return (
           <section key={g.id} className="space-y-2">
             <SectionHead title={g.name} count={`${list.length} 张`} />
-            <div className="grid grid-cols-2 gap-2">
-              {list.map((c, i) => (
-                <CardCell key={c.id} card={c} featured={g.id === 'major' && i % 6 === 0} onOpen={open} />
+            <div className="space-y-1.5">
+              {list.map((c) => (
+                <CardCell key={c.id} card={c} onOpen={open} />
               ))}
             </div>
           </section>
         );
       })}
+      <p className="pt-2 text-center font-serif text-[10px] leading-relaxed text-[#f5f0e1]/30">牌义以 Waite《Pictorial Key to the Tarot》为准转写 · 牌图为 Smith 韦特公有领域版本</p>
     </div>
   );
 };

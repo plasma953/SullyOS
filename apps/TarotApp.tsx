@@ -40,12 +40,17 @@ const TABS: { id: Tab; name: string; Icon: typeof Sun }[] = [
 
 const DailyView: React.FC<{
   records: TarotReadingRecord[];
+  recordsLoaded: boolean;
   refresh: () => void;
-}> = ({ records, refresh }) => {
+}> = ({ records, recordsLoaded, refresh }) => {
   const { characters, activeCharacterId, userProfile, apiConfig, addToast } = useOS();
   const dateKey = useLocalDateKey();
   const [targetId, setTargetId] = useState('user');
   const [record, setRecord] = useState<TarotReadingRecord | null>(null);
+  // 同一天同一目标只建一次：首轮库读完之前不建；建过/删过的 key 当天不再自动重建。
+  const createdRef = React.useRef<string | null>(null);
+  const tombstoneRef = React.useRef<Set<string>>(new Set());
+  const [tombstoneTick, setTombstoneTick] = useState(0);
 
   const userName = userProfile?.name?.trim() || '你';
   const targetName = targetId === 'user' ? userName : characters.find((c) => c.id === targetId)?.name ?? 'TA';
@@ -55,10 +60,32 @@ const DailyView: React.FC<{
       : characters.find((c) => c.id === targetId);
 
   useEffect(() => {
+    if (!recordsLoaded) return;
+    const key = `${dateKey}|${targetId}`;
     let cancelled = false;
     const ensure = async () => {
       const existing = records.find((r) => r.kind === 'daily' && r.dateKey === dateKey && r.targetId === targetId);
-      if (existing) { if (!cancelled) setRecord(existing); return; }
+      if (existing) {
+        createdRef.current = key;
+        if (!cancelled) setRecord(existing);
+        return;
+      }
+      // 之前有展示记录、现在库里没了 = 用户在记录页删掉了，当天不再自动重建。
+      if (record && record.dateKey === dateKey && record.targetId === targetId) {
+        tombstoneRef.current.add(key);
+        if (!cancelled) {
+          setRecord(null);
+          setTombstoneTick((t) => t + 1);
+        }
+        return;
+      }
+      if (tombstoneRef.current.has(key)) {
+        if (!cancelled) setRecord(null);
+        return;
+      }
+      // 同一 key 只建一次：防 StrictMode 双跑与 refresh 回流重跑。
+      if (createdRef.current === key) return;
+      createdRef.current = key;
       const pick = drawDailyCard(dateKey, targetId, CARDS.length);
       const card = CARDS[pick.cardIndex];
       const spread = spreadById('daily')!;
@@ -81,16 +108,29 @@ const DailyView: React.FC<{
       } catch { /* 展示优先 */ }
       if (!cancelled) setRecord(rec);
     };
-    setRecord(null);
     ensure();
     return () => { cancelled = true; };
-    // records 变化时重跑：解读/删除后 Daily 页与「记录」页保持一致。
-    // 收敛性：记录已存在即 early return，只有缺失时才 save+refresh，不会循环。
+    // recordsLoaded 守住首轮空数组误建；tombstoneTick 让删除后停在空态不重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateKey, targetId, records]);
+  }, [dateKey, targetId, records, recordsLoaded, tombstoneTick]);
 
+  const dailyKey = `${dateKey}|${targetId}`;
+  const isTombstoned = tombstoneRef.current.has(dailyKey);
+  if (!recordsLoaded || (!record && !isTombstoned) || (record && (record.dateKey !== dateKey || record.targetId !== targetId))) {
+    return <p className="py-16 text-center font-serif text-sm text-[#f5f0e1]/50">正在为{targetName}取今日之牌…</p>;
+  }
   if (!record) {
-    return <p className="py-16 text-center font-serif text-sm text-[#f5f0e1]/50">正在为{targetName}抽今日之牌…</p>;
+    return (
+      <div className="space-y-4 py-16 text-center">
+        <p className="font-serif text-sm text-[#f5f0e1]/55">今日记录已删除</p>
+        <button
+          onClick={() => { tombstoneRef.current.delete(dailyKey); createdRef.current = null; setTombstoneTick((t) => t + 1); }}
+          className="rounded-full border border-[#c9a227]/60 px-5 py-1.5 font-serif text-sm text-[#e8c96a] active:scale-95"
+        >
+          重新抽今日之牌
+        </button>
+      </div>
+    );
   }
   const saved = record.cards[0];
   const card = cardById(saved.cardId);
@@ -243,6 +283,7 @@ export const TarotApp: React.FC = () => {
   const { closeApp, characters, activeCharacterId, userProfile, apiConfig, addToast } = useOS();
   const [tab, setTab] = useState<Tab>('daily');
   const [records, setRecords] = useState<TarotReadingRecord[]>([]);
+  const [recordsLoaded, setRecordsLoaded] = useState(false);
   const todayKey = useLocalDateKey();
 
   const refresh = useCallback(async () => {
@@ -251,6 +292,8 @@ export const TarotApp: React.FC = () => {
       setRecords(list.sort((a, b) => b.createdAt - a.createdAt).slice(0, 200));
     } catch {
       setRecords([]);
+    } finally {
+      setRecordsLoaded(true);
     }
   }, []);
 
@@ -281,7 +324,7 @@ export const TarotApp: React.FC = () => {
       </div>
 
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {tab === 'daily' && <DailyView records={records} refresh={refresh} />}
+        {tab === 'daily' && <DailyView records={records} recordsLoaded={recordsLoaded} refresh={refresh} />}
         {tab === 'ritual' && (
           <RitualView
             characters={characters}

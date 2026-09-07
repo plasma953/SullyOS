@@ -215,6 +215,31 @@ const OpencodeConnectionConsole: React.FC<{
                         </div>
                     </details>
 
+                    <details className="group rounded-xl border border-dashed border-slate-200 px-3 py-2.5">
+                        <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-bold text-slate-500">
+                            电脑开机自启（Windows）
+                            <CaretDown size={12} className="ml-auto transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="mt-3 space-y-2 pb-1">
+                            <p className="text-[9px] leading-relaxed text-slate-400">在电脑上跑一次，serve 和本地代理就会登录即起，重启后不用手动再开。详见文档《终端 · 本机 opencode 远程控制台》“开机自启”一节。</p>
+                            <pre className="overflow-x-auto rounded-lg bg-slate-50 p-2 font-mono text-[9px] leading-relaxed text-slate-600">powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opencode-autostart-win.ps1</pre>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const cmd = 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opencode-autostart-win.ps1';
+                                    const done = () => addToast('自启命令已复制，去电脑上跑一次', 'success');
+                                    const fail = () => addToast('复制失败，手动抄一下命令', 'error');
+                                    try {
+                                        const clip = (navigator as any)?.clipboard;
+                                        if (clip?.writeText) clip.writeText(cmd).then(done).catch(fail);
+                                        else fail();
+                                    } catch { fail(); }
+                                }}
+                                className="w-full rounded-xl border border-slate-200 bg-white py-2 text-[10px] font-bold text-slate-600 transition-transform active:scale-[0.98]"
+                            >复制自启命令</button>
+                        </div>
+                    </details>
+
                     <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
                         <div className="text-[11px] font-bold">在终端 App 中启用</div>
                         <PortToggle

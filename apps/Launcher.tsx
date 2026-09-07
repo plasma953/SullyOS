@@ -260,7 +260,7 @@ const AppGridPage = React.memo(({
     editing?: boolean,
 }) => {
     return (
-        <div className={`grid place-items-center animate-fade-in relative grid-cols-4 ${(apps.length > 8) ? 'gap-y-3 gap-x-2' : 'gap-y-6 gap-x-2'}`}>
+        <div className={`grid place-items-center animate-fade-in relative grid-cols-4 ${(apps.length > 8) ? 'gap-y-5 gap-x-2 content-center' : 'gap-y-6 gap-x-2'}`}>
              {apps.map(app => (
                  <div
                     key={app.id}
@@ -271,7 +271,7 @@ const AppGridPage = React.memo(({
                      <AppIcon
                         app={app}
                         onClick={() => { if (!editing) openApp(app.id); }}
-                        size={(apps.length > 8) ? "sm" : "md"}
+                        size="md"
                      />
                  </div>
              ))}
@@ -582,12 +582,18 @@ const Launcher: React.FC = () => {
   }, [launcherDockOrder]);
 
   // Split apps: pages with widgets keep 4x2 (8), pure grid pages use 4x4 (16).
-  // Pages: 0 = clock+chat+grid (8, original), 1 = pinwheel (8), 2 = widget images + grid (8, original),
-  //        3+ = plain grid only -> 16 per page. Pad to at least 3 slots so pinwheel/widget pages exist.
+  // Pages: 0 = clock+chat+grid (8, original), 1 = pinwheel (8),
+  //        2 = widget images + grid (8) ONLY when launcherWidgets has tl/tr/wide,
+  //            otherwise pure 4x4 (16). 3+ = plain grid only -> 16 per page.
+  // Pad to at least 3 slots so pinwheel/widget pages exist.
   const FIRST_PAGE_SIZE = 8;
   const PINWHEEL_PAGE_SIZE = 8;
   const WIDGET_PAGE_SIZE = 8;
   const PURE_PAGE_SIZE = 16;
+  const hasPage3Widgets = useMemo(() => {
+      const w = (theme.launcherWidgets || {}) as Record<string, unknown>;
+      return Boolean(w['tl'] || w['tr'] || w['wide']);
+  }, [theme.launcherWidgets]);
   const appPages = useMemo(() => {
       const pages: typeof INSTALLED_APPS[] = [];
       if (gridApps.length === 0) {
@@ -599,15 +605,19 @@ const Launcher: React.FC = () => {
           pages.push(gridApps.slice(FIRST_PAGE_SIZE, FIRST_PAGE_SIZE + PINWHEEL_PAGE_SIZE));
           const widgetStart = FIRST_PAGE_SIZE + PINWHEEL_PAGE_SIZE;
           if (gridApps.length > widgetStart) {
-              pages.push(gridApps.slice(widgetStart, widgetStart + WIDGET_PAGE_SIZE));
-              for (let i = widgetStart + WIDGET_PAGE_SIZE; i < gridApps.length; i += PURE_PAGE_SIZE) {
+              let pureStart = widgetStart;
+              if (hasPage3Widgets) {
+                  pages.push(gridApps.slice(widgetStart, widgetStart + WIDGET_PAGE_SIZE));
+                  pureStart = widgetStart + WIDGET_PAGE_SIZE;
+              }
+              for (let i = pureStart; i < gridApps.length; i += PURE_PAGE_SIZE) {
                   pages.push(gridApps.slice(i, i + PURE_PAGE_SIZE));
               }
           }
       }
       while (pages.length < 3) pages.push([]);
       return pages;
-  }, [gridApps]);
+  }, [gridApps, hasPage3Widgets]);
 
   // Page 2 (pinwheel) uses appPages[1]: split into two 2x2 quads
   const page2Apps = appPages[1] || [];

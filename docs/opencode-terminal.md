@@ -16,6 +16,12 @@
 改动抽屉）、**文件**（目录树 + 读文件 + 全文搜索）、**遥控**（操作电脑屏幕上正在跑
 的那个 TUI：预填/提交 prompt、执行 TUI 命令、弹 toast、开会话/模型选择器）。
 
+会话抽屉顶部有**项目下拉**（`GET /project`，存连接的 `directory`，会话/文件/模型
+请求都带 `?directory=`；拉不到列表时留「默认」即旧行为）。发送区上方有**模型下拉**
+（`GET /config/providers`，与 PC 端 TUI 同源，`POST prompt_async`/`shell` 时带
+`{providerID, modelID}`）与**自动允许开关**（开后全部会话的 `permission.updated`
+直接回 `once`，不再弹卡；打开瞬间把已堆积的卡一次性放行）。
+
 ## 电脑端四选一（按推荐排序）
 
 | 路径 | 适用 | 电脑端命令 / 操作 |
@@ -117,6 +123,28 @@ oc-phone.你的域名 {
 终端 → 连接 → opencode 地址填 VPS 地址（A 为 `http://VPS:4096`，B 为
 `https://oc-phone.你的域名`），用户名/密码照旧，测试连接。
 
+### 5. 开机自启（Windows，一键脚本）
+
+ serve 和本地代理都可以注册成登录即起的计划任务，重启电脑后不用手动再跑：
+
+```powershell
+# 默认：serve 127.0.0.1:4096 + 代理 :18062，当前用户登录即起
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opencode-autostart-win.ps1
+
+# 带密码与手机源（推荐：密码与手机设置里填同一对）
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opencode-autostart-win.ps1 `
+  -Password '<强密码>' -CorsOrigin 'http://192.168.1.5:5173'
+
+# 只预览不改动 / 卸载
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opencode-autostart-win.ps1 -WhatIf
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/opencode-autostart-win.ps1 -Unregister
+```
+
+注册后任务计划程序里会有 `sullyos-opencode-serve` 与 `sullyos-opencode-proxy`
+两个任务（触发器为 AtLogOn，失败 1 分钟后重试）。默认只绑回环安全；
+要让局域网另一台设备直连 serve，才需要把脚本的 `-ServeHost` 改成 `0.0.0.0`
+并设强密码。VPS 反向隧道仍用上面的 `opencode-tunnel` 任务，两者可并存。
+
 ### 排障
 
 - 测试连接失败先看隧道活着没：电脑任务计划程序里 `opencode-tunnel` 是否在跑；
@@ -140,7 +168,7 @@ SSE 事件流（`/event`）原样透传。
 
 | 职责 | 文件 |
 |------|------|
-| 协议客户端（鉴权/代理/SSE/会话/消息/文件/TUI）+ 配置存储 + 备份导出导入 | `utils/opencodeClient.ts`（测试同名 `.test.ts`） |
+| 协议客户端（鉴权/代理/SSE/会话/消息/文件/TUI）+ 配置存储 + 备份导出导入 | `utils/opencodeClient.ts`（测试同名 `.test.ts`；项目 `listProjects`、模型 `listModelOptions`、各列表/文件接口可选 `directory` 透传） |
 | 终端 App（会话流/审批/diff/输入框） | `apps/TerminalApp.tsx` |
 | 文件 Tab / TUI Tab | `components/terminal/FilesTab.tsx`、`TuiTab.tsx` |
 | 设置连接控制台 | `components/settings/OpencodeConnectionConsole.tsx` |
@@ -159,6 +187,7 @@ SSE 事件流（`/event`）原样透传。
   断线只通知 UI（5s 后重连），不断言不断线。
 - **审批默认不自动允许**。`POST /session/:id/permissions/:permissionID` 的 body 是
   `{ response: "once" | "always" | "reject" }`；拒绝要二次确认。
+  自动允许开关开后由客户端代点 `once`（失败回落回卡片），服务端 permission 配置不动。
 - **shell 返回的是裸 AssistantMessage**（不是 `{info,parts}`），输出靠随后轮询
   `GET /session/:id/message` 拿。斜杠命令返回 `{info,parts}`。
 - **TUI 端点体是推测形状**（`append-prompt {text}` / `execute-command {command}` /

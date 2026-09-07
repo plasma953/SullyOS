@@ -1,9 +1,11 @@
 /**
  * 塔罗静态真实数据：78 张韦特塔罗 + 6 个经典牌阵。
  *
- * 这份文件是全 App 唯一的牌义来源（手写整理，体系以 Waite《Pictorial Key
- * to the Tarot》为准；牌阵位置含义来自 Biddy Tarot / tarottechnique 等
- * 真实塔罗资料，见各牌阵 source 字段）。
+ * 牌义来源：A. E. Waite《Pictorial Key to the Tarot》(1911，公有领域，
+ * 全文见 sacred-texts.com/tarot/pkt/)逐张转写为一句简义；关键词口径
+ * 与 Biddy Tarot 现代释义交叉核对，不一致处以 Waite 原典为准。
+ * 牌阵位置含义来自 Biddy Tarot / tarottechnique 等真实塔罗资料，
+ * 见各牌阵 source 字段。
  *
  * 约定（省 token 的关键）：
  * - UI 展示、牌库浏览都从这里读；
