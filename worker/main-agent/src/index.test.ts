@@ -230,3 +230,46 @@ describe('POST /v1/chat/completions 上游 LLM 自标识', () => {
         expect(out.has('x-opencode-session')).toBe(false);
     });
 });
+
+describe('聊天 SSE 心跳（静默期保活）', () => {
+    it('上游静默时每 15s 发一行 ": ping"，客户端解析器按 SSE 规范忽略', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.stubGlobal('fetch', vi.fn(async () => new Response(
+                new ReadableStream({ start() { /* 永不产出：模拟模型思考/上游静默 */ } }),
+                { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+            )));
+            const res = await worker.fetch(
+                new Request(`${AGENT}/agent/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }], stream: true }),
+                }),
+                { LLM_BASE_URL: 'https://opencode.ai/zen/go/v1', LLM_API_KEY: 'k', LLM_MODEL: 'm', LLM_TIMEOUT_MS: '120000' },
+                { waitUntil: () => {} },
+            );
+            expect(res.status).toBe(200);
+
+            const reader = (res.body as ReadableStream).getReader();
+            const decoder = new TextDecoder();
+            let chunks = '';
+            const readUntilPing = (async () => {
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) return chunks;
+                    chunks += decoder.decode(value, { stream: true });
+                    if (chunks.includes(': ping')) return chunks;
+                }
+            })();
+            // 心跳间隔 15s：第一次触发就该有字节流动（上游全程静默也不影响）
+            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(15_000);
+            const seen = await readUntilPing;
+            expect(seen).toContain(': ping');
+            expect(seen).not.toContain('data: [DONE]');
+        } finally {
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+        }
+    });
+});

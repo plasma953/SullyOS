@@ -317,6 +317,8 @@ function makeSse() {
   const encoder = new TextEncoder();
   let controller;
   const stream = new ReadableStream({ start(c) { controller = c; } });
+  let pingTimer = null;
+  const stopPing = () => { if (pingTimer) { clearInterval(pingTimer); pingTimer = null; } };
   const send = (event, data) => {
     try {
       let payload = '';
@@ -325,10 +327,21 @@ function makeSse() {
       for (const line of lines) payload += `data: ${line}\n`;
       payload += '\n';
       controller.enqueue(encoder.encode(payload));
-    } catch { /* 客户端断开 */ }
+    } catch { stopPing(); /* 客户端断开 */ }
   };
-  const close = () => { try { controller.close(); } catch { /* 已关闭 */ } };
-  return { stream, send, close };
+  // SSE 注释心跳：每 15s 一行 ": ping"（SSE 标准注释，所有解析端按规范忽略，
+  // SseAssembler.feedLine 只认 data: 行）。目的：模型思考/工具执行的静默段里
+  // 让字节持续流动，防运营商 NAT / 梯子对「无流量连接」的空闲超时掐线
+  //（2026-09-07 实测手机端 28~116s 无字节即死，回复在服务端生成完却送不回来）。
+  const ping = (intervalMs) => {
+    stopPing();
+    pingTimer = setInterval(() => {
+      try { controller.enqueue(encoder.encode(': ping\n\n')); }
+      catch { stopPing(); }
+    }, intervalMs);
+  };
+  const close = () => { stopPing(); try { controller.close(); } catch { /* 已关闭 */ } };
+  return { stream, send, close, ping };
 }
 
 // ─────────────────────── Agent 循环（核心）───────────────────────
@@ -517,6 +530,7 @@ async function handleChat(req, env) {
   }
 
   const sse = makeSse();
+  sse.ping(15000);
   const chatId = `chatcmpl-${Date.now().toString(36)}`;
   runAgentLoop(env, [...messages], (ev) => {
     if (ev.type === 'delta') {
