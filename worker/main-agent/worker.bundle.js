@@ -37,7 +37,7 @@ function corsPreflight() {
     status: 204,
     headers: {
       'access-control-allow-origin': '*',
-      'access-control-allow-headers': 'Content-Type, Authorization, X-Client-Token, Accept, Mcp-Session-Id, Last-Event-Id',
+      'access-control-allow-headers': 'Content-Type, Authorization, X-Client-Token, Accept, Mcp-Session-Id, Last-Event-Id, X-Relay-Target-Authorization',
       'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS, PROPFIND, MKCOL',
       'access-control-max-age': '86400',
     },
@@ -551,12 +551,18 @@ async function handleToolsList(env) {
 }
 
 // ─────────────────────── 路由 ───────────────────────
-// ────────────────────── MCP 中转（服务 token 服务端注入） ──────────────────────────
+// ────────────────────── MCP 中转（通用 CORS 中转） ──────────────────────────
 /**
- * /v1/mcp-relay?target=<公网MCP路径> —— MCP 服务统一转发端点。
- * 前端只带主代理 X-Client-Token；各 MCP 服务的 Bearer token 由服务端
- * 按前缀映射自动注入（来自 MCP_SERVERS），服务凭据绝不下发浏览器。
- * 只放行本机 MCP 前缀（防 SSRF）；Mcp-Session-Id 双向透传，响应流式回传。
+ * /v1/mcp-relay?target=<MCP 地址> —— MCP 统一转发端点（浏览器侧 CORS 的唯一出口）。
+ *
+ * 两类 target（按顺序判定）：
+ *  1. 本机 MCP 前缀（MCP_RELAY_MAP）：改写成 http://127.0.0.1:<port>，
+ *     Bearer token 由服务端按 MCP_SERVERS 注入，服务凭据绝不下发浏览器；
+ *  2. 任意公网 http(s) URL（如第三方 MCP）：按 SSRF 规则校验后原样转发，
+ *     目标鉴权来自请求头 X-Relay-Target-Authorization（浏览器按本机 MCP 条目的
+ *     token 现场填写，中转只翻译转发、不存储、不落盘；该头不向目标透传）。
+ *
+ * 只透传非跳点头；Mcp-Session-Id 双向透传，响应流式回传。
  */
 const MCP_RELAY_MAP = [
   { prefix: '/xhs-mcp-http', port: 8810, name: 'xhs-mcp' },
@@ -592,20 +598,56 @@ function resolveMcpRelayTarget(rawTarget, env) {
       }
     } catch { /* fallthrough */ }
   }
+  // 第三方公网 MCP：按 SSRF 规则校验后原样转发，目标 token 走请求头现场携带。
+  if (/^https?:\/\//i.test(rawTarget || '') && isRelayablePublicTarget(rawTarget)) {
+    return { url: rawTarget.trim(), token: '' };
+  }
   return null;
+}
+
+// 通用中转的 SSRF 守卫：只放行公网 http(s)。本机/回环/私网/链路本地/
+// 内网后缀一律拒绝（与中心 worker 的 isUnsafeFetchTarget 同口径）。
+function isRelayablePublicTarget(raw) {
+  let u;
+  try { u = new URL(raw); } catch { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return false;
+  if (host === 'localhost' || host === '::1' || host === '0.0.0.0') return false;
+  if (host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return false;
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const parts = v4.slice(1).map(Number);
+    if (parts.some((n) => n < 0 || n > 255)) return false;
+    const a = parts[0], b = parts[1];
+    if (a === 127 || a === 10 || a === 0) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+  }
+  if (/^f[cd][0-9a-f]{2}:/i.test(host) || /^fe[89ab][0-9a-f]:/i.test(host)) return false;
+  return true;
 }
 
 async function mcpRelayProxy(req, env, url) {
   const resolved = resolveMcpRelayTarget(url.searchParams.get('target'), env);
   if (!resolved) {
-    return json({ error: 'bad_target', hint: 'target 必须是本机 MCP 路径，如 /theseus-brain/mcp' }, 400);
+    return json({ error: 'bad_target', hint: 'target 必须是本机 MCP 路径（如 /theseus-brain/mcp）或公网 http(s) 地址' }, 400);
   }
   const headers = new Headers();
   for (const [k, v] of req.headers) {
-    if (['host', 'authorization', 'content-length', 'transfer-encoding', 'connection', 'x-client-token', 'origin'].includes(k.toLowerCase())) continue;
+    if (['host', 'authorization', 'content-length', 'transfer-encoding', 'connection', 'x-client-token', 'origin', 'x-relay-target-authorization'].includes(k.toLowerCase())) continue;
     headers.set(k, v);
   }
-  if (resolved.token) headers.set('authorization', 'Bearer ' + resolved.token);
+  if (resolved.token) {
+    headers.set('authorization', 'Bearer ' + resolved.token);
+  } else {
+    // 第三方 target：目标鉴权现场经 X-Relay-Target-Authorization 携带，
+    // 中转只翻译转发、不存储、不落盘。
+    const carried = (req.headers.get('x-relay-target-authorization') || '').trim().slice(0, 4096);
+    if (carried) headers.set('authorization', carried);
+  }
   let res;
   try {
     res = await fetch(resolved.url, {

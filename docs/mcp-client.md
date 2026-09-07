@@ -22,14 +22,15 @@
 function calling（例如携带 `tools` 就报 401），关闭它后首轮会直接走文字兼容模式，
 不再先发送一次 `tools` 探测请求；即使保持开启，遇到常见 4xx 仍会自动降级一次。
 
-### 连不上？三种网络路径
+### 连不上？网络路径（按优先级）
 
 浏览器直连远程 MCP 服务器经常被 CORS 拦（典型症状：测试连接时报
-`Failed to fetch`）。按场景三选一：
+`Failed to fetch`）。按场景选：
 
 | 路径 | 适用 | 操作 |
 |------|------|------|
-| **直连**（代理 URL 留空） | 服务器 CORS 配置正确 | 什么都不用做 |
+| **主代理中转**（默认，主代理已配置时） | 全部场景的首选 | 服务器条目的「连接方式」保持默认：浏览器只打自己的 VPS，目标无需 CORS。VPS 本机 MCP 的 token 由服务端注入；第三方服务器的 Bearer Token 按条目配置填写，经中转现场转发（VPS 不存储） |
+| **直连**（代理 URL 留空） | 服务器 CORS 配置正确，或主代理未配置 | 点「直连」按钮显式锁定；什么都不用做 |
 | **本地代理** | 本地 MCP（如 xiaohongshu-mcp）、或临时试用 | `node scripts/mcp-proxy.mjs`，代理 URL 填 `http://localhost:18061` |
 | **自己的 Cloudflare Worker** | 云端 MCP + 手机/不想在电脑跑东西 | 部署 [`worker/mcp-proxy/`](../worker/mcp-proxy/README.md) 到**自己的** CF 账号，代理 URL 填 Worker 地址，建议设 `PROXY_KEY` 防白嫖 |
 

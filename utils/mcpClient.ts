@@ -5,10 +5,11 @@
  * 自配的任意远程 MCP 服务器：设置里填 URL（+ 可选 Bearer Token / 自定义头），发现工具后
  * 以 OpenAI function-calling 格式注入聊天请求，工具循环见 useChatAI。
  *
- * 网络路径（用户三选一，见 docs/mcp-client.md）：
- * 1. 直连 —— MCP 服务器 CORS 配置正确时（能读到 Mcp-Session-Id 响应头）
- * 2. 本地代理 —— node scripts/mcp-proxy.mjs，代理 URL 填 http://localhost:18061
- * 3. 用户自己的 Cloudflare Worker —— worker/mcp-proxy/，部署到用户自己的账号
+ * 网络路径（见 docs/mcp-client.md）：
+ * 1. 主代理中转（默认，主代理已配置时）—— 浏览器只打自己的 VPS，目标无需 CORS
+ * 2. 直连 —— MCP 服务器 CORS 配置正确时（能读到 Mcp-Session-Id 响应头）
+ * 3. 自配代理 —— node scripts/mcp-proxy.mjs（填 http://localhost:18061），或把
+ *    worker/mcp-proxy/ 部署到自己的 Cloudflare 账号
  * 代理约定统一为 <代理URL>?target=<url-encoded 服务器URL>，可选 X-Proxy-Key 头。
  * 刻意不走中心 sfworker：MCP 流量（含用户的 Bearer Token）不该过项目方的服务器。
  *
@@ -65,7 +66,10 @@ export interface McpServerConfig {
     proxyUrl?: string;
     /** 自部署 Worker 的防白嫖密钥，可选（X-Proxy-Key 头） */
     proxyKey?: string;
-    /** routing: 'direct' (default; browser direct / own proxy, legacy-compatible) | 'relay' (VPS main-agent relay; X-Client-Token only, per-server tokens injected server-side) */
+    /** routing: 未设置 = 跟随默认（主代理中转已配置时走中转，否则直连）；
+     * 'direct' = 浏览器直连 / 走自配代理（legacy 兼容）；'relay' = 强制走 VPS 主代理中转。
+     * 中转认证 = 主代理 X-Client-Token；VPS 本机 MCP 的 per-server token 由服务端注入，
+     * 第三方服务器的 token 按配置经 X-Relay-Target-Authorization 现场携带转发（VPS 不存储）。 */
     routing?: 'direct' | 'relay';
     enabled: boolean;
     /** 「发现工具」后持久化的工具清单（聊天注入直接读这里，不用每次握手） */
@@ -166,6 +170,52 @@ export const createMcpServer = (name: string, url: string): McpServerConfig => (
     updatedAt: Date.now(),
 });
 
+/** 第三方 MCP 经通用中转时的目标鉴权携带头（中转翻译转发、不存储、不落盘）。 */
+export const MCP_RELAY_TARGET_AUTH_HEADER = 'X-Relay-Target-Authorization';
+
+/**
+ * 生效中的连接方式（relay 默认化，唯一判定口）：
+ * - 显式 'relay' → relay；显式 'direct' → direct；
+ * - 未设置（老配置 / 新建默认）：主代理中转已配置（agentUrl 非空）→ 走中转，否则直连。
+ * 用户在设置里点「直连」按钮即显式锁定 direct，不会被迁移再翻回去。
+ */
+export const effectiveMcpRouting = (
+    server: Pick<McpServerConfig, 'routing'>,
+    agentUrlOverride?: string,
+): 'direct' | 'relay' => {
+    if (server.routing === 'relay') return 'relay';
+    if (server.routing === 'direct') return 'direct';
+    const base = (agentUrlOverride ?? readAgentRoutingConfig().agentUrl).trim();
+    return base ? 'relay' : 'direct';
+};
+
+const MCP_ROUTING_MIGRATION_KEY = 'aetheros.mcp.relayDefaultMigrated.v1';
+
+/**
+ * 一次性存量迁移（relay 默认化）：把「公网可达 + 显式 direct」的老条目翻回
+ * 默认（删掉显式值 → 按 effectiveMcpRouting 走中转）；本机/私网条目保持直连不动。
+ * 返回迁移台数，供设置页 toast 告知。幂等（旗标防重跑）。
+ */
+export const migrateMcpRoutingDefault = (): number => {
+    try {
+        if (localStorage.getItem(MCP_ROUTING_MIGRATION_KEY) === '1') return 0;
+        const servers = loadMcpServers();
+        let moved = 0;
+        const next = servers.map((s) => {
+            if (s.routing === 'direct' && isWorkerReachableUrl(s.url)) {
+                moved += 1;
+                const rest = { ...s };
+                delete rest.routing;
+                return { ...rest, updatedAt: Date.now() };
+            }
+            return s;
+        });
+        if (moved > 0) saveMcpServers(next);
+        localStorage.setItem(MCP_ROUTING_MIGRATION_KEY, '1');
+        return moved;
+    } catch { return 0; }
+};
+
 /**
  * 启用且已发现工具、且对当前聊天可见的服务器。
  * charId 可传角色 ID 或群聊 ID；缺省时只返回通用服务器，保证没有聊天上下文
@@ -199,7 +249,7 @@ export const hasWorkerUnreachableMcpServer = (charId?: string): boolean =>
     getEnabledMcpServers(charId).some((s) => {
         // relay 模式看中转 URL 的可达性：VPS 能吃到自己 127.0.0.1 的服务，
         // 不该因为原始地址写了 localhost 就把即时对话整体否决。
-        if (s.routing === 'relay' && readAgentRoutingConfig().agentUrl.trim()) return false;
+        if (effectiveMcpRouting(s) === 'relay' && readAgentRoutingConfig().agentUrl.trim()) return false;
         return !isWorkerReachableUrl(s.url);
     });
 
@@ -221,12 +271,20 @@ export const collectMcpFireServers = (): McpFireServer[] => {
             // worker 侧 buildMcpDirectHeaders 现有逻辑零改动即可打穿中转
             //（主代理 checkAuth 同时接受 X-Client-Token 与 Bearer）。主代理 token
             // 本就存在浏览器配置里，进端到端加密的 client_state 不新增暴露面。
-            const relayActive = s.routing === 'relay' && !!agentBase;
+            const relayActive = effectiveMcpRouting(s, agentBase) === 'relay' && !!agentBase;
             const url = relayActive
                 ? agentBase + '/agent/v1/mcp-relay?target=' + encodeURIComponent(s.url)
                 : s.url;
             const token = relayActive ? agentCfg.agentToken : s.token;
-            return { s, relayActive, url, token };
+            // fire 经中转时：第三方目标的鉴权以自定义头随行（buildMcpDirectHeaders 原样
+            // 透传 customHeaders，worker 端无感）；中转收到后翻译成目标 Authorization。
+            const customHeaders = [...(s.customHeaders || [])].filter(
+                (h) => String(h?.name || '').trim().toLowerCase() !== MCP_RELAY_TARGET_AUTH_HEADER.toLowerCase(),
+            );
+            if (relayActive && s.token) {
+                customHeaders.push({ name: MCP_RELAY_TARGET_AUTH_HEADER, value: `Bearer ${s.token}` });
+            }
+            return { s, relayActive, url, token, customHeaders };
         })
         .filter((e) => e.s.enabled && e.url && (e.s.tools?.length || 0) > 0 && isWorkerReachableUrl(e.url))
         .map((e) => {
@@ -236,7 +294,7 @@ export const collectMcpFireServers = (): McpFireServer[] => {
             return {
                 id: e.s.id, name: e.s.name, url: e.url,
                 ...(e.token ? { token: e.token } : {}),
-                ...(e.s.customHeaders?.length ? { customHeaders: e.s.customHeaders } : {}),
+                ...(e.customHeaders.length ? { customHeaders: e.customHeaders } : {}),
                 ...(e.s.charIds?.length ? { charIds: e.s.charIds } : {}),
                 tools: backgroundTools.map((t) => ({
                     name: t.name,
@@ -291,15 +349,15 @@ export const resetMcpSession = (serverId: string): void => {
 };
 
 /**
- * Actual request URL (three-way):
- * - routing='relay': via VPS main-agent relay <agentUrl>/agent/v1/mcp-relay?target=<url>.
- *   Auth = main-agent X-Client-Token only; per-server Bearer tokens are injected
- *   server-side and never reach the browser.
- * - proxyUrl set: wrap as <proxy>?target=<url> (local script or self-hosted worker).
+ * Actual request URL（relay 默认化，判据见 effectiveMcpRouting）:
+ * - relay（显式，或默认 + 主代理已配置）: via VPS main-agent relay
+ *   <agentUrl>/agent/v1/mcp-relay?target=<url>。VPS 本机 MCP 的 Bearer token
+ *   由服务端注入；第三方目标的 token 经 X-Relay-Target-Authorization 现场携带。
+ * - proxyUrl set（非 relay）: wrap as <proxy>?target=<url> (local script or self-hosted worker).
  * - neither: browser direct.
  */
 export const buildMcpFetchUrl = (server: Pick<McpServerConfig, 'url' | 'proxyUrl' | 'routing'>, agentUrl?: string): string => {
-    if (server.routing === 'relay') {
+    if (effectiveMcpRouting(server, agentUrl) === 'relay') {
         const base = (agentUrl || readAgentRoutingConfig().agentUrl || '').trim().replace(new RegExp('/+$'), '');
         if (base) {
             const sep = base.includes('?') ? '&' : '?';
@@ -339,14 +397,17 @@ export const buildMcpRequestHeaders = (
             // 非法 HTTP 头名/值留给设置页继续编辑，不让整条 MCP 请求在 fetch 前崩掉。
         }
     }
-    // relay mode: managed auth is X-Client-Token of the main-agent relay;
-    // per-server tokens are injected server-side and must never leave the backend.
-    if (server.routing === 'relay') {
+    // relay mode: managed auth is X-Client-Token of the main-agent relay.
+    // VPS 本机 MCP 的 per-server token 由服务端注入；第三方目标的 token 按
+    // 配置经 X-Relay-Target-Authorization 现场携带（中转翻译、不存储、不落盘）。
+    const effective = effectiveMcpRouting(server);
+    if (effective === 'relay') {
         const agentToken = readAgentRoutingConfig().agentToken;
         if (agentToken) headers.set('X-Client-Token', agentToken);
+        if (server.token) headers.set(MCP_RELAY_TARGET_AUTH_HEADER, `Bearer ${server.token}`);
     }
-    if (server.routing !== 'relay' && server.token) headers.set('Authorization', `Bearer ${server.token}`);
-    if (server.routing !== 'relay' && server.proxyUrl && server.proxyKey) headers.set('X-Proxy-Key', server.proxyKey);
+    if (effective !== 'relay' && server.token) headers.set('Authorization', `Bearer ${server.token}`);
+    if (effective !== 'relay' && server.proxyUrl && server.proxyKey) headers.set('X-Proxy-Key', server.proxyKey);
     if (server.proxyUrl && customNames.length) headers.set('X-MCP-Forward-Headers', customNames.join(','));
     if (sessionId) headers.set('Mcp-Session-Id', sessionId);
     if (protocolVersion) headers.set('MCP-Protocol-Version', protocolVersion);
@@ -358,7 +419,7 @@ const targetFor = (server: McpServerConfig): McpTransportTarget => ({
     url: buildMcpFetchUrl(server),
     headers: (sessionId, protocolVersion) => buildMcpRequestHeaders(server, sessionId, protocolVersion),
     // 直连时 fetch 抛 TypeError 十有八九是 CORS，把排查方向直接告诉用户
-    fetchErrorHint: server.routing === 'relay'
+    fetchErrorHint: effectiveMcpRouting(server) === 'relay'
         ? '主代理中转不可达或 X-Client-Token 不对。请到「设置 → 主代理中转」检查地址与 Token，或用「测试中转连接」自检。'
         : server.proxyUrl
         ? '请检查代理 URL 是否可访问、代理密钥是否正确。'

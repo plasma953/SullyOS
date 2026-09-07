@@ -23,7 +23,7 @@ import {
 } from '../utils/elevenLabsTts';
 import { DATE_VOICE_GUIDE } from '../utils/datePrompts';
 import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, Coffee, PlugsConnected, Bluetooth, MapPin } from '@phosphor-icons/react';
-import { loadMcpServers, saveMcpServers, createMcpServer, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
+import { loadMcpServers, saveMcpServers, createMcpServer, effectiveMcpRouting, migrateMcpRoutingDefault, testMcpConnection, resetMcpSession, getMcpUseNativeTools, setMcpUseNativeTools, loadMcpSettings, saveMcpSettings, type McpServerConfig, type McpSettings } from '../utils/mcpClient';
 import { getMcpResultList, clearMcpResults } from '../utils/mcpResultMemory';
 import PushSubscriptionPanel from '../components/settings/PushSubscriptionPanel';
 import BluetoothPanel from '../components/settings/BluetoothPanel';
@@ -132,8 +132,8 @@ const DiagRow: React.FC<{ label: string; value: string; bad?: boolean }> = ({ la
 
 // 用户版 MCP 教程（自包含，写给用户和他们的 AI 助手看的）。静态部署的站点
 // 看不到仓库内文档，所以帮助弹窗只能跳 GitHub 的 blob 页。
-const MCP_USER_GUIDE_URL = 'https://github.com/qegj567-cloud/SullyOS/blob/master/docs/mcp-user-guide.md';
-const PROXY_WORKER_SOURCE_URL = 'https://github.com/qegj567-cloud/SullyOS/blob/master/worker/index.js';
+const MCP_USER_GUIDE_URL = 'https://github.com/plasma953/SullyOS/blob/ethernet/docs/mcp-user-guide.md';
+const PROXY_WORKER_SOURCE_URL = 'https://github.com/plasma953/SullyOS/blob/ethernet/worker/index.js';
 
 const formatBackupBytes = (bytes: number): string => {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
@@ -206,6 +206,13 @@ const flushMcpToolConfigSync = () => {
  * 配置存 localStorage（utils/mcpClient），启用且发现过工具的服务器会在聊天里
  * 以 function-calling 注入，详见 docs/mcp-client.md。
  */
+/**
+ * 测试连接冷却（防连点重试刷爆对方服务器 / 烧你的 API 配额）。
+ * 单飞由按钮 disabled（testingId）保证；这里再拦 10 秒内的重复点击。
+ */
+const mcpTestCooldown = new Map<string, number>();
+const MCP_TEST_COOLDOWN_MS = 10_000;
+
 const McpServersCard: React.FC<{
     addToast: (msg: string, type?: any) => void;
     /** 服务器清单或「原生 tools」开关变了 → 让主动消息那边把新配置重传上云 */
@@ -226,6 +233,15 @@ const McpServersCard: React.FC<{
             return next;
         });
     };
+
+    // relay 默认化的一次性存量迁移：公网条目翻回默认走中转（本机/私网不动），只跑一次。
+    useEffect(() => {
+        const moved = migrateMcpRoutingDefault();
+        if (moved > 0) {
+            setServers(loadMcpServers());
+            addToast(`已把 ${moved} 台公网 MCP 服务器切换为默认走主代理中转（需要直连可在连接方式里改回）`, 'success');
+        }
+    }, []);
 
     const persist = (next: McpServerConfig[]) => {
         setServers(next);
@@ -257,6 +273,14 @@ const McpServersCard: React.FC<{
 
     const discover = async (server: McpServerConfig) => {
         if (!server.url.trim()) { addToast('请先填写服务器 URL', 'error'); return; }
+        // 测试连接冷却：防连点重试刷爆对方服务器。单飞由按钮 disabled 保证，这里拦 10 秒内重复点击。
+        const now = Date.now();
+        const lastTestedAt = mcpTestCooldown.get(server.id) || 0;
+        if (now - lastTestedAt < MCP_TEST_COOLDOWN_MS) {
+            addToast(`测试太频繁，${Math.ceil((MCP_TEST_COOLDOWN_MS - (now - lastTestedAt)) / 1000)} 秒后再试`, 'error');
+            return;
+        }
+        mcpTestCooldown.set(server.id, now);
         setTestingId(server.id);
         setTestStatus(prev => ({ ...prev, [server.id]: '' }));
         try {
@@ -295,7 +319,7 @@ const McpServersCard: React.FC<{
             </div>
             <p className="text-[10px] text-violet-700/70 leading-relaxed">
                 接入任意标准 MCP 服务器（Streamable HTTP）：填 URL → 测试连接 → 打开开关，角色就能在聊天里调用这些工具。
-                被浏览器 CORS 拦住时配「代理 URL」：本地跑 <code className="bg-violet-100/80 px-1 rounded">node scripts/mcp-proxy.mjs</code>，或把 <code className="bg-violet-100/80 px-1 rounded">worker/mcp-proxy</code> 部署到你自己的 Cloudflare 账号。配置只存本机，详见 docs/mcp-client.md。
+                主代理中转已配置时默认走中转（浏览器只打你的 VPS，目标无需 CORS）；要直连再点「直连」。中转不可用时才配「代理 URL」：本地跑 <code className="bg-violet-100/80 px-1 rounded">node scripts/mcp-proxy.mjs</code>，或把 <code className="bg-violet-100/80 px-1 rounded">worker/mcp-proxy</code> 部署到你自己的 Cloudflare 账号。配置只存本机，详见 docs/mcp-client.md。
             </p>
             <div className="flex items-center justify-between gap-3 bg-white/70 border border-violet-100 rounded-xl px-3 py-2.5">
                 <div className="min-w-0">
@@ -400,17 +424,17 @@ const McpServersCard: React.FC<{
                                     <button
                                         type="button"
                                         onClick={() => update(server.id, { routing: 'direct' })}
-                                        className={'flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all ' + (server.routing !== 'relay' ? 'bg-violet-100 border-violet-300 text-violet-700' : 'bg-white/60 border-slate-200 text-slate-400')}
+                                        className={'flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all ' + (effectiveMcpRouting(server) !== 'relay' ? 'bg-violet-100 border-violet-300 text-violet-700' : 'bg-white/60 border-slate-200 text-slate-400')}
                                     >直连（公网域名 + Token）</button>
                                     <button
                                         type="button"
                                         onClick={() => update(server.id, { routing: 'relay' })}
                                         disabled={!agentRelayReady}
-                                        className={'flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all disabled:opacity-40 ' + (server.routing === 'relay' ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-white/60 border-slate-200 text-slate-400')}
+                                        className={'flex-1 py-1.5 rounded-lg text-[11px] font-bold border transition-all disabled:opacity-40 ' + (effectiveMcpRouting(server) === 'relay' ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-white/60 border-slate-200 text-slate-400')}
                                     >走主代理中转</button>
                                 </div>
-                                {server.routing === 'relay' && (
-                                    <p className="text-[10px] text-emerald-600/80 mt-1 leading-relaxed">请求经 VPS 主代理转发，鉴权只用主代理中转的 Token；下面 Bearer Token / 代理 URL 都不用填，各服务 token 由服务端自动注入。</p>
+                                {effectiveMcpRouting(server) === 'relay' && (
+                                    <p className="text-[10px] text-emerald-600/80 mt-1 leading-relaxed">请求经 VPS 主代理转发（主代理已配置时默认走这里）。VPS 本机 MCP 的 token 由服务端注入；第三方服务器请在下方填写目标 Bearer Token（经中转现场转发，VPS 不存储）。</p>
                                 )}
                                 {!agentRelayReady && (
                                     <p className="text-[10px] text-slate-400 mt-1">选「走主代理中转」前，先在「主代理中转」区块填好地址与 Token 并保存。</p>

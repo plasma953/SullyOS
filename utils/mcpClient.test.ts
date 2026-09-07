@@ -3,6 +3,8 @@ import {
     buildMcpFetchUrl,
     buildMcpRequestHeaders,
     createMcpServer,
+    effectiveMcpRouting,
+    migrateMcpRoutingDefault,
     loadMcpServers,
     saveMcpServers,
     exportMcpLocal,
@@ -15,6 +17,7 @@ import {
     collectMcpFireServers,
     callMcpTool,
     normalizeMcpToolArguments,
+    MCP_RELAY_TARGET_AUTH_HEADER,
     MCP_REQUEST_TIMEOUT_MS,
     type McpServerConfig,
 } from './mcpClient';
@@ -664,5 +667,76 @@ describe('hasWorkerUnreachableMcpServer', () => {
         saveMcpServers([mkServer({ id: 'srv_bound', url: 'http://localhost:18061/mcp', charIds: ['char_b'] })]);
         expect(hasWorkerUnreachableMcpServer('char_a')).toBe(false);
         expect(hasWorkerUnreachableMcpServer('char_b')).toBe(true);
+    });
+});
+
+describe('effectiveMcpRouting（relay 默认化）', () => {
+    const AGENT_KEY = 'os_api_config';
+    const setAgent = (agentUrl: string, agentToken = 'agent-tok') => {
+        localStorage.setItem(AGENT_KEY, JSON.stringify({ agentUrl, agentToken }));
+    };
+    beforeEach(() => {
+        localStorage.removeItem(AGENT_KEY);
+        localStorage.removeItem('aetheros.mcp.relayDefaultMigrated.v1');
+    });
+    afterEach(() => {
+        localStorage.removeItem(AGENT_KEY);
+        localStorage.removeItem('aetheros.mcp.relayDefaultMigrated.v1');
+    });
+
+    it('显式值优先：relay 锁定中转、direct 锁定直连，不受主代理配置影响', () => {
+        setAgent('https://agent.example.com');
+        expect(effectiveMcpRouting(mkServer({ routing: 'direct' }))).toBe('direct');
+        localStorage.removeItem(AGENT_KEY);
+        expect(effectiveMcpRouting(mkServer({ routing: 'relay' }))).toBe('relay');
+    });
+
+    it('未设置：主代理已配置 → relay；没配 → direct', () => {
+        expect(effectiveMcpRouting(mkServer({}))).toBe('direct');
+        setAgent('https://agent.example.com/');
+        expect(effectiveMcpRouting(mkServer({}))).toBe('relay');
+    });
+
+    it('agentUrl 覆盖参数优先于 localStorage（buildMcpFetchUrl 的注入口）', () => {
+        expect(effectiveMcpRouting(mkServer({}), 'https://agent.example.com')).toBe('relay');
+        setAgent('https://agent.example.com');
+        expect(effectiveMcpRouting(mkServer({}), '')).toBe('direct');
+    });
+
+    it('默认 + 主代理已配置 → buildMcpFetchUrl 走中转 URL', () => {
+        setAgent('https://agent.example.com/');
+        expect(buildMcpFetchUrl(mkServer({ url: 'https://mcp.example.com/mcp' })))
+            .toBe('https://agent.example.com/agent/v1/mcp-relay?target=https%3A%2F%2Fmcp.example.com%2Fmcp');
+    });
+
+    it('中转请求头：X-Client-Token + 现场携带的目标鉴权，不带直连头', () => {
+        setAgent('https://agent.example.com', 'agent-tok');
+        const headers = buildMcpRequestHeaders(mkServer({ token: 'srv-tok', proxyUrl: 'https://proxy.x', proxyKey: 'pk' }));
+        expect(headers.get('X-Client-Token')).toBe('agent-tok');
+        expect(headers.get(MCP_RELAY_TARGET_AUTH_HEADER)).toBe('Bearer srv-tok');
+        expect(headers.has('Authorization')).toBe(false);
+        expect(headers.has('X-Proxy-Key')).toBe(false);
+    });
+
+    it('迁移：公网 https + 显式 direct 翻回默认，本机不动，且幂等', () => {
+        saveMcpServers([
+            mkServer({ id: 'pub', url: 'https://public.example.com/mcp', routing: 'direct' }),
+            mkServer({ id: 'local', url: 'http://127.0.0.1:8787/mcp', routing: 'direct' }),
+            mkServer({ id: 'plain', url: 'https://other.example.com/mcp' }),
+        ]);
+        expect(migrateMcpRoutingDefault()).toBe(1);
+        const after = loadMcpServers();
+        expect(after.find((s) => s.id === 'pub')?.routing).toBeUndefined();
+        expect(after.find((s) => s.id === 'local')?.routing).toBe('direct');
+        expect(migrateMcpRoutingDefault()).toBe(0);
+    });
+
+    it('上云物化：relay 条目的目标鉴权以自定义头随行', () => {
+        setAgent('https://agent.example.com', 'agent-tok');
+        saveMcpServers([mkServer({ url: 'https://mcp.example.com/mcp', token: 'srv-tok' })]);
+        const [fire] = collectMcpFireServers();
+        expect(fire.url).toContain('/agent/v1/mcp-relay?target=');
+        expect(fire.token).toBe('agent-tok');
+        expect(fire.customHeaders).toContainEqual({ name: MCP_RELAY_TARGET_AUTH_HEADER, value: 'Bearer srv-tok' });
     });
 });

@@ -68,8 +68,8 @@ Access-Control-Expose-Headers: Mcp-Session-Id
    - **服务器 URL**：如 `https://mcp.example.com/mcp` 或 `http://localhost:18001/mcp`
    - **Bearer Token**：服务器要求 `Authorization: Bearer ...` 时填写，否则留空
    - **自定义请求头**：服务商要求 `X-API-Key`、`XBY-APIKEY` 等非 Bearer 鉴权时，点「添加请求头」填写名称和值
-   - **代理 URL**：留空 = 直连；被 CORS 拦了才填（见第四节）
-3. 点「**测试并读取工具**」→ 成功会显示服务端名称、协商版本与工具数量
+    - **代理 URL**：主代理中转已配置时留空即可（默认走中转，目标无需 CORS）；中转不可用、且被 CORS 拦了才填（见第四节）
+3. 点「**测试并读取工具**」→ 成功会显示服务端名称、协商版本与工具数量（10 秒内只能点一次，防刷爆服务器）
 4. **打开该服务器的开关**（不开开关角色用不了）
 5. 可选：「**适用聊天**」默认全部聊天；可绑定指定角色或群聊
 6. 验收：在私聊或已绑定的群聊里让角色用一下工具，界面会短暂显示「正在调用 MCP 工具：xxx」
@@ -78,9 +78,13 @@ Access-Control-Expose-Headers: Mcp-Session-Id
 
 不知道自己的模型或中转是否支持时，请询问你所使用的 API 负责人或售卖方，明确确认是否支持 `tools / function calling（函数调用）`。拿不准时保持开启；只有对方明确说不支持，或带 `tools` 参数会报错时才关闭，退回文字兼容模式。不关闭也有自动降级，只是会多一次试探请求。
 
-## 四、连不上？CORS 代理二选一
+## 四、连不上？先看连接方式，再看 CORS 代理
 
-「测试连接」报 `Failed to fetch`，基本都是服务器 CORS 没配好且你改不了它。SullyOS 仓库自带两个代理：
+主代理中转已配置时，服务器条目默认走中转（浏览器只打你自己的 VPS，目标无需 CORS），
+这种配置下「测试连接」报 `Failed to fetch` 请先检查主代理中转的地址与 Token。
+
+只有中转不可用、且「测试连接」报 `Failed to fetch` 时，才是服务器 CORS 没配好且你改不了它。
+SullyOS 仓库自带两个代理：
 
 | 方式 | 适合 | 步骤 |
 |------|------|------|
@@ -93,7 +97,7 @@ Access-Control-Expose-Headers: Mcp-Session-Id
 
 | 症状 | 原因与解法 |
 |------|-----------|
-| 测试连接 `Failed to fetch` | CORS 拦截 → 配代理（第四节）；或 URL 写错/服务器没起 |
+| 测试连接 `Failed to fetch` | 先看连接方式：中转模式查主代理中转地址/Token；直连模式 = CORS 拦截 → 配代理（第四节）；或 URL 写错/服务器没起 |
 | 测试连接 401/403/500 | 核对服务商要求的鉴权方式：Bearer 填 Token；`X-API-Key` / `XBY-APIKEY` 等填自定义请求头；OAuth-only 需找长期 token/key 或关闭 OAuth |
 | HTTPS 站点填 `http://` 地址被拒 | 混合内容拦截 → 换 https（穿透/上云），`http://localhost` 除外 |
 | 角色嘴上说用工具但没动静 | 该服务器开关没开；或模型不支持 function calling → 关「聊天模型支持工具调用」 |

@@ -2404,9 +2404,21 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin") || "*";
 
-    // CORS preflight
+    // CORS preflight：固定放行表 + 浏览器声明要发的头原样回显（数量/长度封顶）。
+    // 新功能加请求头时不再需要改放行表，回显只做"允许声明"，worker 实际读取的
+    // 头仍由各端点按名显式取用——放宽的是预检，不是上游转发面。
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+      const preflight = new Headers(corsHeaders(origin));
+      const requested = request.headers.get("Access-Control-Request-Headers") || "";
+      const picked = requested.split(",").map((s) => s.trim()).filter(Boolean)
+        .slice(0, 16)
+        .filter((s) => s.length <= 64 && /^[A-Za-z0-9-]+$/.test(s));
+      if (picked.length) {
+        const base = String(preflight.get("Access-Control-Allow-Headers") || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
+        preflight.set("Access-Control-Allow-Headers", Array.from(new Set([...base, ...picked])).join(", "));
+      }
+      return new Response(null, { status: 204, headers: preflight });
     }
 
     // ========== 小红书 Lite 桥接 (/api/<command>) ==========
