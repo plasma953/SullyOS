@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // 角色关掉「时间感知强化」后，日程块曾经照旧写着「当前时段：22:00 你正在睡觉」——
 // 精确钟点从这条缝里漏了出去，而挡住它正是那个开关存在的意义。
@@ -38,6 +38,17 @@ const buildVolatile = async (timeAwarenessEnabled: boolean | undefined) => {
 };
 
 describe('日程块的钟点跟着「时间感知」开关走', () => {
+    // 断言写死「当前时段是 00:00」——不钉死时钟的话，23:30 之后跑必挂（当前落在看剧档）。
+    // 只 fake Date 不动定时器：这份测试的异步链（查库/等待）依赖真 setTimeout，
+    // 全量 fake 会把链冻死（已实测 15s 超时）。本地凌晨 1 点正好落在 00:00 睡觉档。
+    beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date(2026, 7, 19, 1, 0, 0));
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
     it('开着（默认）时照常报时段', async () => {
         const volatile = await buildVolatile(undefined);
         expect(volatile).toContain('当前时段：00:00 你正在睡觉');
