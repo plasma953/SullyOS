@@ -2016,6 +2016,10 @@ async function saveIncomingActiveMessage(payload) {
     case "result":
       await notifyClients({ type: "active-msg-result", payload });
       return;
+    case "test": {
+      await notifyClients({ type: "active-msg-test", testId: payload?.testId });
+      return;
+    }
     default:
       console.warn("[amsg] unknown messageKind, falling back to content", messageKind);
       await saveContentToInbox(payload);

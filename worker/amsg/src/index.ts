@@ -149,6 +149,7 @@ import {
 import {
   applyInstantNotificationPolicy,
   buildInstantTimelyBlock,
+  constantTimeEqual,
   handleInstantChat,
   instantNotificationTag,
   INSTANT_TOTAL_TIMEOUT_MS,
@@ -800,6 +801,36 @@ const instantErrorNotificationBody = (reason: string): string => {
 };
 
 /**
+ * 读推送订阅行（sendInstantErrorPush 与 /push-test 共用）。
+ *
+ * 订阅行是加密存的（encryptForStorage 的 iv:authTag:data 格式）；个别老部署可能存的
+ * 是明文 JSON，解密失败时按明文再试一次，都不行才放弃。拿不到返回 null，调用方按
+ * 「没登记」处理，不抛。
+ */
+export const readPushSubscriptionRow = async (
+  db: InstantErrorPushDeps['db'],
+  masterKey: string,
+  userId?: string | null,
+): Promise<{ userId: string; subscription: unknown } | null> => {
+  try {
+    const row = userId
+      ? await db.prepare('SELECT user_id, subscription FROM push_subscriptions WHERE user_id = ? LIMIT 1').bind(userId).first()
+      : await db.prepare('SELECT user_id, subscription FROM push_subscriptions LIMIT 1').first();
+    const stored = row?.subscription;
+    const rowUserId = row?.user_id;
+    if (typeof stored !== 'string' || !stored || typeof rowUserId !== 'string' || !rowUserId) return null;
+    try {
+      const userKey = await deriveUserEncryptionKey(rowUserId, masterKey);
+      return { userId: rowUserId, subscription: JSON.parse(await decryptFromStorage(stored, userKey)) };
+    } catch {
+      return { userId: rowUserId, subscription: JSON.parse(stored) };
+    }
+  } catch {
+    return null;
+  }
+};
+
+/**
  * 即时对话的**终态**失败直发一条 `messageKind:'error'` 的 push（best-effort）。
  *
  * 只许在「这条任务不会再跑」的场合调：重试打光（retry_count 判定与上游
@@ -828,19 +859,9 @@ const sendInstantErrorPush = async (args: {
   const deps = instantErrorPushDeps;
   if (!deps?.masterKey) return;
   try {
-    const row = args.userId
-      ? await deps.db.prepare('SELECT user_id, subscription FROM push_subscriptions WHERE user_id = ? LIMIT 1').bind(args.userId).first()
-      : await deps.db.prepare('SELECT user_id, subscription FROM push_subscriptions LIMIT 1').first();
-    const stored = row?.subscription;
-    const userId = row?.user_id;
-    if (typeof stored !== 'string' || !stored || typeof userId !== 'string' || !userId) return;
-    let subscription: unknown;
-    try {
-      const userKey = await deriveUserEncryptionKey(userId, deps.masterKey);
-      subscription = JSON.parse(await decryptFromStorage(stored, userKey));
-    } catch {
-      subscription = JSON.parse(stored);
-    }
+    const sub = await readPushSubscriptionRow(deps.db, deps.masterKey, args.userId);
+    if (!sub) return;
+    const { subscription } = sub;
     const payload = {
       messageKind: 'error',
       messageType: 'instant',
@@ -2997,6 +3018,16 @@ const readServerVersion = async (request: Request, env: Env) => {
  *   其它请求            配置不全时直接 503 + 说明缺什么，不进上游
  */
 // 两个 handler 都只收 (request/event, env)：CF 还会给第三个参数 ctx，但这里用不上——
+// ─── POST /push-test（推送测试按钮） ───
+// 读库里已登记的订阅、经现有 VAPID 通道发一条真推送，证明整条链路能把推送送到
+// 这台设备。零 LLM、零写库（只读订阅行）。触发频率由前端 30s 冷却 + 下面的
+// 同窗拦截双保险——推送服务（FCM）会限流刷屏。
+let lastPushTestAt = 0;
+const PUSH_TEST_COOLDOWN_MS = 30_000;
+
+/** 单测把冷却清零用；生产路径只往前走不回拨。 */
+export const resetPushTestCooldown = (): void => { lastPushTestAt = 0; };
+
 // /instant-chat 回完 202 之后的那一跳跑在 InstantTickDO 的 alarm 里，不占这个请求的
 // 生命周期（waitUntil 只有 30 秒，见 InstantTickDO 的注释）。
 export default {
@@ -3105,6 +3136,76 @@ export default {
         success: false,
         error: { code: 'WORKER_CONFIG_MISSING', message: report.message, missing: report.missing },
       });
+    }
+
+    // 即时对话：一个请求把「传云端状态 + 建任务」串完，回 202 之后立刻起一跳。
+    // 排在配置门之后，所以走到这里 D1 和密钥必然都在。
+    if (pathname.endsWith('/push-test')) {
+      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+      if (method !== 'POST') {
+        return jsonWithCors(405, {
+          success: false,
+          error: { code: 'METHOD_NOT_ALLOWED', message: '/push-test 只接受 POST' },
+        });
+      }
+      // 鉴权口径与 selfUpdate 一致：配了 AMSG_SERVER_TOKEN 才验，不配则开。
+      const pushTestServerToken = (env.AMSG_SERVER_TOKEN ?? '').trim();
+      const pushTestClientToken = request.headers.get('X-Client-Token') ?? '';
+      if (pushTestServerToken
+        && (!pushTestClientToken || !(await constantTimeEqual(pushTestClientToken, pushTestServerToken)))) {
+        return jsonWithCors(401, {
+          success: false,
+          error: { code: 'INVALID_CLIENT_TOKEN', message: '共享密钥无效或缺失' },
+        });
+      }
+      const pushTestNow = Date.now();
+      if (pushTestNow - lastPushTestAt < PUSH_TEST_COOLDOWN_MS) {
+        return jsonWithCors(429, {
+          success: false,
+          error: { code: 'TOO_MANY_REQUESTS', message: '测试推送刚发过，30 秒后再点' },
+        });
+      }
+      lastPushTestAt = pushTestNow;
+      const pushTestUserId = request.headers.get('X-User-Id')?.trim() || null;
+      const sub = await readPushSubscriptionRow(
+        env.DB as unknown as Parameters<typeof readPushSubscriptionRow>[0],
+        env.AMSG_MASTER_KEY,
+        pushTestUserId,
+      );
+      if (!sub) {
+        return jsonWithCors(404, {
+          success: false,
+          error: { code: 'PUSH_SUBSCRIPTION_MISSING', message: '云端没有登记这台设备的推送订阅，先点「重置订阅」' },
+        });
+      }
+      // tag 固定 + renotify：连点只留一条，不堆通知栏。messageKind 'test' 在 SW 侧
+      // 有独立分轨（只通知页面、不写 inbox、不碰聊天），见 sw-keep-alive。
+      const testId = `test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      // transport 优先用已配置好的那份（上游工厂每次请求都会配好；单测经
+      // configureInstantErrorPush 注入）；新 isolate 第一跳就打到这里时现场建一份。
+      const pushTransport = instantErrorPushDeps?.webpush ?? buildWorkerConfig(env).webpush;
+      try {
+        await pushTransport.sendNotification(sub.subscription, JSON.stringify({
+          messageKind: 'test',
+          messageType: 'instant',
+          messageId: testId,
+          timestamp: new Date().toISOString(),
+          testId,
+          notification: {
+            title: 'SullyOS 测试通知',
+            body: '链路是通的，这条是测试，不用回复。',
+            show: 'always',
+            tag: 'sullyos-push-test',
+            renotify: true,
+          },
+        }));
+      } catch (error) {
+        return jsonWithCors(502, {
+          success: false,
+          error: { code: 'PUSH_SEND_FAILED', message: `测试推送没发出去：${error instanceof Error ? error.message : String(error)}` },
+        });
+      }
+      return jsonWithCors(200, { success: true, data: { testId, sentAt: new Date().toISOString() } });
     }
 
     // 即时对话：一个请求把「传云端状态 + 建任务」串完，回 202 之后立刻起一跳。

@@ -4,13 +4,13 @@
 //
 // 顺序：charId 校验 → 活跃会话租约(skip) → fire_pack 存在(否则抛) → 防穿帮闸(skip)
 //      → 任务指令存在(否则抛) → 挂 scratch + 填槽返回
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { readFile } from 'node:fs/promises';
 
 import worker, {
   amsgFireSettled, amsgHooks, amsgReasoningKey, amsgStaleSkip, attachScheduledTasks,
   buildWorkerConfig, configureInstantErrorPush, inspectWorkerEnv,
-  offloadOversizedPush, resolveVapidEmail, runFireCancelTool, runFireRenewTool,
+  offloadOversizedPush, resolveVapidEmail, resetPushTestCooldown, runFireCancelTool, runFireRenewTool,
   inspectPushDelivery,
   runFireScheduleTool, runMcpFireTool, splitSchemaMissing, classifySchemaProbeError,
 } from './index';
@@ -4382,5 +4382,142 @@ describe('打包进来的 amsg-server 得会写 pushStatus', () => {
       `package.json 里还锁着 ${version}：那个版本的上游不写 last_error.pushStatus，`
       + '打出来的 worker 会把「推送投递」这一项一路报绿。等上游发版后升到 next.20 再打 bundle。',
     ).toBe(true);
+  });
+});
+
+// POST /push-test（设置页推送测试按钮）：读库里已登记的订阅、经 VAPID 直发一条
+// messageKind:'test' 的真推送。零 LLM、零写库。红线：绝不能把聊天内容、工具调用、
+// 情绪评估带进来——SW 侧 'test' 有独立分轨（只通知页面），这里只保证载荷里没有
+// 那些字段（见 SW 的 saveIncomingActiveMessage）。
+describe('POST /push-test 推送测试', () => {
+  const pushTestEnv = {
+    AMSG_MASTER_KEY: 'a'.repeat(64),
+    VAPID_EMAIL: 'mailto:a@b.c',
+    VAPID_PUBLIC_KEY: 'pub-key',
+    VAPID_PRIVATE_KEY: 'priv-key',
+    AMSG_SERVER_TOKEN: 'shared-secret',
+    DB: { prepare: () => ({}) },
+  } as any;
+
+  const subRowDb = () => ({
+    prepare: () => ({
+      bind: () => ({
+        first: async () => ({
+          user_id: 'u1',
+          subscription: JSON.stringify({ endpoint: 'https://push.example/e1', keys: {} }),
+        }),
+      }),
+      first: async () => ({
+        user_id: 'u1',
+        subscription: JSON.stringify({ endpoint: 'https://push.example/e1', keys: {} }),
+      }),
+    }),
+  });
+
+  const injectWebpush = () => {
+    const sent: Array<{ subscription: unknown; body: any }> = [];
+    configureInstantErrorPush({
+      webpush: {
+        sendNotification: async (subscription: unknown, body: string) => {
+          sent.push({ subscription, body: JSON.parse(body) });
+        },
+      },
+      db: subRowDb() as any,
+      masterKey: 'a'.repeat(64),
+    } as any);
+    return sent;
+  };
+
+  const authed = { 'X-Client-Token': 'shared-secret' };
+
+  beforeEach(() => {
+    resetPushTestCooldown();
+  });
+
+  afterEach(() => {
+    configureInstantErrorPush(null);
+    resetPushTestCooldown();
+  });
+
+  it('OPTIONS 预检放行（带自定义头的正式请求先发它）', async () => {
+    const response = await (worker as any).fetch(
+      new Request('https://w.example/push-test', { method: 'OPTIONS' }),
+      pushTestEnv,
+      { waitUntil: () => {} },
+    );
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('只接受 POST', async () => {
+    const response = await (worker as any).fetch(
+      new Request('https://w.example/push-test', { method: 'GET', headers: authed }),
+      pushTestEnv,
+      { waitUntil: () => {} },
+    );
+    expect(response.status).toBe(405);
+  });
+
+  it('配了口令而没带 → 401，一个字节的推送都不发', async () => {
+    const sent = injectWebpush();
+    const response = await (worker as any).fetch(
+      new Request('https://w.example/push-test', { method: 'POST' }),
+      { ...pushTestEnv, DB: subRowDb() },
+      { waitUntil: () => {} },
+    );
+    expect(response.status).toBe(401);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('云端没登记订阅 → 404，不发', async () => {
+    injectWebpush();
+    const emptyDb = { prepare: () => ({ bind: () => ({ first: async () => null }), first: async () => null }) };
+    const response = await (worker as any).fetch(
+      new Request('https://w.example/push-test', { method: 'POST', headers: authed }),
+      { ...pushTestEnv, DB: emptyDb },
+      { waitUntil: () => {} },
+    );
+    expect(response.status).toBe(404);
+    expect((await response.json()).error.code).toBe('PUSH_SUBSCRIPTION_MISSING');
+  });
+
+  it('正常：读登记行、发 messageKind:test，载荷里没有聊天字段', async () => {
+    const sent = injectWebpush();
+    const response = await (worker as any).fetch(
+      new Request('https://w.example/push-test', { method: 'POST', headers: authed }),
+      { ...pushTestEnv, DB: subRowDb() },
+      { waitUntil: () => {} },
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(typeof body.data?.testId).toBe('string');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].subscription).toEqual({ endpoint: 'https://push.example/e1', keys: {} });
+    expect(sent[0].body.messageKind).toBe('test');
+    expect(sent[0].body.testId).toBe(body.data.testId);
+    expect(sent[0].body.notification?.title).toBeTruthy();
+    expect(sent[0].body.notification?.tag).toBe('sullyos-push-test');
+    // 载荷里不能有聊天正文字段：SW 把未知 kind 当 content 落 inbox，带了 message
+    // 就会凭空多一条聊天气泡。
+    expect(sent[0].body.message ?? null).toBeNull();
+  });
+
+  it('30 秒内第二发 → 429（FCM 会限流刷屏）', async () => {
+    injectWebpush();
+    const env = { ...pushTestEnv, DB: subRowDb() };
+    const first = await (worker as any).fetch(
+      new Request('https://w.example/push-test', { method: 'POST', headers: authed }),
+      env,
+      { waitUntil: () => {} },
+    );
+    expect(first.status).toBe(200);
+    const second = await (worker as any).fetch(
+      new Request('https://w.example/push-test', { method: 'POST', headers: authed }),
+      env,
+      { waitUntil: () => {} },
+    );
+    expect(second.status).toBe(429);
+    expect((await second.json()).error.code).toBe('TOO_MANY_REQUESTS');
   });
 });

@@ -9,7 +9,7 @@
 // 重置走 ActiveMsgClient 的 amsg2 路径——退订、按云端自己的 VAPID 重订、再覆盖
 // 登记回 worker。三步缺一不可，少了最后一步就是把这个面板要治的病再犯一遍。
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActiveMsgClient,
   compareRemotePushSubscription,
@@ -43,6 +43,13 @@ interface PushSubscriptionPanelProps {
 /** 连续几次僵尸失败之后，「重置订阅」升级成「深度重置」。 */
 const DEEP_RESET_THRESHOLD = 3;
 
+/**
+ * 测试推送冷却（防连点刷推送服务）。内存级：刷新页面归零。
+ * 后端同窗再拦一道（30 秒内第二发回 429），两边口径一致。
+ */
+const PUSH_TEST_COOLDOWN_MS = 30_000;
+let lastPushTestAt = 0;
+
 const Row: React.FC<{ label: string; value: string; bad?: boolean }> = ({ label, value, bad }) => (
   <div className="flex items-start justify-between gap-3">
     <span className="text-slate-500 shrink-0">{label}</span>
@@ -69,6 +76,9 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [catchingUp, setCatchingUp] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const pendingTestIdRef = useRef<string | null>(null);
+  const testTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 连续几次僵尸失败。不落盘：刷新页面就归零，用户不会莫名其妙看到一个红按钮。
   const [zombieStreak, setZombieStreak] = useState(0);
 
@@ -92,6 +102,32 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const clearPendingTest = useCallback(() => {
+    pendingTestIdRef.current = null;
+    if (testTimeoutRef.current) {
+      clearTimeout(testTimeoutRef.current);
+      testTimeoutRef.current = null;
+    }
+  }, []);
+
+  // 测试推送的回音（SW 收到 messageKind:'test' 后转交）：按 testId 认领自己那一次。
+  // 页面关着时没有监听，横幅本身就是证明，不需要回音。
+  useEffect(() => {
+    const onTestEcho = (event: Event) => {
+      const testId = (event as CustomEvent)?.detail?.testId ?? null;
+      if (!testId || testId !== pendingTestIdRef.current) return;
+      clearPendingTest();
+      setTesting(false);
+      addToast('收到了！推送这条链路是通的。', 'success');
+      trackEvent('发送测试推送', { result: 'received' });
+    };
+    window.addEventListener('active-msg-test', onTestEcho);
+    return () => {
+      window.removeEventListener('active-msg-test', onTestEcho);
+      if (testTimeoutRef.current) clearTimeout(testTimeoutRef.current);
+    };
+  }, [addToast, clearPendingTest]);
 
   const deepMode = zombieStreak >= DEEP_RESET_THRESHOLD;
 
@@ -161,6 +197,38 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
       addToast(error?.message || '读云端账本失败，待会儿再试。', 'error');
     } finally {
       setCatchingUp(false);
+    }
+  };
+
+  /**
+   * 发一条测试推送：后端读库里已登记的订阅、经 VAPID 直发（零 LLM、不建任务）。
+   * 发出去只是第一步——链路通没通看回音（SW 转交的 active-msg-test 事件）或通知栏。
+   */
+  const handlePushTest = async () => {
+    if (testing) return;
+    const now = Date.now();
+    if (now - lastPushTestAt < PUSH_TEST_COOLDOWN_MS) {
+      addToast(`测试刚发过，${Math.ceil((PUSH_TEST_COOLDOWN_MS - (now - lastPushTestAt)) / 1000)} 秒后再点`, 'error');
+      return;
+    }
+    lastPushTestAt = now;
+    setTesting(true);
+    try {
+      const { testId } = await ActiveMsgClient.sendPushTest();
+      pendingTestIdRef.current = testId;
+      testTimeoutRef.current = setTimeout(() => {
+        pendingTestIdRef.current = null;
+        testTimeoutRef.current = null;
+        setTesting(false);
+        addToast('页面没收到回音——如果通知栏弹了就是通的（页面在后台时回音送不到）。', 'info');
+        trackEvent('发送测试推送', { result: 'timeout' });
+      }, PUSH_TEST_COOLDOWN_MS);
+      addToast('测试推送已发出，盯着通知栏看（锁屏/后台也能收到）。', 'info');
+      trackEvent('发送测试推送', { result: 'sent' });
+    } catch (error: any) {
+      setTesting(false);
+      addToast(error?.message || '测试推送发送失败。', 'error');
+      trackEvent('发送测试推送', { result: 'failed' });
     }
   };
 
@@ -345,6 +413,30 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
           或者订阅被吊销之后点它。
           {deepMode && <><br/>连着几次都没成，已经切到「深度重置」——它会把 Service Worker 整个装一遍，更彻底。</>}
         </p>
+
+        {/* 推送测试：发一条真推送验证整条链路（订阅→云端→推送服务→这台设备）。
+            App 里没有网页推送，直接不渲染那一块（和上面的重置按钮一个口径）。 */}
+        {workerConfigured && !browser?.capacitorNative && (
+          <>
+            <button
+              disabled={testing || refreshing || resetting || registration !== 'matched'}
+              onClick={() => void handlePushTest()}
+              className={`mt-3 w-full py-2 rounded-xl text-xs font-bold border ${
+                testing || refreshing || resetting || registration !== 'matched'
+                  ? 'bg-slate-100 text-slate-400 border-slate-200'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {testing ? '已发出，等回音…' : '发送测试通知'}
+            </button>
+            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+              发一条真推送验证整条链路，不建任务、不调模型。
+              {registration !== 'matched'
+                ? '上面「云端登记」变绿了再点，否则发了也到不了这台设备。'
+                : '收到后这里会报一声；页面关着就只看通知栏。'}
+            </p>
+          </>
+        )}
 
         {/* 上面那条链路修好了也追不回已经丢掉的消息——那些还在云端账本上躺着，得有人去拿。
             平时冷启动和回到前台会自动捞一次，这个按钮是给「我确实少收了东西」的时候用的：

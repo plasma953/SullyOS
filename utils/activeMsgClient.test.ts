@@ -1957,3 +1957,39 @@ describe('请求体 gzip 上行', () => {
     expect(await maybeGzipRequestBody(undefined)).toEqual({ body: undefined, gzipped: false });
   });
 });
+
+describe('ActiveMsgClient.sendPushTest（推送测试按钮）', () => {
+  const okBody = (data: unknown) => new Response(JSON.stringify({ success: true, data }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    storeConfigExtra.value = {};
+  });
+
+  it('POST workerUrl/push-test，带 X-Client-Token + X-User-Id，返回 testId', async () => {
+    storeConfigExtra.value = { serverToken: 'tok' };
+    const seen: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      seen.push({ url: String(url), init });
+      return okBody({ testId: 'test_abc', sentAt: '2026-09-07T00:00:00.000Z' });
+    }));
+    const out = await ActiveMsgClient.sendPushTest();
+    expect(out).toEqual({ testId: 'test_abc', sentAt: '2026-09-07T00:00:00.000Z' });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].url).toBe('https://amsg.example.workers.dev/push-test');
+    const headers = new Headers(seen[0].init.headers);
+    expect(headers.get('X-Client-Token')).toBe('tok');
+    expect(headers.get('X-User-Id')).toBe(TEST_USER_ID);
+  });
+
+  it('后端 success:false → 抛后端的原话', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ success: false, error: { code: 'PUSH_SUBSCRIPTION_MISSING', message: '云端没有登记' } }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } },
+    )));
+    await expect(ActiveMsgClient.sendPushTest()).rejects.toThrow('云端没有登记');
+  });
+});

@@ -673,6 +673,14 @@ async function saveIncomingActiveMessage(payload: any) {
       await notifyClients({ type: 'active-msg-result', payload });
       return;
 
+    case 'test': {
+      // 推送测试按钮的回音: 只证明「这条链路能把推送送到这台设备」。不写 inbox、
+      // 不碰聊天、不跑工具——横幅由包层按 notification 展示, 这里只通知页面一声
+      // (设置页开着就当场报「收到了」; 没开着就只看横幅)。
+      await notifyClients({ type: 'active-msg-test', testId: payload?.testId });
+      return;
+    }
+
     default:
       console.warn('[amsg] unknown messageKind, falling back to content', messageKind);
       await saveContentToInbox(payload);

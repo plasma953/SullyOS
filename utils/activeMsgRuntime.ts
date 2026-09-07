@@ -2775,6 +2775,15 @@ export const ActiveMsgRuntime = {
           return;
         }
 
+        // 推送测试按钮的回音（SW 收到 messageKind:'test' 后转交）：只证明链路通，
+        // 不写库不落聊天。面板按 testId 认领自己那一次。
+        if (type === 'active-msg-test') {
+          window.dispatchEvent(new CustomEvent('active-msg-test', {
+            detail: { testId: (event.data as any)?.testId ?? null },
+          }));
+          return;
+        }
+
         // 云端后台任务跑完送回来的结果（worker 的 emitResult）。这里是「推送直达」那条腿；
         // 另一条腿是上线补收（drainOutbox），两边指的是同一个分发口。销账不在这里做——
         // 推来的这一份服务端账本上也有一行，等补收那条路照常划掉。所以同一条结果被消化

@@ -1734,6 +1734,28 @@ export const ActiveMsgClient = {
   },
 
   /**
+   * 发一条测试推送（设置页「推送订阅状态」面板的测试按钮）。
+   *
+   * 后端读库里已登记的订阅、经 VAPID 通道直发一条 `messageKind:'test'` 的推送：
+   * 横幅由 SW 按 notification 展示，页面开着还会收到 `active-msg-test` 回音。
+   * 零 LLM、零写库。频率由调用方（面板 30 秒冷却）+ 后端同窗拦截双保险。
+   */
+  async sendPushTest(): Promise<{ testId: string; sentAt: string }> {
+    const config = await ensureWorkerReady();
+    let body: any;
+    try {
+      body = await fetchWithAuth('push-test', config, { method: 'POST' }, '推送测试');
+    } catch (error) {
+      throw normalizeActiveMsgApiError(error, '推送测试');
+    }
+    const data = body?.success === true ? body?.data : null;
+    if (typeof data?.testId !== 'string' || !data.testId) {
+      throw new Error(body?.error?.message || '测试推送发送失败。');
+    }
+    return { testId: data.testId, sentAt: typeof data?.sentAt === 'string' ? data.sentAt : '' };
+  },
+
+  /**
    * 重置订阅：清掉现在这条，重新建一条，再覆盖登记回 worker。
    *
    * 三步缺一不可。只在浏览器重订不登记的话，worker 的 push_subscriptions 里还是

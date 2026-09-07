@@ -13068,21 +13068,29 @@ var instantErrorNotificationBody = (reason) => {
   if (reason === "stale") return "\u8FD9\u6761\u6D88\u606F\u5728\u4E91\u7AEF\u6392\u961F\u592A\u4E45\uFF0C\u5DF2\u4F5C\u5E9F\u3002\u53EF\u4EE5\u91CD\u65B0\u53D1\u4E00\u6B21\u3002";
   return "\u8FD9\u4E00\u8F6E\u4E91\u7AEF\u751F\u6210\u5931\u8D25\u4E86\uFF0C\u70B9\u5F00\u67E5\u770B\u539F\u56E0\uFF0C\u53EF\u4EE5\u91CD\u65B0\u53D1\u4E00\u6B21\u3002";
 };
+var readPushSubscriptionRow = async (db, masterKey, userId) => {
+  try {
+    const row = userId ? await db.prepare("SELECT user_id, subscription FROM push_subscriptions WHERE user_id = ? LIMIT 1").bind(userId).first() : await db.prepare("SELECT user_id, subscription FROM push_subscriptions LIMIT 1").first();
+    const stored = row?.subscription;
+    const rowUserId = row?.user_id;
+    if (typeof stored !== "string" || !stored || typeof rowUserId !== "string" || !rowUserId) return null;
+    try {
+      const userKey = await deriveUserEncryptionKey(rowUserId, masterKey);
+      return { userId: rowUserId, subscription: JSON.parse(await decryptFromStorage(stored, userKey)) };
+    } catch {
+      return { userId: rowUserId, subscription: JSON.parse(stored) };
+    }
+  } catch {
+    return null;
+  }
+};
 var sendInstantErrorPush = async (args) => {
   const deps = instantErrorPushDeps;
   if (!deps?.masterKey) return;
   try {
-    const row = args.userId ? await deps.db.prepare("SELECT user_id, subscription FROM push_subscriptions WHERE user_id = ? LIMIT 1").bind(args.userId).first() : await deps.db.prepare("SELECT user_id, subscription FROM push_subscriptions LIMIT 1").first();
-    const stored = row?.subscription;
-    const userId = row?.user_id;
-    if (typeof stored !== "string" || !stored || typeof userId !== "string" || !userId) return;
-    let subscription;
-    try {
-      const userKey = await deriveUserEncryptionKey(userId, deps.masterKey);
-      subscription = JSON.parse(await decryptFromStorage(stored, userKey));
-    } catch {
-      subscription = JSON.parse(stored);
-    }
+    const sub = await readPushSubscriptionRow(deps.db, deps.masterKey, args.userId);
+    if (!sub) return;
+    const { subscription } = sub;
     const payload = {
       messageKind: "error",
       messageType: "instant",
@@ -14328,6 +14336,11 @@ var readServerVersion = async (request, env) => {
     return null;
   }
 };
+var lastPushTestAt = 0;
+var PUSH_TEST_COOLDOWN_MS = 3e4;
+var resetPushTestCooldown = () => {
+  lastPushTestAt = 0;
+};
 var src_default = {
   async fetch(request, env) {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
@@ -14402,6 +14415,67 @@ var src_default = {
         error: { code: "WORKER_CONFIG_MISSING", message: report.message, missing: report.missing }
       });
     }
+    if (pathname.endsWith("/push-test")) {
+      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+      if (method !== "POST") {
+        return jsonWithCors(405, {
+          success: false,
+          error: { code: "METHOD_NOT_ALLOWED", message: "/push-test \u53EA\u63A5\u53D7 POST" }
+        });
+      }
+      const pushTestServerToken = (env.AMSG_SERVER_TOKEN ?? "").trim();
+      const pushTestClientToken = request.headers.get("X-Client-Token") ?? "";
+      if (pushTestServerToken && (!pushTestClientToken || !await constantTimeEqual2(pushTestClientToken, pushTestServerToken))) {
+        return jsonWithCors(401, {
+          success: false,
+          error: { code: "INVALID_CLIENT_TOKEN", message: "\u5171\u4EAB\u5BC6\u94A5\u65E0\u6548\u6216\u7F3A\u5931" }
+        });
+      }
+      const pushTestNow = Date.now();
+      if (pushTestNow - lastPushTestAt < PUSH_TEST_COOLDOWN_MS) {
+        return jsonWithCors(429, {
+          success: false,
+          error: { code: "TOO_MANY_REQUESTS", message: "\u6D4B\u8BD5\u63A8\u9001\u521A\u53D1\u8FC7\uFF0C30 \u79D2\u540E\u518D\u70B9" }
+        });
+      }
+      lastPushTestAt = pushTestNow;
+      const pushTestUserId = request.headers.get("X-User-Id")?.trim() || null;
+      const sub = await readPushSubscriptionRow(
+        env.DB,
+        env.AMSG_MASTER_KEY,
+        pushTestUserId
+      );
+      if (!sub) {
+        return jsonWithCors(404, {
+          success: false,
+          error: { code: "PUSH_SUBSCRIPTION_MISSING", message: "\u4E91\u7AEF\u6CA1\u6709\u767B\u8BB0\u8FD9\u53F0\u8BBE\u5907\u7684\u63A8\u9001\u8BA2\u9605\uFF0C\u5148\u70B9\u300C\u91CD\u7F6E\u8BA2\u9605\u300D" }
+        });
+      }
+      const testId = `test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const pushTransport = instantErrorPushDeps?.webpush ?? buildWorkerConfig(env).webpush;
+      try {
+        await pushTransport.sendNotification(sub.subscription, JSON.stringify({
+          messageKind: "test",
+          messageType: "instant",
+          messageId: testId,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          testId,
+          notification: {
+            title: "SullyOS \u6D4B\u8BD5\u901A\u77E5",
+            body: "\u94FE\u8DEF\u662F\u901A\u7684\uFF0C\u8FD9\u6761\u662F\u6D4B\u8BD5\uFF0C\u4E0D\u7528\u56DE\u590D\u3002",
+            show: "always",
+            tag: "sullyos-push-test",
+            renotify: true
+          }
+        }));
+      } catch (error) {
+        return jsonWithCors(502, {
+          success: false,
+          error: { code: "PUSH_SEND_FAILED", message: `\u6D4B\u8BD5\u63A8\u9001\u6CA1\u53D1\u51FA\u53BB\uFF1A${error instanceof Error ? error.message : String(error)}` }
+        });
+      }
+      return jsonWithCors(200, { success: true, data: { testId, sentAt: (/* @__PURE__ */ new Date()).toISOString() } });
+    }
     if (pathname.endsWith("/instant-chat")) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (method !== "POST") {
@@ -14437,6 +14511,8 @@ export {
   inspectPushDelivery,
   inspectWorkerEnv,
   offloadOversizedPush,
+  readPushSubscriptionRow,
+  resetPushTestCooldown,
   resolveVapidEmail,
   runFireCancelTool,
   runFireRenewTool,
