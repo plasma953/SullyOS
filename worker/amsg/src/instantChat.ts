@@ -204,6 +204,11 @@ interface InstantChatEnv {
   AMSG_SERVER_TOKEN?: string;
   /** 没有它就没法起跳；老版本 Worker 上是 undefined，见 kickInstantTick。 */
   INSTANT_TICK?: InstantTickNamespace;
+  /**
+   * VPS 宿主由 vps-backend/bin/sullyos-service.js 注入为 'vps'。
+   * VPS 上没有 Durable Object，起跳器永远缺席——这是常态，不是旧版本。
+   */
+  SULLYOS_RUNTIME?: string;
 }
 
 export type InstantTickKickResult =
@@ -534,9 +539,16 @@ export const handleInstantChat = async (args: {
   //    生成跑在它的 alarm 里 —— 独立 invocation、15 分钟墙钟，见 kickInstantTick。
   const kicked = await kickInstantTick(env, uuid);
   if (!kicked.ok && kicked.reason === 'missing-binding') {
-    // 任务已经在库里了，所以这不是「没发出去」，而是「这台 Worker 跑不动它」：
-    // 每分钟的 cron 仍会把它捡走，但那条路上没有为即时对话放宽的超时，用户会等很久
-    // 甚至等不到。与其让他对着「正在输入」干等，不如现在就说清楚该去点哪里。
+    // VPS 宿主没有 Durable Object，起跳器永远缺席——这是常态，不是旧版本：
+    // 任务已经在库里，直接受理、由每分钟的 node-cron 捡走。客户端不按时长宣判
+    //（pending 就一直等、每 60s 点名一次），等得起这一跳。
+    if ((env.SULLYOS_RUNTIME ?? '').trim() === 'vps') {
+      console.warn('[amsg:instant-chat] VPS 模式：无 INSTANT_TICK 绑定，任务已受理、等 node-cron 捡走', uuid);
+      return json(202, { status: 'accepted', uuid });
+    }
+    // Cloudflare 上缺绑定 = 跑的是旧 bundle，必须明说「去更新」。
+    // 这里刻意不退回 cron 兜底然后照回 202：那条路上没有为即时对话放宽的超时，用户会
+    // 对着「正在输入」等很久甚至等不到，而界面上没有任何线索告诉他该做什么。
     console.error('[amsg:instant-chat] 没有 INSTANT_TICK 绑定：这台 Worker 是旧版本，需要更新');
     return json(503, {
       success: false,

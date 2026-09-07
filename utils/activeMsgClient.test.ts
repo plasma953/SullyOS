@@ -1886,6 +1886,16 @@ describe('describeInstantChatFailure — 后端那句真话要露出来', () => 
     expect(describeInstantChatFailure(401, internalError('D1_ERROR: whatever')))
       .toBe('即时对话没发出去：共享密钥和 Worker 上的对不上，去「主动消息 2.0」设置里核对一下。');
   });
+
+  it('INSTANT_CHAT_WORKER_OUTDATED 指去更新 Worker，不套环境变量没配齐的话术', () => {
+    // 回归守卫：这个 503 是「起跳器缺席」不是「缺环境变量」，旧文案指向的重连验证
+    // 自查永远全绿——用户看到的正是「说缺东西，但缺失清单里什么都没有」。
+    const text = describeInstantChatFailure(503, {
+      error: { code: 'INSTANT_CHAT_WORKER_OUTDATED', message: '即时对话需要更新 Worker' },
+    });
+    expect(text).toContain('更新 Worker');
+    expect(text).not.toContain('环境变量');
+  });
 });
 
 // 大 body 走 gzip 上行（省掉密文那层 base64 的膨胀，约 25%）。这几条钉的是

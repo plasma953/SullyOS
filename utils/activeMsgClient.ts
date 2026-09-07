@@ -1024,6 +1024,11 @@ export const describeInstantChatFailure = (status: number, body: any): string =>
   if (status === 405 || status === 404) {
     return '即时对话没发出去：Worker 上还没有这个端点，去你 fork 的 sullyos-workers 点一下 Sync fork 更新。';
   }
+  // 起跳器缺席 ≠ 环境变量没配齐：Cloudflare 上这是旧 bundle（VPS 模式走另一条受理逻辑，
+  // 不会走到这里）。指去更新 Worker，别让人去重连验证里找一个永远不会出现的缺失清单。
+  if (code === 'INSTANT_CHAT_WORKER_OUTDATED') {
+    return '即时对话没发出去：后端跑的是旧版本，缺即时对话的起跳器。去「主动消息 2.0」设置里点「更新 Worker」，更新完重发这一句。';
+  }
   if (status === 503) {
     return '即时对话没发出去：Worker 的环境变量没配齐（设置页点「重新连接并验证」能看到缺什么）。';
   }

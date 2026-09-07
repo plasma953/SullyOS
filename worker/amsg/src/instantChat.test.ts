@@ -562,6 +562,22 @@ describe('POST /instant-chat — 立即起跳', () => {
     // 任务本身是建成了的，uuid 要带回去，别让客户端以为整轮没发生过。
     expect(body.error.uuid).toBe(TASK_UUID);
   });
+
+  it('VPS 模式没有绑定不是旧版本：照常受理、等 node-cron 捡走', async () => {
+    // 回归守卫：VPS 宿主没有 Durable Object，起跳器永远缺席。按 Cloudflare 的
+    // 老版本逻辑回 503 的话，VPS 上的即时对话永远发不出去，而重连验证的环境
+    // 自查又是全绿——用户看到的正是「环境变量没配齐，但缺失清单里什么都没有」。
+    const { upstream } = makeUpstream();
+    const response = await run({
+      request: post(validBody()),
+      upstream,
+      tick: null,
+      env: { SULLYOS_RUNTIME: 'vps' },
+    });
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ status: 'accepted', uuid: TASK_UUID });
+  });
 });
 
 describe('isInstantChatTask', () => {

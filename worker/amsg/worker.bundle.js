@@ -8837,6 +8837,10 @@ var handleInstantChat = async (args) => {
   }
   const kicked = await kickInstantTick(env, uuid);
   if (!kicked.ok && kicked.reason === "missing-binding") {
+    if ((env.SULLYOS_RUNTIME ?? "").trim() === "vps") {
+      console.warn("[amsg:instant-chat] VPS \u6A21\u5F0F\uFF1A\u65E0 INSTANT_TICK \u7ED1\u5B9A\uFF0C\u4EFB\u52A1\u5DF2\u53D7\u7406\u3001\u7B49 node-cron \u6361\u8D70", uuid);
+      return json(202, { status: "accepted", uuid });
+    }
     console.error("[amsg:instant-chat] \u6CA1\u6709 INSTANT_TICK \u7ED1\u5B9A\uFF1A\u8FD9\u53F0 Worker \u662F\u65E7\u7248\u672C\uFF0C\u9700\u8981\u66F4\u65B0");
     return json(503, {
       success: false,
