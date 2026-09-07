@@ -210,6 +210,26 @@ async function callBuiltin(name) {
 }
 
 // ─────────────────────── LLM 流式调用 ───────────────────────
+// ── 上游 LLM 自标识（opencode Go 防滥用要求）──
+// opencode 要求调用方：可识别的 User-Agent + x-opencode-session 头（提示词缓存亲和）。
+// session 取进程级稳定 UUID：同一 VPS 的请求共享缓存上下文；非 opencode 上游一律不加。
+let llmSessionId = null;
+function llmIdentityHeaders(baseUrl) {
+  let host = '';
+  try { host = new URL(baseUrl).hostname.toLowerCase(); } catch { return {}; }
+  if (host !== 'opencode.ai' && !host.endsWith('.opencode.ai')) return {};
+  if (!llmSessionId) {
+    try {
+      llmSessionId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    } catch { llmSessionId = `fallback-${Date.now().toString(36)}`; }
+  }
+  return {
+    'user-agent': 'SullyOS-MainAgent/1.0 (+https://github.com/plasma953/SullyOS)',
+    'x-opencode-session': llmSessionId,
+  };
+}
 async function llmStream(provider, messages, tools, timeoutMs, emitText) {
   const url = `${provider.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const controller = new AbortController();
@@ -222,6 +242,7 @@ async function llmStream(provider, messages, tools, timeoutMs, emitText) {
         'content-type': 'application/json',
         ...(provider.apiKey ? { authorization: `Bearer ${provider.apiKey}` } : {}),
         accept: 'text/event-stream',
+        ...llmIdentityHeaders(provider.baseUrl),
       },
       body: JSON.stringify({
         model: provider.model,

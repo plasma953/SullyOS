@@ -126,3 +126,49 @@ describe('/v1/mcp-relay 预检', () => {
         expect(res.headers.get('Access-Control-Allow-Headers')).toContain(RELAY_AUTH_HEADER);
     });
 });
+
+describe('POST /v1/chat/completions 上游 LLM 自标识', () => {
+    const chatBody = () => JSON.stringify({ messages: [{ role: 'user', content: 'hi' }], stream: false });
+    const sseOk = 'data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+    const llmEnv = (baseUrl: string) => ({
+        LLM_BASE_URL: baseUrl, LLM_API_KEY: 'k', LLM_MODEL: 'm', LLM_TIMEOUT_MS: '5000',
+    });
+    const callChat = async (env: Record<string, string>) => {
+        const calls: Array<{ url: string; init: { headers?: HeadersInit } }> = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string, init: { headers?: HeadersInit }) => {
+            calls.push({ url: String(url), init });
+            return new Response(sseOk, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        }));
+        const res = await worker.fetch(
+            new Request(`${AGENT}/agent/v1/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: chatBody(),
+            }),
+            env,
+            { waitUntil: () => {} },
+        );
+        return { res, calls, json: await res.json() as any };
+    };
+
+    it('opencode.ai 上游带 UA + x-opencode-session', async () => {
+        const { res, calls, json } = await callChat(llmEnv('https://opencode.ai/zen/go/v1'));
+        expect(res.status).toBe(200);
+        expect(json.choices[0].message.content).toBe('hi');
+        expect(calls).toHaveLength(1);
+        const out = new Headers(calls[0].init.headers);
+        expect(out.get('user-agent')).toContain('SullyOS-MainAgent');
+        expect(out.get('x-opencode-session')).toBeTruthy();
+    });
+
+    it('同一进程内 session 稳定（缓存亲和），非 opencode 上游不加', async () => {
+        const first = await callChat(llmEnv('https://opencode.ai/zen/go/v1'));
+        const second = await callChat(llmEnv('https://opencode.ai/zen/go/v1'));
+        expect(new Headers(first.calls[0].init.headers).get('x-opencode-session'))
+            .toBe(new Headers(second.calls[0].init.headers).get('x-opencode-session'));
+        const other = await callChat(llmEnv('https://api.example.com/v1'));
+        const out = new Headers(other.calls[0].init.headers);
+        expect(out.has('user-agent')).toBe(false);
+        expect(out.has('x-opencode-session')).toBe(false);
+    });
+});

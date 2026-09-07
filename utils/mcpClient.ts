@@ -247,9 +247,9 @@ export const isMcpChatAvailable = (charId?: string): boolean => getEnabledMcpSer
  */
 export const hasWorkerUnreachableMcpServer = (charId?: string): boolean =>
     getEnabledMcpServers(charId).some((s) => {
-        // relay 模式看中转 URL 的可达性：VPS 能吃到自己 127.0.0.1 的服务，
-        // 不该因为原始地址写了 localhost 就把即时对话整体否决。
-        if (effectiveMcpRouting(s) === 'relay' && readAgentRoutingConfig().agentUrl.trim()) return false;
+        // 判原始地址的可达性（与 collectMcpFireServers 同源）：中转只解决 CORS，
+        // 解决不了「目标在用户本机、VPS 够不着」。localhost 上云必在 fire 时 400，
+        // 这里继续否决即时对话、退回本地生成，别教角色用必失败的工具。
         return !isWorkerReachableUrl(s.url);
     });
 
@@ -286,7 +286,10 @@ export const collectMcpFireServers = (): McpFireServer[] => {
             }
             return { s, relayActive, url, token, customHeaders };
         })
-        .filter((e) => e.s.enabled && e.url && (e.s.tools?.length || 0) > 0 && isWorkerReachableUrl(e.url))
+        // 上云过滤判原始地址（s.url）：中转只解决 CORS，解决不了「目标在用户本机、
+        // VPS 够不着」。localhost 经中转物化后恒可达，放进来只会在 fire 时 400，
+        // 还教角色用一个必失败的工具——这类服务器不上云（前台直连照常用）。
+        .filter((e) => e.s.enabled && e.s.url && (e.s.tools?.length || 0) > 0 && isWorkerReachableUrl(e.s.url))
         .map((e) => {
             // 无人值守的后台没有确认弹窗：服务端明确标成 destructive 的工具只留在
             // 前台并自动询问，不把提示词当权限系统，也不额外暴露用户配置项。

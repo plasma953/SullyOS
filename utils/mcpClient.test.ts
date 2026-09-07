@@ -739,4 +739,19 @@ describe('effectiveMcpRouting（relay 默认化）', () => {
         expect(fire.token).toBe('agent-tok');
         expect(fire.customHeaders).toContainEqual({ name: MCP_RELAY_TARGET_AUTH_HEADER, value: 'Bearer srv-tok' });
     });
+
+    it('回归：relay 激活也不把本机服务器带上云（中转只解 CORS，解不了 VPS 够不着）', () => {
+        setAgent('https://agent.example.com', 'agent-tok');
+        saveMcpServers([
+            mkServer({ id: 'local', url: 'http://127.0.0.1:8787/mcp' }),
+            mkServer({ id: 'pub', url: 'https://mcp.example.com/mcp' }),
+        ]);
+        expect(collectMcpFireServers().map((s) => s.id)).toEqual(['pub']);
+    });
+
+    it('回归：本机服务器照样否决即时对话（退回本地生成，不教角色用必失败的工具）', () => {
+        setAgent('https://agent.example.com', 'agent-tok');
+        saveMcpServers([mkServer({ id: 'local', url: 'http://localhost:18061/mcp' })]);
+        expect(hasWorkerUnreachableMcpServer('char_a')).toBe(true);
+    });
 });
