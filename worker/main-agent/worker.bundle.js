@@ -552,6 +552,42 @@ async function handleChat(req, env) {
   });
 }
 
+// ─────────────────────── LLM 模型列表透传 ───────────────────────
+/**
+ * /v1/models?target=<完整 /models URL> —— 模型列表透传（浏览器 CORS 的出口）。
+ *
+ * 背景：设置页「刷新模型列表」等浏览器侧 GET <baseUrl>/models 会被 CORS 拦
+ * （主流 LLM 网关不回 CORS 头），而全局拦截器只改写 /chat/completions。
+ * 前端把 baseUrl 拼成完整 target 发到这里，由服务端代拉。
+ * 鉴权：供应商 key 放请求头 X-Relay-Target-Authorization（与 MCP 中转同一约定），
+ * 不进 URL、不落盘；opencode.ai 上游自动带 User-Agent + x-opencode-session。
+ * 只放行公网 http(s)（SSRF 守卫）；响应 256KB 封顶；上游状态码原样透传。
+ */
+async function llmModelsProxy(req, env, url) {
+  if (req.method !== 'GET') return json({ error: 'method_not_allowed', hint: 'GET only' }, 405);
+  const raw = (url.searchParams.get('target') || '').trim();
+  if (!raw) return json({ error: 'bad_target', hint: '缺少 target=<完整 /models URL>' }, 400);
+  if (!isRelayablePublicTarget(raw)) return json({ error: 'bad_target', hint: 'target 必须是公网 http(s) 地址' }, 400);
+  const headers = { accept: 'application/json', ...llmIdentityHeaders(raw) };
+  const carried = (req.headers.get('x-relay-target-authorization') || '').trim().slice(0, 4096);
+  if (carried) headers['authorization'] = carried;
+  let res;
+  try {
+    res = await fetch(raw, { method: 'GET', headers, signal: AbortSignal.timeout(15000) });
+  } catch (err) {
+    return json({ error: 'upstream_unreachable', detail: String(err.message || err) }, 502);
+  }
+  const text = await res.text();
+  if (text.length > 262144) return json({ error: 'response_too_large', hint: '上游 /models 响应超过 256KB' }, 502);
+  return new Response(text, {
+    status: res.status,
+    headers: {
+      'content-type': res.headers.get('content-type') || 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*',
+    },
+  });
+}
+
 async function handleToolsList(env) {
   const collected = [];
   const errors = [];
@@ -715,6 +751,7 @@ export default {
     if (plain === '/v1/tools') return handleToolsList(env);
     if (plain === '/v1/llm-credentials') return llmCredentialsProxy(request, env, url);
     if (plain === '/v1/mcp-relay') return mcpRelayProxy(request, env, url);
+    if (plain === '/v1/models') return llmModelsProxy(request, env, url);
 
     if (plain.startsWith('/webdav')) {
       const suffix = plain.replace(/^\/webdav\/?/, '');

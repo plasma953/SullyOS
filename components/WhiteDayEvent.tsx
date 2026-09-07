@@ -16,6 +16,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
 import { safeResponseJson } from '../utils/safeApi';
+import { fetchChatModelList } from '../utils/modelList';
 import { CharacterProfile } from '../types';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { shareOrDownloadBlob } from '../utils/shareExport';
@@ -251,21 +252,12 @@ const WhiteDayApiSetup: React.FC<{ onDone: () => void; onBack: () => void }> = (
         setIsLoadingModels(true);
         setStatusMsg('正在连接...');
         try {
-            const baseUrl = localUrl.replace(/\/+$/, '');
-            const response = await fetch(`${baseUrl}/models`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) throw new Error(`Status ${response.status}`);
-            const data = await safeResponseJson(response);
-            const list = data.data || data.models || [];
-            if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m);
-                setAvailableModels(models);
-                if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
-                setStatusMsg(`获取到 ${models.length} 个模型`);
-                setShowModelList(true);
-            } else { setStatusMsg('格式不兼容'); }
+            // 浏览器直连第三方 /models 必被 CORS 拦；助手内部按中转配置自动选直连/透传。
+            const models = await fetchChatModelList(localUrl, localKey);
+            setAvailableModels(models);
+            if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
+            setStatusMsg(`获取到 ${models.length} 个模型`);
+            setShowModelList(true);
         } catch (error: any) {
             setStatusMsg('连接失败');
         } finally {

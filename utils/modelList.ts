@@ -1,3 +1,5 @@
+import { readAgentRoutingConfig } from './agentRouting';
+
 const MODEL_ID_KEYS = ['id', 'model', 'name', 'model_name', 'slug'] as const;
 
 /**
@@ -41,4 +43,42 @@ export function extractModelIds(data: unknown): string[] {
         if (models.length > 0) return models;
     }
     return [];
+}
+
+/**
+ * 浏览器侧拉取 OpenAI 兼容 /models 列表（唯一入口）。
+ *
+ * CORS 规则：主流 LLM 网关（含 opencode.ai）不给浏览器回 CORS 头，浏览器直连
+ * 必然 Failed to fetch。主代理中转已配置时一律走 /agent/v1/models 透传
+ * （供应商 key 放 X-Relay-Target-Authorization 头，与 MCP 中转同一约定，
+ * 不进 URL、不落盘）；未配置中转才保持浏览器直连（此时要求对方自带 CORS）。
+ */
+export async function fetchChatModelList(
+    baseUrl: string,
+    apiKey: string,
+    request: typeof fetch = fetch,
+): Promise<string[]> {
+    const base = baseUrl.trim().replace(/\/+$/, '');
+    if (!base) throw new Error('请先填写 URL');
+    const agent = readAgentRoutingConfig();
+    const agentBase = agent.agentUrl.trim().replace(/\/+$/, '');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    let url: string;
+    if (agentBase) {
+        url = agentBase + '/agent/v1/models?target=' + encodeURIComponent(base + '/models');
+        if (agent.agentToken) headers['X-Client-Token'] = agent.agentToken;
+        if (apiKey) headers['X-Relay-Target-Authorization'] = `Bearer ${apiKey}`;
+    } else {
+        url = base + '/models';
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+    const response = await request(url, { method: 'GET', headers });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    let data: unknown;
+    try {
+        data = await response.json();
+    } catch {
+        throw new Error('模型列表不是合法 JSON');
+    }
+    return extractModelIds(data);
 }

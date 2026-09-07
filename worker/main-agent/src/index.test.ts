@@ -127,6 +127,64 @@ describe('/v1/mcp-relay 预检', () => {
     });
 });
 
+describe('/v1/models 透传', () => {
+    const env = { AMSG_CLIENT_TOKEN: 'tok' };
+    const call = (qs: string | null, headers: Record<string, string> = {}) => {
+        const calls: Array<{ url: string; init: { headers?: HeadersInit } }> = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string, init: { headers?: HeadersInit }) => {
+            calls.push({ url: String(url), init });
+            return new Response('{"data":[{"id":"m1"}]}', {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }));
+        const url = qs === null
+            ? `${AGENT}/agent/v1/models`
+            : `${AGENT}/agent/v1/models?target=${encodeURIComponent(qs)}`;
+        const res = worker.fetch(new Request(url, { method: 'GET', headers }), env, { waitUntil: () => {} });
+        return { res, calls };
+    };
+
+    it('无 token → 403（checkAuth 门槛与其他 /v1 端点一致）', async () => {
+        const { res, calls } = await call('https://opencode.ai/zen/go/v1/models');
+        expect((await res).status).toBe(403);
+        expect(calls).toHaveLength(0);
+    });
+
+    it('正常透传：上游收到目标 URL + 携带头翻译的 Authorization + 自标识头', async () => {
+        const { res, calls } = await call('https://opencode.ai/zen/go/v1/models', {
+            'X-Client-Token': 'tok',
+            [RELAY_AUTH_HEADER]: 'Bearer sk-test',
+        });
+        const r = await res;
+        expect(r.status).toBe(200);
+        expect(await r.json()).toEqual({ data: [{ id: 'm1' }] });
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toBe('https://opencode.ai/zen/go/v1/models');
+        const out = new Headers(calls[0].init.headers);
+        expect(out.get('authorization')).toBe('Bearer sk-test');
+        expect(out.get('user-agent')).toContain('SullyOS-MainAgent');
+        expect(out.get('x-opencode-session')).toBeTruthy();
+    });
+
+    it('SSRF：本机地址 400 且一次上游都不发', async () => {
+        const { res, calls } = await call('http://127.0.0.1:9/models', { 'X-Client-Token': 'tok' });
+        expect((await res).status).toBe(400);
+        expect(calls).toHaveLength(0);
+    });
+
+    it('缺 target → 400；非 opencode 上游不带自标识头', async () => {
+        const { res, calls } = await call(null, { 'X-Client-Token': 'tok' });
+        expect((await res).status).toBe(400);
+        const { res: res2, calls: calls2 } = await call('https://api.example.com/v1/models', { 'X-Client-Token': 'tok' });
+        expect((await res2).status).toBe(200);
+        const out = new Headers(calls2[0].init.headers);
+        expect(out.has('user-agent')).toBe(false);
+        expect(out.has('x-opencode-session')).toBe(false);
+        expect(calls).toHaveLength(0);
+    });
+});
+
 describe('POST /v1/chat/completions 上游 LLM 自标识', () => {
     const chatBody = () => JSON.stringify({ messages: [{ role: 'user', content: 'hi' }], stream: false });
     const sseOk = 'data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';

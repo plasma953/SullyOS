@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useOS } from '../context/OSContext';
 import { Capacitor } from '@capacitor/core';
 import { extractContent, safeResponseJson } from '../utils/safeApi';
-import { extractModelIds, normalizeModelIds } from '../utils/modelList';
+import { fetchChatModelList, normalizeModelIds } from '../utils/modelList';
 import { shareOrDownloadBlob } from '../utils/shareExport';
 import { isAnalyticsConfigured, isAnalyticsEnabled, setAnalyticsEnabled, trackEvent } from '../utils/analytics';
 import Modal from '../components/os/Modal';
@@ -1227,12 +1227,8 @@ const Settings: React.FC = () => {
     setVisionStatusMsg('正在拉取识图模型...');
     setVisionTestResult(null);
     try {
-      const response = await fetch(`${baseUrl}/models`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const models = extractModelIds(await safeResponseJson(response));
+      // 同上：走统一助手，有中转自动透传，无中转才直连。
+      const models = await fetchChatModelList(baseUrl, apiKey);
       if (models.length === 0) {
         setVisionStatusMsg('模型列表为空或格式不兼容');
         return;
@@ -1354,14 +1350,9 @@ const Settings: React.FC = () => {
     setIsLoadingModels(true);
     setStatusMsg('正在连接...');
     try {
-        const response = await fetch(`${baseUrl}/models`, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await safeResponseJson(response);
-        // Support common OpenAI-compatible and nested gateway response formats.
-        const models = extractModelIds(data);
+        // 浏览器直连第三方 /models 必被 CORS 拦（opencode.ai 等网关不回 CORS 头）；
+        // 助手内部按中转配置自动选直连/透传。
+        const models = await fetchChatModelList(baseUrl, apiKey);
         if (models.length > 0) {
             setAvailableModels(models);
             if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);

@@ -14,6 +14,7 @@ import { DB } from '../utils/db';
 import { creatorPartToBlobRefs, loadCreatorPartsForRender } from '../utils/creatorPartsBlob';
 import { CharacterProfile, SpecialMomentRecord } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
+import { fetchChatModelList } from '../utils/modelList';
 import { assetMirrors, attachAudioMirrorFallback } from '../utils/assetUrl';
 import { shareOrDownloadBlob } from '../utils/shareExport';
 import TokenImg from './os/TokenImg';
@@ -3583,21 +3584,12 @@ const Like520InlineApiSetup: React.FC<{ onDone: () => void; onBack: () => void }
         setIsLoadingModels(true);
         setStatusMsg('正在连接...');
         try {
-            const baseUrl = localUrl.replace(/\/+$/, '');
-            const response = await fetch(`${baseUrl}/models`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${localKey}`, 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) throw new Error(`Status ${response.status}`);
-            const data = await safeResponseJson(response);
-            const list = data.data || data.models || [];
-            if (Array.isArray(list)) {
-                const models = list.map((m: any) => m.id || m);
-                setAvailableModels(models);
-                if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
-                setStatusMsg(`获取到 ${models.length} 个模型`);
-                setShowModelList(true);
-            } else { setStatusMsg('格式不兼容'); }
+            // 浏览器直连第三方 /models 必被 CORS 拦；助手内部按中转配置自动选直连/透传。
+            const models = await fetchChatModelList(localUrl, localKey);
+            setAvailableModels(models);
+            if (models.length > 0 && !models.includes(localModel)) setLocalModel(models[0]);
+            setStatusMsg(`获取到 ${models.length} 个模型`);
+            setShowModelList(true);
         } catch {
             setStatusMsg('连接失败');
         } finally {

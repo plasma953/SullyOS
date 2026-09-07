@@ -1,6 +1,5 @@
 import type { APIConfig, ApiPreset } from '../../types';
-import { extractModelIds } from '../../utils/modelList';
-import { safeResponseJson } from '../../utils/safeApi';
+import { fetchChatModelList } from '../../utils/modelList';
 import type { CollaborationApiProfile, CollaborationSettings } from './types';
 
 const hasConnection = (profile: CollaborationApiProfile): boolean => Boolean(
@@ -81,15 +80,8 @@ export const fetchCollaborationModels = async (
 ): Promise<string[]> => {
   const baseUrl = profile.baseUrl.trim().replace(/\/+$/, '');
   if (!baseUrl) throw new Error('请先选择一个已保存的连接');
-  const response = await request(`${baseUrl}/models`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${profile.apiKey || 'sk-none'}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const models = extractModelIds(await safeResponseJson(response));
+  // 浏览器直连第三方 /models 必被 CORS 拦；助手内部按中转配置自动选直连/透传。
+  const models = await fetchChatModelList(baseUrl, profile.apiKey || '', request);
   if (models.length === 0) throw new Error('模型列表为空或格式不兼容');
   return models;
 };
