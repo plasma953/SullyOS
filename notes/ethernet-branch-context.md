@@ -39,7 +39,7 @@ SSH：`root@<your-vps-ip>:<ssh-port>`（opencode 的 vps 工具里叫 `default`�
 
 - `/opt/sullyos/sullyos-repo`：plasma953/SullyOS 的 clone，checkout 在 `ethernet`，跟着 `origin/ethernet` 走。**注意它只到 origin/ethernet——本地领先未 push 的提交不会自动生效，先 push 再上 VPS 更新。**
 - `/opt/sullyos/vps-backend`：部署目录（bin/config/deploy/src + node_modules），`systemd` 服务名 `sullyos.service`，入口 `bin/run-all.js`，日志 `/opt/sullyos/logs/sullyos.log`，环境变量 `/opt/sullyos/.env`。
-- 端口全部只听 127.0.0.1，由 Caddy 反代出公网：**8830 main-agent**、**8831 amsg（共享密钥鉴权）**、8832-8835 其余模块；域名 `your-vps.example.com` / `mcp.your-vps.example.com` / `oc.your-vps.example.com`（真实域名只放服务器 .env 与部署面板，不进仓库）。
+- 端口全部只听 127.0.0.1，由 Caddy 反代出公网：**8830 main-agent**、**8831 instant-push**、**8832 amsg（共享密钥鉴权）**、8833 proactive-push、8834 wake-bridge、8835 heartbeat（唯一事实来源：`vps-backend/config/services.js`）；域名 `your-vps.example.com` / `mcp.your-vps.example.com` / `oc.your-vps.example.com`（真实域名只放服务器 .env 与部署面板，不进仓库）。
 - `sullyos-dufs.service`：WebDAV(dufs) 备份存储（127.0.0.1，端口与凭据在 .env）。
 - 机器上还有 `phone-chat-gateway.service`（/root/apps/vps-chat-gateway）及 kaleidoscope / ruota / xhs-mcp / theseus-brain 等 MCP 服务，main-agent 已把后三个 MCP 挂进工具池。
 - 观察项：main-agent `/health` 显示 `llmConfigured:false, providers:0`——若按设计是凭据随请求走则正常，改主代理 LLM 配置时留意。

@@ -157,7 +157,8 @@
 ## 已拍板的行为语义
 
 - 连发两条：第二条 POST 用 `supersedesUuid` 顶掉未认领的上一条（合并成一起回）。
-  上一条已认领（正在生成）→ 让它跑完，新任务靠 `serialize_group`（= charId）
+  上一条已认领（正在生成）→ 让它跑完，新任务靠 `serialize_group`
+  （即时对话 = charId；后台任务见 plans/amsg2-expansion.md，= charId#kind）
   排队，接受小概率两条相近回复。
 - push 成功后、行删除前 isolate 死掉 → cron 重跑 → 重复回复。窗口极小，
   与现有定时任务同类，接受。

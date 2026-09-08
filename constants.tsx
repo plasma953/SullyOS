@@ -140,6 +140,7 @@ export const INSTALLED_APPS: AppConfig[] = [
 // 只查 INSTALLED_APPS 的话这些 App 会被静默漏掉（比如「家园」是从小小窝进的）。
 export const HIDDEN_APP_NAMES: Partial<Record<AppID, string>> = {
   [AppID.WorldHome]: '家园',
+  [AppID.VoiceDesigner]: '捏声音', // 只从神经链接捏人页进入，桌面无图标
 };
 
 export const DOCK_APPS = [AppID.Chat, AppID.GroupChat, AppID.Social, AppID.Settings];

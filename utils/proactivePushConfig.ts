@@ -22,6 +22,11 @@
 //   VAPID，避免两边互相 unsubscribe 抢同一个 pushManager 订阅。
 // ═══════════════════════════════════════════════════════════════════
 const WORKER_URL = 'https://noir2.cc.cd';
+// 注意：下面这个 CLIENT_TOKEN 明文进过 git 历史，已视为泄露。
+// 重启用（FORCE_DISABLED 改回 false）之前必须先做服务端轮换，否则等同裸奔：
+//   1. 到 Worker 侧把 CLIENT_TOKEN 换成新值并重新部署；
+//   2. 这里同步换新值（或改走用户自填/构建注入，不再硬编码）。
+// 轮换完成前保持 FORCE_DISABLED=true。见筛查报告 P3-12。
 const CLIENT_TOKEN = 'weqwqewqeqwdcsccagdgs32132';
 // ═══════════════════════════════════════════════════════════════════
 

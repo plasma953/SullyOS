@@ -1,4 +1,6 @@
-# /etc/caddy/Caddyfile — SullyOS stats
+# /etc/caddy/Caddyfile — SullyOS stats（统计服务专用，与 VPS 反代无关）
+# 注意：另有一份重名的 vps-backend/deploy/caddy/SullyOS.Caddyfile 才是 VPS 反代
+#（8830-8835），走 deploy/scripts/install.sh 安装。本文件只管下面的统计服务。
 # 域名：stats.friedsully.com（主）+ stats.palm.cdsv.cc（旧，过渡期保留）
 # 两个域名都必须在 Cloudflare 上是灰云 / DNS only：走橙云的话 Caddy 看到的是 CF 边缘 IP，
 # 下面那套 /24 截断就会静默失效（不报错、自检也照样绿）。

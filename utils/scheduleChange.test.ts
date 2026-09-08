@@ -47,8 +47,14 @@ describe('extractScheduleChangeDirectives', () => {
 
     // push 路径上这个标签不是原样送到客户端的：worker classifier 把它摘成
     // change_schedule directive（不摘的话会被 sanitize 连 raw 一起剥掉），客户端再由
-    // reconstructDirectiveTags 拼回标签交给这里解析。拼回来的是**不带空格**的形态，
-    // 跟提示词里教的规范写法差一层空格——这条钉住那个往返，别哪天正则收紧就断了。
+    // reconstructDirectiveTags 拼回标签交给这里解析。拼回来的是**带空格**的形态
+    // `[schedule_message | time | fixed | text]`（见 applyAssistantPostProcessing.ts:326），
+    // 跟提示词里教的规范写法差一层空格——下面两条钉住那个往返，别哪天正则收紧就断了。
+    it('客户端把 worker directive 拼回的带空格形态解析得动', () => {
+        const result = extractScheduleChangeDirectives('[[ACTION:CHANGE_SCHEDULE | 22:00 | 陪你聊天]]');
+        expect(result.directives).toEqual([{ startTime: '22:00', activity: '陪你聊天' }]);
+        expect(result.cleanedText).toBe('');
+    });
     it('客户端把 worker directive 拼回的无空格形态解析得动', () => {
         const result = extractScheduleChangeDirectives('[[ACTION:CHANGE_SCHEDULE|22:00|陪你聊天]]');
         expect(result.directives).toEqual([{ startTime: '22:00', activity: '陪你聊天' }]);
