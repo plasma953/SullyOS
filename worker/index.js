@@ -76,6 +76,34 @@ async function readBodyCapped(res, maxBytes) {
   return new TextDecoder('utf-8', { fatal: false }).decode(merged);
 }
 
+// ---- Outbound redirect guard (SSRF): manual + max 1 hop, re-validate target ----
+// All user-controlled proxy fetches use redirect:'manual' and follow at most one
+// hop here. Location is resolved against the current URL (relative supported),
+// then re-checked with isUnsafeFetchTarget + optional extraCheck (whitelist /
+// https-only). blocked != null means caller must return 400 without reading body.
+function isRedirectStatus(status) {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+async function fetchWithRedirectGuard(urlStr, init, extraCheck) {
+  const first = await fetch(urlStr, { ...init, redirect: 'manual' });
+  const loc = first.headers.get('location');
+  if (!isRedirectStatus(first.status) || !loc) return { blocked: null, res: first, finalUrl: urlStr };
+  let next;
+  try {
+    next = new URL(loc, urlStr);
+  } catch {
+    return { blocked: 'invalid redirect location', res: null, finalUrl: urlStr };
+  }
+  if (isUnsafeFetchTarget(next)) return { blocked: 'redirect target not allowed', res: null, finalUrl: urlStr };
+  if (extraCheck) {
+    const extraErr = extraCheck(next);
+    if (extraErr) return { blocked: extraErr, res: null, finalUrl: urlStr };
+  }
+  const second = await fetch(next.toString(), { ...init, redirect: 'manual' });
+  return { blocked: null, res: second, finalUrl: next.toString() };
+}
+
 function route(url) {
   const p = url.pathname.replace(/\/+$/, "");
   if (p === "" || p === "/") return { kind: "web" };
@@ -2506,14 +2534,19 @@ export default {
           body = await request.arrayBuffer();
           if (body.byteLength === 0) body = null;
         }
-        const upstream = await fetch(targetUrl, {
+        const upstreamGuard = await fetchWithRedirectGuard(targetUrl, {
           method: webdavMethod,
           headers: forwardHeaders,
           body,
           // 备份文件可能很大但不能无限 hanging：30s 上游无响应即断开，客户端按失败重试。
           signal: AbortSignal.timeout(30000),
-        });
-        console.log('webdav', webdavMethod, targetUrl, '→', upstream.status);
+        }, (next) => (next.protocol !== 'https:' ? 'Redirect target must stay HTTPS' : null));
+        if (upstreamGuard.blocked) {
+          return jsonResponse({ error: 'Target host not allowed' }, { status: 400, origin });
+        }
+        const upstream = upstreamGuard.res;
+        const finalUpstreamUrl = upstreamGuard.finalUrl;
+        console.log('webdav', webdavMethod, targetUrl, '→', finalUpstreamUrl, upstream.status);
         const respHeaders = new Headers(corsHeaders(origin));
         const rct = upstream.headers.get('Content-Type');
         if (rct) respHeaders.set('Content-Type', rct);
@@ -2530,7 +2563,7 @@ export default {
         const rar = upstream.headers.get('Accept-Ranges');
         if (rar) respHeaders.set('Accept-Ranges', rar);
         respHeaders.set('X-Upstream-Status', String(upstream.status));
-        respHeaders.set('X-Upstream-Host', parsedTarget.host);
+        try { respHeaders.set('X-Upstream-Host', new URL(finalUpstreamUrl).host); } catch { respHeaders.set('X-Upstream-Host', parsedTarget.host); }
         respHeaders.set('Access-Control-Expose-Headers', 'X-Upstream-Status, X-Upstream-Host, Content-Length, Content-Range, Accept-Ranges');
         return new Response(upstream.body, {
           status: upstream.status,
@@ -2662,13 +2695,15 @@ export default {
       const c = new AbortController();
       const t = setTimeout(() => c.abort(), 8000);
       try {
-        const res = await fetch(target.toString(), {
+        const guarded = await fetchWithRedirectGuard(target.toString(), {
           method: 'GET',
-          redirect: 'follow',
           headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1' },
           signal: c.signal,
         });
-        const finalUrl = res.url || target.toString();
+        if (guarded.blocked) {
+          return jsonResponse({ error: '只允许展开公网 http(s) 链接' }, { status: 400, origin });
+        }
+        const finalUrl = guarded.finalUrl || guarded.res.url || target.toString();
         console.log('expand-url', target.toString(), '→', finalUrl);
         return jsonResponse({ success: true, data: { finalUrl } }, { origin });
       } catch (e) {
@@ -2772,10 +2807,17 @@ export default {
       const c = new AbortController();
       const t = setTimeout(() => c.abort(), 15000);
       try {
-        const res = await fetch(target.toString(), {
+        const guarded = await fetchWithRedirectGuard(target.toString(), {
           headers: { 'User-Agent': BILI_UA, 'Referer': BILI_REFERER },
           signal: c.signal,
+        }, (next) => {
+          const h = next.hostname.toLowerCase();
+          return (!BILI_ASSET_HOSTS.some(d => h === d || h.endsWith('.' + d)) ? 'redirect target outside allowlist' : null);
         });
+        if (guarded.blocked) {
+          return badBiliParam(origin, '只允许代理公网 http(s) 资源');
+        }
+        const res = guarded.res;
         if (!res.ok) {
           return jsonResponse({ error: `资源获取失败 (HTTP ${res.status})` }, { status: 502, origin });
         }
@@ -2949,10 +2991,17 @@ export default {
       const c = new AbortController();
       const t = setTimeout(() => c.abort(), 15000);
       try {
-        const res = await fetch(target.toString(), {
+        const guarded = await fetchWithRedirectGuard(target.toString(), {
           headers: { 'User-Agent': DOUBAN_UA, 'Referer': 'https://www.douban.com/' },
           signal: c.signal,
+        }, (next) => {
+          const h = next.hostname.toLowerCase();
+          return (!SOCIAL_IMG_HOSTS.some(d => h === d || h.endsWith('.' + d)) ? 'redirect target outside allowlist' : null);
         });
+        if (guarded.blocked) {
+          return badDoubanParam(origin, '只允许代理公网 http(s) 资源');
+        }
+        const res = guarded.res;
         if (!res.ok) {
           return jsonResponse({ error: `资源获取失败 (HTTP ${res.status})` }, { status: 502, origin });
         }
@@ -3007,7 +3056,11 @@ export default {
         try {
           const jh = { 'Accept': 'application/json', 'X-Return-Format': 'markdown' };
           if (env && env.JINA_API_KEY) jh['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
-          const jr = await fetch(`https://r.jina.ai/${target.toString()}`, { method: 'GET', headers: jh, signal: jc.signal });
+          // Jina stays redirect:'follow': upstream host is fixed r.jina.ai (public),
+          // its 301 is normal reader behavior, not a user-controlled redirect.
+          // The user URL itself was already checked above; raw fallback below
+          // uses manual + single-hop re-validation.
+          const jr = await fetch(`https://r.jina.ai/${target.toString()}`, { method: 'GET', headers: jh, signal: jc.signal, redirect: 'follow' });
           if (jr.ok) {
             const jj = await jr.json().catch(() => null);
             const d = jj && jj.data;
@@ -3027,15 +3080,19 @@ export default {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
       try {
-        const upstream = await fetch(target.toString(), {
+        const guarded = await fetchWithRedirectGuard(target.toString(), {
           method: 'GET',
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; SullyOS-WebpageBot/1.0; +https://github.com/sully)',
             'Accept': 'text/html,application/xhtml+xml',
           },
-          redirect: 'follow',
           signal: controller.signal,
         });
+        if (guarded.blocked) {
+          return jsonResponse({ error: '只允许抓取公网 http(s) 网页' }, { status: 400, origin });
+        }
+        const upstream = guarded.res;
+        const rawFinalUrl = guarded.finalUrl || upstream.url || target.toString();
         if (!upstream.ok) {
           return jsonResponse({ error: `目标站点返回 HTTP ${upstream.status}` }, { status: 502, origin });
         }
@@ -3045,7 +3102,7 @@ export default {
         }
         const html = await readBodyCapped(upstream, 2 * 1024 * 1024);
         console.log('fetch-webpage[raw]', target.toString(), '→', upstream.status, html.length, 'chars');
-        return jsonResponse({ success: true, data: { mode: 'raw', html, finalUrl: upstream.url || target.toString(), contentType: ct } }, { origin });
+        return jsonResponse({ success: true, data: { mode: 'raw', html, finalUrl: rawFinalUrl, contentType: ct } }, { origin });
       } catch (e) {
         const aborted = e && e.name === 'AbortError';
         return jsonResponse(
@@ -4213,6 +4270,140 @@ export default {
         });
       } catch (e) {
         return jsonResponse({ error: 'Latent upstream fetch failed', detail: String(e && e.message || e) }, { status: 502, origin });
+      }
+    }
+
+    // ========== MiniMax 固定声音 Bake-Voice 编排（静态部署走自建 worker）==========
+    // 前端 POST /minimax/bake-voice + JSON { apiKey, voiceId, model, ttsPayload, groupId?, region? }
+    // 三步：T2A 长音频合成 → 下载音频 → /v1/files/upload → /v1/voice_clone。
+    // key 随请求来、worker 不读不存（绝不回退服务端 env）；SSRF：三步只调 MiniMax 固定域名。
+    if (url.pathname === '/minimax/bake-voice') {
+      if (request.method !== 'POST') {
+        return jsonResponse({ error: 'Method not allowed' }, { status: 405, origin });
+      }
+      let body = null;
+      try {
+        body = await request.json();
+      } catch (e) {
+        return jsonResponse({ error: '请求体须为 JSON' }, { status: 400, origin });
+      }
+      const apiKey = (body && typeof body.apiKey === 'string') ? body.apiKey.trim() : '';
+      const voiceId = (body && typeof body.voiceId === 'string') ? body.voiceId.trim() : '';
+      const model = (body && typeof body.model === 'string' && body.model.trim()) ? body.model.trim() : 'speech-2.8-hd';
+      const ttsPayload = (body && body.ttsPayload && typeof body.ttsPayload === 'object') ? body.ttsPayload : null;
+      const groupId = (body && typeof body.groupId === 'string') ? body.groupId.trim() : '';
+      const regionRaw = ((body && typeof body.region === 'string' && body.region) || request.headers.get('X-MiniMax-Region') || '').toString().trim().toLowerCase();
+      if (!apiKey) {
+        return jsonResponse({ error: 'Missing MiniMax API key（请在设置里配置后重试）' }, { status: 401, origin });
+      }
+      if (!voiceId) {
+        return jsonResponse({ error: 'Missing voiceId' }, { status: 400, origin });
+      }
+      if (!ttsPayload) {
+        return jsonResponse({ error: 'Missing ttsPayload' }, { status: 400, origin });
+      }
+      const miniBase = regionRaw === 'overseas' ? 'https://api.minimax.io' : 'https://api.minimaxi.com';
+      const miniUrls = { t2a: `${miniBase}/v1/t2a_v2`, upload: `${miniBase}/v1/files/upload`, clone: `${miniBase}/v1/voice_clone` };
+      const CLONE_SOURCE_TEXT = '在一个阳光明媚的早晨，小鸟在枝头欢快地歌唱，微风轻轻拂过脸庞，带来了花朵的芬芳。远处的山峦在薄雾中若隐若现，宛如一幅水墨画。人们漫步在林荫小道上，享受着这难得的宁静时光。孩子们在草地上奔跑嬉戏，笑声回荡在空气中，让人感到无比温暖和幸福。';
+      try {
+        // Step 1: T2A 合成长音频样本
+        const t2aBody = {
+          ...ttsPayload,
+          text: CLONE_SOURCE_TEXT,
+          stream: false,
+          output_format: 'url',
+          audio_setting: { format: 'mp3', sample_rate: 32000, bitrate: 128000, channel: 1 },
+        };
+        if (groupId) t2aBody.group_id = groupId;
+        const t2aRes = await fetch(miniUrls.t2a, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify(t2aBody),
+        });
+        if (!t2aRes.ok) {
+          return jsonResponse({ error: `T2A 合成失败（HTTP ${t2aRes.status}）` }, { status: 502, origin });
+        }
+        const t2aData = await t2aRes.json().catch(() => null);
+        const t2aStatus = t2aData && t2aData.base_resp && t2aData.base_resp.status_code;
+        if (typeof t2aStatus === 'number' && t2aStatus !== 0) {
+          return jsonResponse({ error: `T2A 合成失败：${(t2aData.base_resp && t2aData.base_resp.status_msg) || 'unknown'}` }, { status: 502, origin });
+        }
+        const audioRaw = t2aData && t2aData.data && t2aData.data.audio;
+        if (!audioRaw || typeof audioRaw !== 'string') {
+          return jsonResponse({ error: 'T2A 未返回音频' }, { status: 502, origin });
+        }
+        let audioBytes = null;
+        if (/^https?:\/\//i.test(audioRaw.trim())) {
+          const audioUrl = audioRaw.trim();
+          let parsedAudio = null;
+          try { parsedAudio = new URL(audioUrl); } catch (e) { parsedAudio = null; }
+          if (!parsedAudio || isUnsafeFetchTarget(parsedAudio)) {
+            return jsonResponse({ error: '音频下载地址不合法' }, { status: 400, origin });
+          }
+          const guarded = await fetchWithRedirectGuard(audioUrl, { method: 'GET' }, (next) => (next.protocol !== 'https:' ? 'redirect target must stay HTTPS' : null));
+          if (guarded.blocked) {
+            return jsonResponse({ error: '音频下载地址不合法' }, { status: 400, origin });
+          }
+          if (!guarded.res.ok) {
+            return jsonResponse({ error: `音频下载失败（HTTP ${guarded.res.status}）` }, { status: 502, origin });
+          }
+          audioBytes = new Uint8Array(await guarded.res.arrayBuffer());
+        } else {
+          const cleanHex = audioRaw.trim().replace(/^0x/i, '');
+          if (!cleanHex || cleanHex.length % 2 !== 0 || /[^\da-f]/i.test(cleanHex)) {
+            return jsonResponse({ error: 'T2A 返回的音频数据格式异常' }, { status: 502, origin });
+          }
+          const bytes = new Uint8Array(cleanHex.length / 2);
+          for (let i = 0; i < cleanHex.length; i += 2) bytes[i / 2] = parseInt(cleanHex.slice(i, i + 2), 16);
+          audioBytes = bytes;
+        }
+        if (!audioBytes || !audioBytes.length) {
+          return jsonResponse({ error: 'T2A 返回空音频' }, { status: 502, origin });
+        }
+
+        // Step 2: 上传音频供克隆
+        const form = new FormData();
+        form.append('file', new Blob([audioBytes], { type: 'audio/mpeg' }), 'voice_sample.mp3');
+        form.append('purpose', 'voice_clone');
+        const uploadRes = await fetch(miniUrls.upload, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+          body: form,
+        });
+        if (!uploadRes.ok) {
+          return jsonResponse({ error: `上传失败（HTTP ${uploadRes.status}）` }, { status: 502, origin });
+        }
+        const uploadData = await uploadRes.json().catch(() => null);
+        const fileId = uploadData && uploadData.file && uploadData.file.file_id;
+        if (!fileId) {
+          const msg = (uploadData && uploadData.base_resp && uploadData.base_resp.status_msg) || 'unknown';
+          return jsonResponse({ error: `上传失败：${msg}` }, { status: 502, origin });
+        }
+
+        // Step 3: voice_clone 固定声音
+        const cloneRes = await fetch(miniUrls.clone, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            file_id: fileId,
+            voice_id: voiceId,
+            model,
+            text: '你好，这是固定后的声音，听听看效果怎么样？',
+            need_noise_reduction: false,
+            need_volumn_normalization: true,
+          }),
+        });
+        if (!cloneRes.ok) {
+          return jsonResponse({ error: `固定声音失败（HTTP ${cloneRes.status}）` }, { status: 502, origin });
+        }
+        const cloneData = await cloneRes.json().catch(() => null);
+        const cloneStatus = cloneData && cloneData.base_resp && cloneData.base_resp.status_code;
+        if (typeof cloneStatus === 'number' && cloneStatus !== 0) {
+          return jsonResponse({ error: `固定声音失败：${(cloneData.base_resp && cloneData.base_resp.status_msg) || 'unknown'}` }, { status: 502, origin });
+        }
+        return jsonResponse({ success: true, file_id: fileId, voice_id: voiceId, clone_data: cloneData }, { origin });
+      } catch (e) {
+        return jsonResponse({ error: 'MiniMax 上游请求失败', detail: String((e && e.message) || e) }, { status: 502, origin });
       }
     }
 

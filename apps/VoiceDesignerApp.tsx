@@ -3,7 +3,8 @@ import { SpeakerHigh, PlayCircle, StopCircle, Plus, Trash, FloppyDisk, Lock, Che
 import { useOS } from '../context/OSContext';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
-import { safeResponseJson } from '../utils/safeApi';
+import { getProxyWorkerUrl } from '../utils/proxyWorker';
+import { postBakeVoice, resolveBakeVoiceUrls } from '../utils/minimaxBakeVoice';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { getCachedTts, saveCachedTts } from '../utils/ttsCache';
 import { trackEvent } from '../utils/analytics';
@@ -313,13 +314,12 @@ const VoiceDesignerApp: React.FC = () => {
 
       const groupId = (apiConfig.minimaxGroupId || '').trim();
       const region = apiConfig.minimaxRegion === 'overseas' ? 'overseas' : 'domestic';
-      const res = await fetch('/api/minimax/bake-voice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-MiniMax-Region': region,
-        },
-        body: JSON.stringify({
+      // 自建 worker 优先（静态部署），相对路径回退（Vercel/本地 dev），minimaxEndpoint 同款回退风格
+      const { primary, fallback } = resolveBakeVoiceUrls(getProxyWorkerUrl());
+      const data = await postBakeVoice({
+        primary,
+        fallback,
+        payload: {
           apiKey,
           voiceId: customVoiceId,
           model: model || DEFAULT_MODEL,
@@ -327,12 +327,9 @@ const VoiceDesignerApp: React.FC = () => {
           ttsPayload: payload,
           groupId: groupId || undefined,
           region,
-        }),
+        },
+        region,
       });
-      const data = await safeResponseJson(res);
-      if (!res.ok || data?.error) {
-        throw new Error(data?.error || `固定声音失败（HTTP ${res.status}）`);
-      }
 
       // Replace timber_weights with the new fixed voice_id
       setTimberWeights([{ id: `baked-${Date.now()}`, voice_id: customVoiceId, voice_name: `固定音色 (${customVoiceId})`, weight: 1 }]);
