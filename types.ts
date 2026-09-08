@@ -77,6 +77,14 @@ export interface OpencodeConnection {
   proxyUrl?: string;
   /** 自部署 Worker 防白嫖密钥（X-Proxy-Key 头），可选 */
   proxyKey?: string;
+  /** 选中的项目目录（worktree 绝对路径），对应 serve 的 ?directory=。空 = 不传（服务端默认项目） */
+  directory?: string;
+  /** 选中的项目 ID（GET /project 项，仅展示/记忆用，请求只带 directory） */
+  projectID?: string;
+  /** 选中的模型（发 prompt_async/shell 时带上，与 PC 端 TUI 同一来源） */
+  model?: { providerID: string; modelID: string };
+  /** 自动允许所有权限请求（收到 permission.updated 直接回 once，不弹卡） */
+  autoAllow?: boolean;
   enabled: boolean;
   updatedAt: number;
 }
@@ -159,6 +167,24 @@ export interface OpencodePermission {
   messageID: string;
   title: string;
   pattern?: string | string[];
+  [key: string]: unknown;
+}
+
+/** opencode 项目（GET /project 项的子集）。 */
+export interface OpencodeProject {
+  id: string;
+  worktree: string;
+  vcs?: string;
+  vcsDir?: string;
+  time?: { created: number; initialized?: number };
+  [key: string]: unknown;
+}
+
+/** opencode 可用模型（GET /config/providers 拍平后的一项）。 */
+export interface OpencodeModelOption {
+  providerID: string;
+  modelID: string;
+  name: string;
   [key: string]: unknown;
 }
 
@@ -3309,8 +3335,8 @@ export interface CharacterProfile {
   ruminationTendency?: number;  // 反刍倾向 0-1，默认 0.3
   /** ChatApp 专属的语言趋同强度；不影响其他 App 的写作人格。 */
   interactionAccommodation?: CharacterAccommodationPolicy;
-  memoryPalaceInjection?: string;  // 记忆宫殿检索结果，注入到 System Prompt（运行时填充，不持久化）
-  roomPlatesInjection?: string;    // 房间门牌（常驻语义层），注入到 System Prompt（运行时填充，来源 room_plates 表）
+  memoryPalaceInjection?: string;  // 记忆宫殿检索结果，注入到 System Prompt（运行时填充，会随 character 整行持久化，读取侧必须过 memoryPalaceEnabled 开关）
+  roomPlatesInjection?: string;    // 房间门牌（常驻语义层），注入到 System Prompt（运行时填充，会随 character 整行持久化，读取侧必须过开关）
 
   // 自我领悟词条【已冻结，只读遗留】：旧版消化把 self_room 领悟追加到这里，
   // 只进不出、无上限、无合并。新领悟的归宿已改为 self_room 门牌（room_plates），

@@ -21,7 +21,9 @@ import type {
     OpencodeConnection,
     OpencodeFileDiff,
     OpencodeMessageItem,
+    OpencodeModelOption,
     OpencodePermission,
+    OpencodeProject,
     OpencodeSessionInfo,
     OpencodeSessionStatus,
 } from '../types';
@@ -33,6 +35,8 @@ import {
     deleteSession,
     getSessionDiff,
     getSessionStatus,
+    listModelOptions,
+    listProjects,
     listSessionMessages,
     listSessions,
     loadOpencodeConnection,
@@ -40,6 +44,7 @@ import {
     respondPermission,
     runShellCommand,
     runSlashCommand,
+    saveOpencodeConnection,
     sendPromptAsync,
     subscribeOpencodeEvents,
     type OpencodeEvent,
@@ -79,17 +84,26 @@ const TextBlock: React.FC<{ text: string }> = ({ text }) => (
     <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{text}</pre>
 );
 
+const shortPath = (p?: string): string => {
+    if (!p) return '';
+    const parts = p.split(/[/\\]+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : p;
+};
+
 const SessionDrawer: React.FC<{
     open: boolean;
     sessions: OpencodeSessionInfo[];
     activeId: string | null;
     statusMap: Record<string, { type: OpencodeSessionStatus }>;
+    projects: OpencodeProject[];
+    selectedDir?: string;
+    onSelectProject: (dir: string | undefined, projectID?: string) => void;
     onSelect: (id: string) => void;
     onNew: () => void;
     onRename: (s: OpencodeSessionInfo) => void;
     onDelete: (s: OpencodeSessionInfo) => void;
     onClose: () => void;
-}> = ({ open, sessions, activeId, statusMap, onSelect, onNew, onRename, onDelete, onClose }) => {
+}> = ({ open, sessions, activeId, statusMap, projects, selectedDir, onSelectProject, onSelect, onNew, onRename, onDelete, onClose }) => {
     if (!open) return null;
     return (
         <div className="absolute inset-0 z-30">
@@ -101,6 +115,27 @@ const SessionDrawer: React.FC<{
                         <button type="button" onClick={onNew} className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 active:scale-95" aria-label="新建会话"><Plus size={15} weight="bold" /></button>
                         <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 active:scale-95" aria-label="关闭"><X size={15} /></button>
                     </div>
+                </div>
+                <div className="border-b border-slate-100 px-3 py-2">
+                    <p className="mb-1 px-1 text-[9px] font-bold text-slate-400">项目</p>
+                    <select
+                        value={selectedDir || ''}
+                        onChange={e => {
+                            const v = e.target.value;
+                            if (!v) { onSelectProject(undefined, undefined); return; }
+                            const found = projects.find(p => p.worktree === v);
+                            onSelectProject(v, found?.id);
+                        }}
+                        className="w-full truncate rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 font-mono text-[11px] text-slate-700 outline-none focus:border-emerald-400"
+                    >
+                        <option value="">默认（服务端当前目录）</option>
+                        {projects.map(p => (
+                            <option key={p.id} value={p.worktree}>{shortPath(p.worktree)} · {p.worktree}</option>
+                        ))}
+                    </select>
+                    {!projects.length && (
+                        <p className="mt-1 px-1 text-[9px] leading-relaxed text-slate-300">项目列表拉不到时留默认即可，不影响收发。</p>
+                    )}
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto">
                     {!sessions.length && <p className="px-4 py-8 text-center text-[11px] text-slate-400">还没有会话，点右上角 + 新建一个。</p>}
@@ -213,6 +248,8 @@ const TerminalApp: React.FC = () => {
     const [messages, setMessages] = useState<OpencodeMessageItem[]>([]);
     const [statusMap, setStatusMap] = useState<Record<string, { type: OpencodeSessionStatus }>>({});
     const [permissions, setPermissions] = useState<OpencodePermission[]>([]);
+    const [projects, setProjects] = useState<OpencodeProject[]>([]);
+    const [models, setModels] = useState<OpencodeModelOption[]>([]);
     const [input, setInput] = useState('');
     const [mode, setMode] = useState<InputMode>('prompt');
     const [tab, setTab] = useState<TermTab>('session');
@@ -256,7 +293,7 @@ const TerminalApp: React.FC = () => {
         const c = connRef.current;
         if (!c?.enabled) return;
         try {
-            const list = await listSessions(c);
+            const list = await listSessions(c, c.directory);
             setSessions([...list].sort((a, b) => (b.time?.updated || 0) - (a.time?.updated || 0)));
         } catch (e) {
             if (!silent) addToast(failHint(e), 'error');
@@ -278,13 +315,53 @@ const TerminalApp: React.FC = () => {
         const c = connRef.current;
         if (!c?.enabled) return;
         try {
-            setStatusMap(await getSessionStatus(c));
+            setStatusMap(await getSessionStatus(c, c.directory));
         } catch { /* 状态轮询失败不打扰，只靠消息轮询 */ }
     }, []);
+
+    const persistConn = useCallback((patch: Partial<OpencodeConnection>) => {
+        const c = connRef.current;
+        if (!c) return;
+        const next = { ...c, ...patch, updatedAt: Date.now() };
+        connRef.current = next;
+        setConn(next);
+        saveOpencodeConnection(next);
+    }, []);
+
+    // 项目列表：连通后拉一次；失败就留空（抽屉里只显示默认选项，不挡事）。
+    useEffect(() => {
+        if (!conn?.enabled) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const list = await listProjects(conn);
+                if (!cancelled) setProjects([...list].sort((a, b) => a.worktree.localeCompare(b.worktree)));
+            } catch { if (!cancelled) setProjects([]); }
+        })();
+        return () => { cancelled = true; };
+    }, [conn?.enabled, conn?.baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // 模型列表：与 PC 端 TUI 同源（/config/providers），跟项目走；失败留空即服务端默认模型。
+    useEffect(() => {
+        if (!conn?.enabled) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const list = await listModelOptions(conn, conn.directory);
+                if (!cancelled) setModels(list);
+            } catch { if (!cancelled) setModels([]); }
+        })();
+        return () => { cancelled = true; };
+    }, [conn?.enabled, conn?.baseUrl, conn?.directory]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // 初次加载 + 每 2s 轮询：状态必轮询；正忙才轮询消息（省流量）。
     useEffect(() => {
         if (!conn?.enabled) return;
+        // 切项目后旧会话/消息/审批不再有效，先清空再拉新的。
+        setActiveId(null);
+        setMessages([]);
+        setPermissions([]);
+        setDiffOpen(false);
         void refreshSessions(true);
         void refreshStatus();
         const timer = setInterval(() => {
@@ -297,7 +374,7 @@ const TerminalApp: React.FC = () => {
             }
         }, POLL_MS);
         return () => clearInterval(timer);
-    }, [conn?.enabled, refreshSessions, refreshStatus, refreshMessages]);
+    }, [conn?.enabled, conn?.directory, refreshSessions, refreshStatus, refreshMessages]);
 
     // SSE：权限审批与会话增删实时推；断线 5s 后重连。
     useEffect(() => {
@@ -310,8 +387,16 @@ const TerminalApp: React.FC = () => {
                 case 'permission.updated': {
                     const p = props as unknown as OpencodePermission;
                     if (p?.id && p?.sessionID) {
-                        setPermissions(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p]);
-                        if (p.sessionID !== activeRef.current) addToast('电脑请求确认操作，切到对应会话审批', 'info');
+                        // 自动允许开着：直接放行本次，不堆卡片（全部会话）。
+                        if (connRef.current?.autoAllow && connRef.current?.enabled) {
+                            const c = connRef.current;
+                            void respondPermission(c, p.sessionID, p.id, 'once').catch(() => {
+                                setPermissions(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p]);
+                            });
+                        } else {
+                            setPermissions(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p]);
+                            if (p.sessionID !== activeRef.current) addToast('电脑请求确认操作，切到对应会话审批', 'info');
+                        }
                     }
                     break;
                 }
@@ -376,7 +461,7 @@ const TerminalApp: React.FC = () => {
         const c = connRef.current;
         if (!c?.enabled) return;
         try {
-            const s = await createSession(c);
+            const s = await createSession(c, undefined, c.directory);
             await refreshSessions(true);
             selectSession(s.id);
             addToast('新会话已建', 'success');
@@ -422,10 +507,11 @@ const TerminalApp: React.FC = () => {
         if (!c?.enabled || !id || !text || sending) return;
         setSending(true);
         try {
+            const model = c.model && c.model.providerID && c.model.modelID ? c.model : undefined;
             if (mode === 'prompt') {
-                await sendPromptAsync(c, id, text);
+                await sendPromptAsync(c, id, text, model ? { model } : {});
             } else if (mode === 'shell') {
-                await runShellCommand(c, id, text);
+                await runShellCommand(c, id, text, model ? { model } : {});
             } else {
                 const [cmd, ...rest] = text.split(/\s+/);
                 await runSlashCommand(c, id, cmd.replace(/^\//, ''), rest.join(' '));
@@ -450,6 +536,42 @@ const TerminalApp: React.FC = () => {
         } catch (e) { addToast(failHint(e), 'error'); }
     }, [addToast, failHint]);
 
+    const handleSelectProject = useCallback((dir: string | undefined, projectID?: string) => {
+        persistConn(dir ? { directory: dir, projectID } : { directory: undefined, projectID: undefined });
+        setDrawerOpen(false);
+    }, [persistConn]);
+
+    const handleSelectModel = useCallback((value: string) => {
+        if (!value) { persistConn({ model: undefined }); return; }
+        const sep = value.indexOf('/');
+        if (sep < 0) return;
+        persistConn({ model: { providerID: value.slice(0, sep), modelID: value.slice(sep + 1) } });
+    }, [persistConn]);
+
+    const handleToggleAutoAllow = useCallback(async (next: boolean) => {
+        persistConn(next ? { autoAllow: true } : { autoAllow: undefined });
+        if (!next) return;
+        // 打开瞬间把已堆积的卡一次性放行。
+        const c = connRef.current;
+        if (!c?.enabled) return;
+        const pending = permissions;
+        if (!pending.length) {
+            addToast('自动允许已开：新请求不再弹卡', 'success');
+            return;
+        }
+        setPermissions([]);
+        let ok = 0;
+        for (const p of pending) {
+            try {
+                await respondPermission({ ...c, autoAllow: true }, p.sessionID, p.id, 'once');
+                ok += 1;
+            } catch {
+                setPermissions(prev => prev.some(x => x.id === p.id) ? prev : [...prev, p]);
+            }
+        }
+        addToast(ok === pending.length ? `已放行 ${ok} 个待确认` : `放行 ${ok}/${pending.length} 个，剩下的手动点`, ok === pending.length ? 'success' : 'info');
+    }, [addToast, permissions, persistConn]);
+
     const openDiff = useCallback(async () => {
         const c = connRef.current;
         const id = activeRef.current;
@@ -464,6 +586,12 @@ const TerminalApp: React.FC = () => {
 
     const activeSession = sessions.find(s => s.id === activeId) ?? null;
     const activePermissions = permissions.filter(p => p.sessionID === activeId);
+    const projectName = conn?.directory ? shortPath(conn.directory) : '默认项目';
+    const modelValue = conn?.model ? `${conn.model.providerID}/${conn.model.modelID}` : '';
+    const modelChoices: OpencodeModelOption[] = [...models];
+    if (conn?.model && !modelChoices.some(m => `${m.providerID}/${m.modelID}` === modelValue)) {
+        modelChoices.unshift({ providerID: conn.model.providerID, modelID: conn.model.modelID, name: modelValue });
+    }
 
     if (!conn?.enabled) {
         return (
@@ -487,7 +615,7 @@ const TerminalApp: React.FC = () => {
                 <span className={`h-2 w-2 shrink-0 rounded-full ${busy ? 'animate-pulse bg-amber-500' : sseOn ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-xs font-bold text-slate-700">{activeSession?.title || '未选会话'}</p>
-                    <p className="text-[9px] text-slate-400">{activeSession ? statusLabel(activeStatus) : '从左侧选一个会话开始'}</p>
+                    <p className="truncate text-[9px] text-slate-400">{projectName}{activeSession ? ` · ${statusLabel(activeStatus)}` : ' · 从左侧选项目与会话开始'}</p>
                 </div>
                 {busy && (
                     <button type="button" onClick={handleAbort} className="flex h-8 items-center gap-1 rounded-lg bg-rose-100 px-2.5 text-[10px] font-bold text-rose-600 active:scale-95"><Stop size={13} weight="fill" /> 停</button>
@@ -538,6 +666,33 @@ const TerminalApp: React.FC = () => {
             {/* 底部输入 */}
             {activeId && (
                 <footer className="border-t border-slate-200/70 bg-white/90 px-3 pb-3 pt-2 backdrop-blur">
+                    <div className="mb-2 flex items-center gap-2">
+                        <select
+                            value={modelValue}
+                            onChange={e => handleSelectModel(e.target.value)}
+                            aria-label="模型"
+                            className="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-[10px] text-slate-600 outline-none focus:border-emerald-400"
+                        >
+                            <option value="">默认模型</option>
+                            {modelChoices.map(m => {
+                                const v = `${m.providerID}/${m.modelID}`;
+                                return <option key={v} value={v}>{m.name || v}</option>;
+                            })}
+                        </select>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={!!conn?.autoAllow}
+                            title="开后所有权限请求直接放行，不再弹卡"
+                            onClick={() => void handleToggleAutoAllow(!conn?.autoAllow)}
+                            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-100 px-2 py-1.5 active:scale-95"
+                        >
+                            <span className={`h-4 w-7 rounded-full transition-colors ${conn?.autoAllow ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                <span className={`block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${conn?.autoAllow ? 'translate-x-3' : ''}`} />
+                            </span>
+                            <span className="text-[9px] font-bold text-slate-500">自动允许</span>
+                        </button>
+                    </div>
                     <div className="mb-2 flex gap-1.5">
                         {(Object.keys(MODE_META) as InputMode[]).map(m => (
                             <button
@@ -571,7 +726,7 @@ const TerminalApp: React.FC = () => {
             )}
             </>
             ) : tab === 'files' ? (
-                <FilesTab conn={conn} notify={addToast} />
+                <FilesTab conn={conn} directory={conn.directory} notify={addToast} />
             ) : (
                 <TuiTab conn={conn} notify={addToast} />
             )}
@@ -581,6 +736,9 @@ const TerminalApp: React.FC = () => {
                 sessions={sessions}
                 activeId={activeId}
                 statusMap={statusMap}
+                projects={projects}
+                selectedDir={conn.directory}
+                onSelectProject={handleSelectProject}
                 onSelect={selectSession}
                 onNew={() => void handleNew()}
                 onRename={(s) => setRenameTarget(s)}

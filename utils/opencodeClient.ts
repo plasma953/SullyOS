@@ -21,7 +21,9 @@ import type {
     OpencodeFileNode,
     OpencodeMessageItem,
     OpencodeMessageInfo,
+    OpencodeModelOption,
     OpencodePermission,
+    OpencodeProject,
     OpencodeSessionInfo,
     OpencodeSessionStatus,
 } from '../types';
@@ -32,7 +34,9 @@ export type {
     OpencodeFileNode,
     OpencodeMessageItem,
     OpencodeMessageInfo,
+    OpencodeModelOption,
     OpencodePermission,
+    OpencodeProject,
     OpencodeSessionInfo,
     OpencodeSessionStatus,
 };
@@ -79,6 +83,7 @@ export const loadOpencodeConnection = (): OpencodeConnection | null => {
         if (!raw) return null;
         const parsed = JSON.parse(raw) as Partial<OpencodeConnection>;
         if (!parsed || typeof parsed !== 'object' || typeof parsed.baseUrl !== 'string') return null;
+        const modelRaw = (parsed as Record<string, unknown>).model;
         return {
             id: typeof parsed.id === 'string' ? parsed.id : 'oc_main',
             name: typeof parsed.name === 'string' ? parsed.name : '我的电脑',
@@ -87,10 +92,20 @@ export const loadOpencodeConnection = (): OpencodeConnection | null => {
             password: typeof parsed.password === 'string' ? parsed.password : undefined,
             proxyUrl: typeof parsed.proxyUrl === 'string' && parsed.proxyUrl ? parsed.proxyUrl : undefined,
             proxyKey: typeof parsed.proxyKey === 'string' && parsed.proxyKey ? parsed.proxyKey : undefined,
+            ...(typeof parsed.directory === 'string' && parsed.directory ? { directory: parsed.directory } : {}),
+            ...(typeof parsed.projectID === 'string' && parsed.projectID ? { projectID: parsed.projectID } : {}),
+            ...(isModelRef(modelRaw) ? { model: { providerID: modelRaw.providerID, modelID: modelRaw.modelID } } : {}),
+            ...(parsed.autoAllow === true ? { autoAllow: true as const } : {}),
             enabled: parsed.enabled !== false,
             updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
         };
     } catch { return null; }
+};
+
+const isModelRef = (v: unknown): v is { providerID: string; modelID: string } => {
+    if (!v || typeof v !== 'object') return false;
+    const r = v as Record<string, unknown>;
+    return typeof r.providerID === 'string' && !!r.providerID && typeof r.modelID === 'string' && !!r.modelID;
 };
 
 export const saveOpencodeConnection = (conn: OpencodeConnection): void => {
@@ -155,8 +170,10 @@ export const buildOpencodeUrl = (
     path: string,
 ): string => {
     const target = `${trimSlash(conn.baseUrl)}${path.startsWith('/') ? path : `/${path}`}`;
-    if (conn.proxyUrl) return `${trimSlash(conn.proxyUrl)}?target=${encodeURIComponent(target)}`;
-    return target;
+    if (!conn.proxyUrl) return target;
+    const base = trimSlash(conn.proxyUrl);
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}target=${encodeURIComponent(target)}`;
 };
 
 // ========== fetch 封装 ==========
@@ -219,14 +236,96 @@ export const testOpencodeConnection = async (conn: OpencodeConnection): Promise<
 
 const encId = (id: string): string => encodeURIComponent(id);
 
-/** GET /session：列出全部会话（新在前还是旧在前由服务端定，UI 层按 time.updated 排序）。 */
-export const listSessions = async (conn: OpencodeConnection): Promise<OpencodeSessionInfo[]> =>
-    readJson<OpencodeSessionInfo[]>(await opencodeFetch(conn, '/session'));
+/** ?directory= 透传：选中项目后会话/文件/模型都按该目录隔离；空则不传（服务端默认项目）。 */
+const withDir = (path: string, directory?: string): string => {
+    if (!directory) return path;
+    const sep = path.includes('?') ? '&' : '?';
+    return `${path}${sep}directory=${encodeURIComponent(directory)}`;
+};
 
-/** POST /session：新建会话（title 可空，服务端会自动生成）。 */
-export const createSession = async (conn: OpencodeConnection, title?: string): Promise<OpencodeSessionInfo> =>
+/** GET /project：项目列表（worktree 即目录绝对路径，选项目就选它）。 */
+export const listProjects = async (conn: OpencodeConnection): Promise<OpencodeProject[]> =>
+    readJson<OpencodeProject[]>(await opencodeFetch(conn, '/project'));
+
+/** GET /project/current?directory=：当前目录归属的项目（选中记忆/展示用）。 */
+export const getCurrentProject = async (
+    conn: OpencodeConnection,
+    directory?: string,
+): Promise<OpencodeProject> =>
+    readJson<OpencodeProject>(await opencodeFetch(conn, withDir('/project/current', directory)));
+
+/**
+ * GET /config/providers?directory=：可用模型（与 PC 端 TUI 同一来源）。
+ * 拍平成 [{providerID, modelID, name}] 供下拉选择；按 providerID/modelID 排序保证稳定。
+ * 旧版 serve 只有 /provider 时回退（形状 {all:[{id,models:{}}]}）。
+ */
+export const listModelOptions = async (
+    conn: OpencodeConnection,
+    directory?: string,
+): Promise<OpencodeModelOption[]> => {
+    let raw: unknown;
+    try {
+        raw = await readJson<unknown>(await opencodeFetch(conn, withDir('/config/providers', directory)));
+    } catch (e) {
+        if (!(e instanceof OpencodeApiError)) throw e;
+        raw = await readJson<unknown>(await opencodeFetch(conn, withDir('/provider', directory)));
+    }
+    const out: OpencodeModelOption[] = [];
+    const pushModel = (providerID: string, modelID: string, name?: unknown): void => {
+        if (!providerID || !modelID) return;
+        out.push({
+            providerID,
+            modelID,
+            name: typeof name === 'string' && name ? name : `${providerID}/${modelID}`,
+        });
+    };
+    if (raw && typeof raw === 'object') {
+        const rec = raw as Record<string, unknown>;
+        const providers = rec.providers;
+        if (Array.isArray(providers)) {
+            for (const p of providers) {
+                if (!p || typeof p !== 'object') continue;
+                const pr = p as Record<string, unknown>;
+                const pid = typeof pr.id === 'string' ? pr.id : '';
+                const models = pr.models as Record<string, { name?: unknown } | undefined> | undefined;
+                if (!pid || !models || typeof models !== 'object') continue;
+                for (const [mid, m] of Object.entries(models)) pushModel(pid, mid, m?.name);
+            }
+        }
+        const all = rec.all;
+        if (Array.isArray(all)) {
+            for (const p of all) {
+                if (!p || typeof p !== 'object') continue;
+                const pr = p as Record<string, unknown>;
+                const pid = typeof pr.id === 'string' ? pr.id : '';
+                const models = pr.models as Record<string, { name?: unknown } | undefined> | undefined;
+                if (!pid || !models || typeof models !== 'object') continue;
+                for (const [mid, m] of Object.entries(models)) pushModel(pid, mid, m?.name);
+            }
+        }
+    }
+    out.sort((a, b) =>
+        a.providerID === b.providerID
+            ? a.modelID.localeCompare(b.modelID)
+            : a.providerID.localeCompare(b.providerID));
+    return out;
+};
+
+/** GET /session：列出会话（directory 有值时只列该项目的；UI 层仍按 time.updated 排序）。 */
+export const listSessions = async (
+    conn: OpencodeConnection,
+    directory?: string,
+): Promise<OpencodeSessionInfo[]> =>
+    readJson<OpencodeSessionInfo[]>(await opencodeFetch(conn, withDir('/session', directory)));
+
+/** POST /session：新建会话（title 可空；directory 有值时建到该项目下）。 */
+export const createSession = async (
+    conn: OpencodeConnection,
+    title?: string,
+    directory?: string,
+): Promise<OpencodeSessionInfo> =>
     readJson<OpencodeSessionInfo>(
-        await opencodeFetch(conn, '/session', {
+        await opencodeFetch(conn, withDir('/session', directory), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(title ? { title } : {}),
@@ -261,11 +360,12 @@ export const deleteSession = async (conn: OpencodeConnection, sessionID: string)
 export const abortSession = async (conn: OpencodeConnection, sessionID: string): Promise<boolean> =>
     readJson<boolean>(await opencodeFetch(conn, `/session/${encId(sessionID)}/abort`, { method: 'POST' }));
 
-/** GET /session/status：全部会话的忙闲表（轮询忙闲就靠它，不用逐个问）。 */
+/** GET /session/status：会话忙闲表（directory 有值时只看该项目）。 */
 export const getSessionStatus = async (
     conn: OpencodeConnection,
+    directory?: string,
 ): Promise<Record<string, { type: OpencodeSessionStatus }>> =>
-    readJson(await opencodeFetch(conn, '/session/status'));
+    readJson(await opencodeFetch(conn, withDir('/session/status', directory)));
 
 /** GET /session/:id/diff：本会话的文件改动（只读展示用）。 */
 export const getSessionDiff = async (
@@ -379,10 +479,14 @@ export const runSlashCommand = async (
 
 // ========== 文件 API ==========
 
-/** GET /file?path=：列目录（path 空 = 项目根）。 */
-export const listFiles = async (conn: OpencodeConnection, path = ''): Promise<OpencodeFileNode[]> =>
+/** GET /file：列目录（path 空 = 项目根；directory 有值时看选中项目）。 */
+export const listFiles = async (
+    conn: OpencodeConnection,
+    path = '',
+    directory?: string,
+): Promise<OpencodeFileNode[]> =>
     readJson<OpencodeFileNode[]>(
-        await opencodeFetch(conn, `/file?path=${encodeURIComponent(path)}`),
+        await opencodeFetch(conn, withDir(`/file?path=${encodeURIComponent(path)}`, directory)),
     );
 
 export interface OpencodeFileContent {
@@ -391,19 +495,35 @@ export interface OpencodeFileContent {
     [key: string]: unknown;
 }
 
-/** GET /file/content?path=：读文件（text 直接是文本；binary 为 base64，调用方按需处理）。 */
-export const readFileContent = async (conn: OpencodeConnection, path: string): Promise<OpencodeFileContent> =>
+/** GET /file/content：读文件（directory 有值时看选中项目）。 */
+export const readFileContent = async (
+    conn: OpencodeConnection,
+    path: string,
+    directory?: string,
+): Promise<OpencodeFileContent> =>
     readJson<OpencodeFileContent>(
-        await opencodeFetch(conn, `/file/content?path=${encodeURIComponent(path)}`),
+        await opencodeFetch(conn, withDir(`/file/content?path=${encodeURIComponent(path)}`, directory)),
     );
 
-/** GET /find?pattern=：全文搜索（返回匹配对象数组，原样透传）。 */
-export const searchText = async (conn: OpencodeConnection, pattern: string): Promise<unknown[]> =>
-    readJson<unknown[]>(await opencodeFetch(conn, `/find?pattern=${encodeURIComponent(pattern)}`));
+/** GET /find：全文搜索（directory 有值时只搜选中项目）。 */
+export const searchText = async (
+    conn: OpencodeConnection,
+    pattern: string,
+    directory?: string,
+): Promise<unknown[]> =>
+    readJson<unknown[]>(
+        await opencodeFetch(conn, withDir(`/find?pattern=${encodeURIComponent(pattern)}`, directory)),
+    );
 
-/** GET /find/file?query=：按名找文件/目录（返回路径数组，原样透传）。 */
-export const findFile = async (conn: OpencodeConnection, query: string): Promise<string[]> =>
-    readJson<string[]>(await opencodeFetch(conn, `/find/file?query=${encodeURIComponent(query)}`));
+/** GET /find/file：按名找文件/目录（directory 有值时只找选中项目）。 */
+export const findFile = async (
+    conn: OpencodeConnection,
+    query: string,
+    directory?: string,
+): Promise<string[]> =>
+    readJson<string[]>(
+        await opencodeFetch(conn, withDir(`/find/file?query=${encodeURIComponent(query)}`, directory)),
+    );
 
 // ========== TUI 遥控（操作本机正在跑的那个 TUI） ==========
 

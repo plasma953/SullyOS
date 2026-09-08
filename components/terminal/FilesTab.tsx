@@ -15,8 +15,9 @@ type FindMatch = {
 /** 文件 Tab：目录树懒加载 + 读文件 + 全文搜索。 */
 const FilesTab: React.FC<{
     conn: OpencodeConnection;
+    directory?: string;
     notify: (message: string, type?: any) => void;
-}> = ({ conn, notify }) => {
+}> = ({ conn, directory, notify }) => {
     const [stack, setStack] = useState<string[]>([]);
     const [nodes, setNodes] = useState<OpencodeFileNode[]>([]);
     const [loading, setLoading] = useState(false);
@@ -34,7 +35,7 @@ const FilesTab: React.FC<{
         setViewPath(null);
         setMatches(null);
         try {
-            const list = await listFiles(conn, path);
+            const list = await listFiles(conn, path, directory);
             setNodes([...list].sort((a, b) =>
                 a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1));
         } catch { notify('目录读不出来：确认 serve 在跑', 'error'); }
@@ -56,7 +57,7 @@ const FilesTab: React.FC<{
     const openFile = async (path: string) => {
         setLoading(true);
         try {
-            const file = await readFileContent(conn, path);
+            const file = await readFileContent(conn, path, directory);
             if (file.type !== 'text') {
                 setViewPath(path);
                 setViewText(null);
@@ -75,14 +76,17 @@ const FilesTab: React.FC<{
         setSearching(true);
         setViewPath(null);
         try {
-            const res = await searchText(conn, q);
+            const res = await searchText(conn, q, directory);
             setMatches((Array.isArray(res) ? res : []) as FindMatch[]);
         } catch { notify('搜索失败', 'error'); }
         finally { setSearching(false); }
     };
 
-    React.useEffect(() => { void load(''); // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    React.useEffect(() => {
+        setStack([]);
+        void load('');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [directory]);
 
     return (
         <div className="flex min-h-0 flex-1 flex-col">

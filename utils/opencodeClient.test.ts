@@ -88,6 +88,15 @@ describe('buildOpencodeUrl', () => {
             `https://oc-proxy.example.workers.dev?target=${encodeURIComponent('http://127.0.0.1:4096/global/health')}`,
         );
     });
+
+    it('uses &target= when proxyUrl already has a query string', async () => {
+        const { buildOpencodeUrl } = await import('./opencodeClient');
+        expect(
+            buildOpencodeUrl(mkConn({ proxyUrl: 'https://oc-proxy.example.workers.dev?key=abc' }), '/global/health'),
+        ).toBe(
+            `https://oc-proxy.example.workers.dev?key=abc&target=${encodeURIComponent('http://127.0.0.1:4096/global/health')}`,
+        );
+    });
 });
 
 describe('opencodeFetch', () => {
@@ -464,5 +473,100 @@ describe('testOpencodeConnection', () => {
         const { testOpencodeConnection } = await import('./opencodeClient');
         fetchMock.mockResolvedValue(jsonResponse({ healthy: false, version: '1.18.29' }));
         await expect(testOpencodeConnection(mkConn())).rejects.toThrow();
+    });
+});
+
+describe('project / model / directory', () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    const lastCall = (): [string, RequestInit] => fetchMock.mock.calls[fetchMock.mock.calls.length - 1] as [string, RequestInit];
+
+    it('listProjects GETs /project', async () => {
+        const { listProjects } = await import('./opencodeClient');
+        const projects = [{ id: 'p1', worktree: 'D:/code/a' }, { id: 'p2', worktree: 'D:/code/b' }];
+        fetchMock.mockResolvedValue(jsonResponse(projects));
+        await expect(listProjects(mkConn())).resolves.toEqual(projects);
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/project');
+    });
+
+    it('getCurrentProject passes directory', async () => {
+        const { getCurrentProject } = await import('./opencodeClient');
+        fetchMock.mockResolvedValue(jsonResponse({ id: 'p1', worktree: 'D:/code/a' }));
+        await getCurrentProject(mkConn(), 'D:/code/a');
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/project/current?directory=D%3A%2Fcode%2Fa');
+    });
+
+    it('listModelOptions flattens /config/providers', async () => {
+        const { listModelOptions } = await import('./opencodeClient');
+        fetchMock.mockResolvedValue(jsonResponse({
+            providers: [
+                { id: 'anthropic', models: { 'claude-x': { name: 'Claude X' } } },
+                { id: 'openai', models: { 'gpt-y': {} } },
+            ],
+            default: {},
+        }));
+        await expect(listModelOptions(mkConn(), 'D:/code/a')).resolves.toEqual([
+            { providerID: 'anthropic', modelID: 'claude-x', name: 'Claude X' },
+            { providerID: 'openai', modelID: 'gpt-y', name: 'openai/gpt-y' },
+        ]);
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/config/providers?directory=D%3A%2Fcode%2Fa');
+    });
+
+    it('listModelOptions falls back to /provider', async () => {
+        const { listModelOptions } = await import('./opencodeClient');
+        fetchMock
+            .mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404))
+            .mockResolvedValueOnce(jsonResponse({
+                all: [{ id: 'anthropic', models: { 'claude-x': { name: 'Claude X' } } }],
+                default: {},
+            }));
+        await expect(listModelOptions(mkConn())).resolves.toEqual([
+            { providerID: 'anthropic', modelID: 'claude-x', name: 'Claude X' },
+        ]);
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/provider');
+    });
+
+    it('session and file APIs carry directory without breaking old calls', async () => {
+        const { listSessions, createSession, getSessionStatus, listFiles, readFileContent, searchText, findFile } = await import('./opencodeClient');
+        fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([])));
+        await listSessions(mkConn(), 'D:/code/a');
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/session?directory=D%3A%2Fcode%2Fa');
+        await listSessions(mkConn());
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/session');
+        fetchMock.mockResolvedValue(jsonResponse({ id: 's1' }));
+        await createSession(mkConn(), 't', 'D:/code/a');
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/session?directory=D%3A%2Fcode%2Fa');
+        fetchMock.mockResolvedValue(jsonResponse({}));
+        await getSessionStatus(mkConn(), 'D:/code/a');
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/session/status?directory=D%3A%2Fcode%2Fa');
+        fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([])));
+        await listFiles(mkConn(), 'src', 'D:/code/a');
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/file?path=src&directory=D%3A%2Fcode%2Fa');
+        await listFiles(mkConn(), 'src');
+        expect(lastCall()[0]).toBe('http://127.0.0.1:4096/file?path=src');
+        fetchMock.mockResolvedValue(jsonResponse({ type: 'text', content: 'hi' }));
+        await readFileContent(mkConn(), 'a.ts', 'D:/code/a');
+        expect(lastCall()[0]).toContain('&directory=');
+        fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([])));
+        await searchText(mkConn(), 'TODO', 'D:/code/a');
+        expect(lastCall()[0]).toContain('&directory=');
+        await findFile(mkConn(), 'App', 'D:/code/a');
+        expect(lastCall()[0]).toContain('&directory=');
+    });
+
+    it('load keeps new connection fields', async () => {
+        const { saveOpencodeConnection, loadOpencodeConnection } = await import('./opencodeClient');
+        const conn = mkConn({ directory: 'D:/code/a', projectID: 'p1', model: { providerID: 'a', modelID: 'b' }, autoAllow: true } as Partial<OpencodeConnection>);
+        saveOpencodeConnection(conn);
+        expect(loadOpencodeConnection()).toEqual(conn);
     });
 });
