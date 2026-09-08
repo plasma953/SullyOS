@@ -86,17 +86,17 @@ export async function executeBleSendCommand(args: {
   const dq = (args?.device || '').trim();
   const cq = (args?.command || '').trim();
   if (!dq || !cq) return '参数不完整：需要 device（设备名）和 command（指令名）。';
-  const key = `${dq}|${cq}`;
-  const now = Date.now();
-  if (lastSent && lastSent.key === key && now - lastSent.ts < FINGERPRINT_WINDOW_MS) {
-    return `指令「${cq}」刚刚已经发送过了（60 秒内不重复执行）。如果设备没有反应，请告知用户检查设备，而不是重复发送。`;
-  }
   const devices = await loadBleDevices();
   const target = resolveBleSendTarget(devices, bleEngine.connectedDeviceIds(), dq, cq);
   if (!target.ok) {
     return target.errorText;
   }
   const { device, command } = target;
+  const key = `${device.id}|${command.id}`;
+  const now = Date.now();
+  if (lastSent && lastSent.key === key && now - lastSent.ts < FINGERPRINT_WINDOW_MS) {
+    return `指令「${cq}」刚刚已经发送过了（60 秒内不重复执行）。如果设备没有反应，请告知用户检查设备，而不是重复发送。`;
+  }
   try {
     await bleEngine.writeValue(
       device.id, command.serviceUuid, command.characteristicUuid,

@@ -122,4 +122,14 @@ describe('executeBleSendCommand', () => {
     expect(first).toContain('找不到');
     expect(second).toContain('找不到');
   });
+  it('blocks same target under different aliases within the window', async () => {
+    const base = Date.now() + 600_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(base);
+    await executeBleSendCommand({ device: '卧室灯', command: '开灯' });
+    nowSpy.mockReturnValue(base + 1_000);
+    const text = await executeBleSendCommand({ device: '卧室', command: '开' });
+    expect(text).toMatch(/已经发送过|重复/);
+    expect(bleEngine.writeValue).toHaveBeenCalledTimes(1);
+    nowSpy.mockRestore();
+  });
 });

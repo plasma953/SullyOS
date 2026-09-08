@@ -87,6 +87,41 @@ const writeLibrary = async (lib: CachedCityLibrary): Promise<void> => {
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error || new Error('city_places write aborted'));
     });
+    // LRU 上限：城市切多了旧行永久残留，超限时按 fetchedAt 淘汰最旧的（刚写入的不动）。
+    // 淘汰失败只记 warn，不影响本次写入。
+    try {
+        await evictOldLibraries(lib.adcode);
+    } catch (e) {
+        console.warn('[cityPlaces] 地点库淘汰旧城市失败:', e);
+    }
+};
+
+/** 最多保留的城市数（配额 fragile，多多益善但不能无限涨）。 */
+export const MAX_CACHED_CITIES = 20;
+
+const evictOldLibraries = async (keepAdcode: string): Promise<void> => {
+    const db = await openGeoDb();
+    const libs: CachedCityLibrary[] = await new Promise((resolve, reject) => {
+        const tx = db.transaction(GEO_STORE, 'readonly');
+        const req = tx.objectStore(GEO_STORE).getAll();
+        req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
+        req.onerror = () => reject(req.error);
+    });
+    if (libs.length <= MAX_CACHED_CITIES) return;
+    const victims = libs
+        .filter((l) => l.adcode !== keepAdcode)
+        .sort((a, b) => (a.fetchedAt || 0) - (b.fetchedAt || 0))
+        .slice(0, libs.length - MAX_CACHED_CITIES)
+        .map((l) => l.adcode);
+    if (!victims.length) return;
+    await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(GEO_STORE, 'readwrite');
+        const store = tx.objectStore(GEO_STORE);
+        for (const adcode of victims) store.delete(adcode);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('city_places evict aborted'));
+    });
 };
 
 const findLibrary = (libs: CachedCityLibrary[], name: string): CachedCityLibrary | null => {

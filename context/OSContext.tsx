@@ -1789,7 +1789,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         setNovels(dbNovels);
         setSongs(dbSongs);
         setCustomThemes(dbThemes);
-        if (dbUser) setUserProfile(dbUser);
+        if (dbUser) {
+            setUserProfile(dbUser);
+            writeUserCityMirror(dbUser.location?.city || '');
+        }
 
         // amsg2 脏标记兜底补传：上次会话打了脏、但请求还没落地（在飞或躺在退避重排里）
         // 就被杀进程的角色，按 localStorage 底账用刚从 DB 读回的数据重建快照传一次。
@@ -5384,7 +5387,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
           if (groupsList.length > 0) setGroups(groupsList);
           if (themes.length > 0) setCustomThemes(themes);
-          if (user) setUserProfile(user);
+          if (user) {
+              setUserProfile(user);
+              writeUserCityMirror(user.location?.city || '');
+          }
           if (books.length > 0) setWorldbooks(books);
           if (novelList.length > 0) setNovels(novelList);
           if (songList.length > 0) setSongs(songList);

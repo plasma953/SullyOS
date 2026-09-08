@@ -7,10 +7,13 @@ import {
     enrichMoveToPlace,
     getCityLibrary,
     listCachedLibraries,
+    MAX_CACHED_CITIES,
     readUserCity,
     resolveStructuredPlace,
+    USER_CITY_MIRROR_KEY,
     writeUserCityMirror,
 } from './cityPlaces';
+import { DB } from './db';
 
 const AUTH = { proxyUrl: 'https://proxy.example', key: 'K' };
 
@@ -195,6 +198,26 @@ describe('用户城市镜像（localStorage 同步读写）', () => {
         writeUserCityMirror('  ');
         expect(readUserCity()).toBeUndefined();
     });
+
+    it('启动/导入回填：getUserProfile 带 city 时镜像 key 被回填，空 city 时清除', async () => {
+        // 与 OSContext 启动加载 / 导入恢复两处对齐调用同语义：
+        // writeUserCityMirror(profile.location?.city || '')
+        localStorage.removeItem(USER_CITY_MIRROR_KEY);
+        await DB.saveUserProfile({
+            name: 'U', avatar: '', bio: '',
+            location: { city: '杭州市', source: 'user', updatedAt: Date.now() },
+        } as any);
+        const profile = await DB.getUserProfile();
+        writeUserCityMirror(profile?.location?.city || '');
+        expect(localStorage.getItem(USER_CITY_MIRROR_KEY)).toBe('杭州市');
+        expect(readUserCity()).toBe('杭州市');
+
+        await DB.saveUserProfile({ name: 'U', avatar: '', bio: '' } as any);
+        const empty = await DB.getUserProfile();
+        writeUserCityMirror(empty?.location?.city || '');
+        expect(localStorage.getItem(USER_CITY_MIRROR_KEY)).toBeNull();
+        expect(readUserCity()).toBeUndefined();
+    });
 });
 
 describe('地点库管理', () => {
@@ -214,5 +237,22 @@ describe('地点库管理', () => {
         await getCityLibrary('上海', AUTH);
         await clearCachedLibraries();
         expect(await listCachedLibraries()).toHaveLength(0);
+    });
+
+    it(`超 ${MAX_CACHED_CITIES} 城按 fetchedAt 淘汰最旧、刚写入的不动`, async () => {
+        const now = Date.now();
+        for (let i = 0; i < MAX_CACHED_CITIES + 3; i++) {
+            await __seedLibraryForTest({
+                adcode: `test${i}`, city: `测试城${i}`, places: [],
+                fetchedAt: now - (MAX_CACHED_CITIES + 3 - i) * 1000,
+            } as any);
+        }
+        const listed = await listCachedLibraries();
+        expect(listed).toHaveLength(MAX_CACHED_CITIES);
+        // 最旧的 3 个（test0-2）被淘汰，刚写入的 test22 还在
+        const adcodes = listed.map((l) => l.adcode);
+        expect(adcodes).not.toContain('test0');
+        expect(adcodes).not.toContain('test2');
+        expect(adcodes).toContain(`test${MAX_CACHED_CITIES + 2}`);
     });
 });
