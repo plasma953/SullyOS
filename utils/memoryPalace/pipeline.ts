@@ -1327,6 +1327,8 @@ export async function injectMemoryPalace(
     }
 
     if (!char.memoryPalaceEnabled) {
+        char.memoryPalaceInjection = '';
+        char.roomPlatesInjection = '';
         trace.stages.push({ name: 'finalize', durationMs: 0, outcome: 'skipped' });
         return finishRecallTrace(trace, 'skipped_palace_disabled');
     }

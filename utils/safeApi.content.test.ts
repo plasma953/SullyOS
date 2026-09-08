@@ -16,4 +16,10 @@ describe('extractContent structured responses', () => {
     it('accepts object content without calling string methods on the object', () => {
         expect(extractContent({ choices: [{ message: { content: { text: 'pong' } } }] })).toBe('pong');
     });
+
+    it('falls back to reasoning / thinking when content is empty', () => {
+        expect(extractContent({ choices: [{ message: { content: '', reasoning_content: 'r1' } }] })).toBe('r1');
+        expect(extractContent({ choices: [{ message: { content: '', reasoning: 'r2' } }] })).toBe('r2');
+        expect(extractContent({ choices: [{ message: { content: '', thinking: 'r3' } }] })).toBe('r3');
+    });
 });

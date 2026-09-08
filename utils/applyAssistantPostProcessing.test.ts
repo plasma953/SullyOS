@@ -652,3 +652,34 @@ describe('ctx.spokenAt — 日程改动按说出口那一刻判', () => {
     });
 });
 
+describe('XHS_SHARE tag whitespace tolerance', () => {
+    it('[[XHS_SHARE: 1 ]] (bracket 前有空格) 照样出卡片并剥离标签', async () => {
+        const charId = `c-xhs-share-ws-${Date.now()}`;
+        const ctx = makeCtx(charId, []);
+        ctx.instantRender = true;
+        ctx.lastXhsNotesRef = {
+            current: [{
+                noteId: 'note-ws-1',
+                title: '空格容错笔记',
+                desc: '简介',
+                likes: 1,
+                collects: 0,
+                commentCount: 0,
+                shareCount: 0,
+                author: '作者',
+                authorId: 'author-ws',
+                coverUrl: 'https://example.test/ws.jpg',
+            }],
+        };
+
+        await applyAssistantPostProcessing('这个不错[[XHS_SHARE: 1 ]]', ctx);
+
+        const msgs = (await DB.getRecentMessagesByCharId(charId, 50)).filter(m => m.role === 'assistant');
+        const cards = msgs.filter(m => m.type === 'xhs_card');
+        expect(cards).toHaveLength(1);
+        expect(cards[0].metadata?.xhsNote).toMatchObject({ noteId: 'note-ws-1' });
+        const leaked = msgs.filter(m => m.type === 'text').map(m => m.content).join('\n');
+        expect(leaked).not.toContain('XHS_SHARE');
+    }, 20000);
+});
+

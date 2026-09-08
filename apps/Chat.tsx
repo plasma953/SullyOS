@@ -5,7 +5,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot } from '../types';
 import { processImage, processImageToBlob } from '../utils/file';
-import { safeResponseJson, extractContent } from '../utils/safeApi';
+import { safeResponseJson, extractContent, safeFetchJson } from '../utils/safeApi';
 import { buildChatFineTuneCss, mergeChatFineTune } from '../utils/chatFineTuneCss';
 import ChatFineTunePanel from '../components/chat/ChatFineTunePanel';
 import TokenImg from '../components/os/TokenImg';
@@ -545,11 +545,13 @@ const Chat: React.FC = () => {
     handlePlayVoiceRef.current = handlePlayVoice;
     const onPlayVoiceStable = useCallback((id: number) => handlePlayVoiceRef.current(id), []);
 
-    // LLM 翻译兜底（语音条中外对照用）。查 res.ok + 失败重试一次 ——
-    // 以前不查状态码、失败静默吞掉，翻译一次拿不到就永远空着（「外语语音没翻译」主因）。
+    // LLM 翻译兜底（语音条中外对照用）。safeFetchJson 负责查状态码 + HTML/SSE 容错解析，
+    // 失败抛错由外层重试一次 ——以前不查状态码、失败静默吞掉，翻译一次拿不到就永远空着（「外语语音没翻译」主因）。
     const llmTranslate = async (systemPrompt: string, text: string): Promise<string> => {
         const attempt = async (): Promise<string> => {
-            const res = await fetch(`${apiConfig.baseUrl}/chat/completions`, {
+            // 后台翻译调用：请求体与原来逐字一致（不补 stream 字段），只换调用层；
+            // chat/completions 不自动重试，外层的手动重试一次保留。
+            const data = await safeFetchJson(`${apiConfig.baseUrl}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
                 body: JSON.stringify({
@@ -557,9 +559,7 @@ const Chat: React.FC = () => {
                     messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }],
                     temperature: 0.3,
                 }),
-            });
-            if (!res.ok) throw new Error(`translate http ${res.status}`);
-            const data = await res.json();
+            }, 1, 0);
             return data?.choices?.[0]?.message?.content?.trim() || '';
         };
         try { return await attempt(); }

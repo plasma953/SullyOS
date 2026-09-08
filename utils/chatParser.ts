@@ -381,7 +381,9 @@ export const ChatParser = {
             // 同类 tag 全清，防止 LLM 一条消息里插多次
             content = content.replace(MUSIC_TAG_GLOBAL_RE, '').trim();
         } else if (musicMatch) {
-            // 没有 hooks（无音乐上下文）— 静默丢弃
+            // 没有 hooks（无音乐上下文）— 标签已剥离未执行，留一行便于排查。
+            const verb = musicMatch[1];
+            console.warn('[MusicAction] 无 hooks，标签已剥离未执行', { charId, verb });
             content = content.replace(MUSIC_TAG_GLOBAL_RE, '').trim();
         }
 

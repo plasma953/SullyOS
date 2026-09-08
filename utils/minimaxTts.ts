@@ -472,7 +472,7 @@ export async function synthesizeSpeechDetailed(
   // Check MiniMax business-level error (can return HTTP 200 with status_code != 0)
   const baseResp = data?.base_resp;
   if (baseResp && baseResp.status_code !== 0 && baseResp.status_code !== undefined) {
-    throw new Error(`TTS 业务错误: ${baseResp.status_msg || `status_code=${baseResp.status_code}`}`);
+    throw new Error(describeMiniMaxErrorMessage(baseResp.status_msg || `status_code=${baseResp.status_code}`));
   }
 
   const audio = data?.data?.audio;
@@ -499,6 +499,17 @@ export async function synthesizeSpeechDetailed(
   // (same text + voice settings) will be served locally.
   saveCachedTts(cacheKey, blob).catch(() => { /* ignore */ });
   return { url: URL.createObjectURL(blob), blob };
+}
+
+/**
+ * MiniMax 业务错误中文化（余额/鉴权两类高频故障给中文指引，其余原样透传）。
+ * 共享层：电话/聊天/见面/番茄钟四条 TTS 链共用， previously 只活在 CallApp 私有链。
+ */
+export function describeMiniMaxErrorMessage(rawMessage: string, traceId?: string): string {
+  const msg = (rawMessage || '').trim();
+  if (/insufficient\s*balance/i.test(msg)) return 'MiniMax 余额不足，请到 MiniMax 控制台充值后重试。';
+  if (/login\s*fail/i.test(msg) || /authorization/i.test(msg)) return 'MiniMax 鉴权失败，请检查 MiniMax Key 是否正确、是否有权限。';
+  return traceId ? `${msg}（trace_id: ${traceId}）` : msg;
 }
 
 /**

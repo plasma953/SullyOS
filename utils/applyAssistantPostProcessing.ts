@@ -948,31 +948,31 @@ export async function applyAssistantPostProcessing(
     // 末尾会跳过重复渲染 (见下方收尾)。
     if (!skipSecondPassLLM) {
         const willRegenerate =
-            /\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\]\]/.test(aiContent)
+            /\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\s*\]\]/.test(aiContent)
             || /\[\[SEARCH:\s*.+?\]\]/.test(aiContent)
             || /\[\[READ_DIARY:\s*.+?\]\]/.test(aiContent)
             || /\[\[FS_READ_DIARY:\s*.+?\]\]/.test(aiContent)
             || /\[\[READ_NOTE:\s*.+?\]\]/.test(aiContent)
             || /\[\[XHS_SEARCH:\s*.+?\]\]/.test(aiContent)
             || /\[\[XHS_BROWSE(?::\s*.+?)?\]\]/.test(aiContent)
-            || /\[\[XHS_MY_PROFILE\]\]/.test(aiContent)
+            || /\[\[XHS_MY_PROFILE\s*\]\]/.test(aiContent)
             || /\[\[XHS_DETAIL:\s*.+?\]\]/.test(aiContent);
         if (willRegenerate) await renderLeadIn(aiContent);
     }
 
     // 5. Handle Recall (Loop if needed)
-    const recallMatch = aiContent.match(/\[\[RECALL:\s*(\d{4})[-/年](\d{1,2})\]\]/);
+    const recallMatch = aiContent.match(/\[\[RECALL:\s*(\d{4})[-/年](\d{1,2})\s*\]\]/);
     if (!skipSecondPassLLM && recallMatch) {
         const year = recallMatch[1];
         const month = recallMatch[2];
         // 模型常把 [[RECALL]] 指令和本轮正文 A 写在同一条回复里 (A 已在 Step 2 开头先行展示)。把 A
         // 作为 assistant 上文喂给二轮, 让二轮结果 B 接着 A 往下说, 更连贯。
-        const recallLeadIn = aiContent.replace(/\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\]\]/g, '').trim();
+        const recallLeadIn = aiContent.replace(/\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\s*\]\]/g, '').trim();
         const rr = await runRecall({ year, month }, agenticCtx);
 
         if (rr.ok && rr.alreadyActive) {
             console.log(`♻️ [Recall] ${rr.yearMonth} already in activeMemoryMonths, skipping duplicate recall`);
-            aiContent = aiContent.replace(/\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\]\]/g, '').trim();
+            aiContent = aiContent.replace(/\[\[RECALL:\s*\d{4}[-/年]\d{1,2}\s*\]\]/g, '').trim();
         } else if (rr.ok && rr.logsText) {
             setRecallStatus(`正在调阅 ${year}年${month}月 的详细档案...`);
             const recallMessages = [...fullMessages, ...(recallLeadIn ? [{ role: 'assistant', content: recallLeadIn }] : []), { role: 'user', content: `[系统: 已成功调取 ${year}-${month} 的详细日志]\n${rr.logsText}\n[系统: 现在请结合这些细节回答用户。保持对话自然。]` }];
@@ -1706,7 +1706,7 @@ ${material}
 
     // [[XHS_SHARE: 序号]]
     const sharedXhsCardKeys = new Set<string>();
-    const xhsShareMatches: Iterable<RegExpMatchArray> = disabledXhsSideEffects ? [] : aiContent.matchAll(/\[\[XHS_SHARE:\s*(\d+)\]\]/g);
+    const xhsShareMatches: Iterable<RegExpMatchArray> = disabledXhsSideEffects ? [] : aiContent.matchAll(/\[\[XHS_SHARE:\s*(\d+)\s*\]\]/g);
     for (const shareMatch of xhsShareMatches) {
         const idx = parseInt(shareMatch[1]) - 1;
         // 注意 truthy 判空: amsg2 push 带回的笔记数组是稀疏重建的 (只有 directive 引用到的
@@ -1730,7 +1730,7 @@ ${material}
             console.warn('📕 [XHS] XHS_SHARE 序号越界, 跳过卡片', { idx: idx + 1, available: lastXhsNotesRef.current.length });
         }
     }
-    aiContent = aiContent.replace(/\[\[XHS_SHARE:\s*\d+\]\]/g, '').trim();
+    aiContent = aiContent.replace(/\[\[XHS_SHARE:\s*\d+\s*\]\]/g, '').trim();
 
     // 掉格式兜底：把模型模仿历史记录写出的五行纯文本恢复成真正的 xhs_card。
     // 优先复用刚才 search/browse 缓存里的完整 noteId、封面和 xsecToken；缓存丢失时仍给可读卡片。
@@ -1950,7 +1950,7 @@ ${material}
     aiContent = aiContent.replace(/\[\[XHS_FAV:.*?\]\]/g, '').trim();
 
     // [[XHS_MY_PROFILE]]
-    const xhsProfileMatch = aiContent.match(/\[\[XHS_MY_PROFILE\]\]/);
+    const xhsProfileMatch = aiContent.match(/\[\[XHS_MY_PROFILE\s*\]\]/);
     if (!skipSecondPassLLM && xhsProfileMatch && xhsConf.enabled) {
         console.log(`📕 [XHS] AI要查看自己的主页`);
         setXhsStatus('正在查看小红书主页...');
@@ -1999,7 +1999,7 @@ ${material}
                     ? `\n\n你的主页信息:\n${profileStr}`
                     : '';
 
-                const cleanedForXhs = aiContent.replace(/\[\[XHS_MY_PROFILE\]\]/g, '').trim() || '让我看看我的小红书...';
+                const cleanedForXhs = aiContent.replace(/\[\[XHS_MY_PROFILE\s*\]\]/g, '').trim() || '让我看看我的小红书...';
                 const xhsMessages = [
                     ...fullMessages,
                     { role: 'assistant', content: cleanedForXhs },
@@ -2018,7 +2018,7 @@ ${material}
                 console.warn('📕 [XHS] 无昵称也无userId，无法查看主页。请在设置中填写。');
                 // 原代码在 no_identity 时仍然走 2nd-pass LLM, feedsStr = '（无法获取主页...）', 这里保持一致
                 const profileSection = '';
-                const cleanedForXhs = aiContent.replace(/\[\[XHS_MY_PROFILE\]\]/g, '').trim() || '让我看看我的小红书...';
+                const cleanedForXhs = aiContent.replace(/\[\[XHS_MY_PROFILE\s*\]\]/g, '').trim() || '让我看看我的小红书...';
                 const xhsMessages = [
                     ...fullMessages,
                     { role: 'assistant', content: cleanedForXhs },
@@ -2037,7 +2037,7 @@ ${material}
                 // 静默删标记的话, 角色刚说完"我看看我的小红书"就没了下文; 更糟的是它可能
                 // 顺嘴编几条自己"看到"的笔记, 所以这里明确交代什么都没加载出来。
                 console.warn('📕 [XHS] 小红书连不上，主页这次没打开');
-                const cleanedForXhs = aiContent.replace(/\[\[XHS_MY_PROFILE\]\]/g, '').trim() || '让我看看我的小红书...';
+                const cleanedForXhs = aiContent.replace(/\[\[XHS_MY_PROFILE\s*\]\]/g, '').trim() || '让我看看我的小红书...';
                 const xhsMessages = [
                     ...fullMessages,
                     { role: 'assistant', content: cleanedForXhs },
@@ -2059,7 +2059,7 @@ ${material}
     } else if (!skipSecondPassLLM && xhsProfileMatch) {
         aiContent = aiContent.replace(xhsProfileMatch[0], '').trim();
     }
-    aiContent = aiContent.replace(/\[\[XHS_MY_PROFILE\]\]/g, '').trim();
+    aiContent = aiContent.replace(/\[\[XHS_MY_PROFILE\s*\]\]/g, '').trim();
 
     // [[XHS_DETAIL: noteId]]
     const xhsDetailMatch = aiContent.match(/\[\[XHS_DETAIL:\s*(.+?)\]\]/);

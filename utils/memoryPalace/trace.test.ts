@@ -60,7 +60,7 @@ describe('memory palace M0 trace', () => {
         expect(readRecallRuntimeSnapshot().configSnapshotHash).not.toBe(first.configSnapshotHash);
     });
 
-    it('keeps master injection behavior when every smart-context flag is off', async () => {
+    it('clears stale injections when the palace is disabled even if every smart-context flag is off', async () => {
         const char = {
             id: 'char-disabled',
             memoryPalaceEnabled: false,
@@ -70,13 +70,28 @@ describe('memory palace M0 trace', () => {
 
         const trace = await injectMemoryPalace(char, [], undefined, undefined, { entryPoint: 'chat_app' });
 
-        expect(char.memoryPalaceInjection).toBe('上一轮召回');
-        expect(char.roomPlatesInjection).toBe('上一轮门牌');
+        expect(char.memoryPalaceInjection).toBe('');
+        expect(char.roomPlatesInjection).toBe('');
         expect(trace.entryPoint).toBe('chat_app');
         expect(trace.outcome).toBe('skipped_palace_disabled');
         expect(trace.injection.clearedPreviousMemory).toBe(false);
         expect(trace.injection.clearedPreviousRoomPlates).toBe(false);
         expect(trace.stages.some(stage => stage.name === 'clear_previous_injection')).toBe(false);
+    });
+
+    it('clears stale palace-disabled injections without depending on the clear-first stage', async () => {
+        const char = {
+            id: 'char-disabled-legacy',
+            memoryPalaceEnabled: false,
+            memoryPalaceInjection: '旧召回残留',
+            roomPlatesInjection: '旧门牌残留',
+        };
+
+        const trace = await injectMemoryPalace(char, [], undefined, undefined, { entryPoint: 'direct' });
+
+        expect(char.memoryPalaceInjection).toBe('');
+        expect(char.roomPlatesInjection).toBe('');
+        expect(trace.outcome).toBe('skipped_palace_disabled');
     });
 
     it('does not clear master injections when embedding is not configured and the suite is off', async () => {

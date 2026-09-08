@@ -242,6 +242,16 @@ const base64ToBlob = (b64: string, mime = 'audio/mpeg'): Blob => {
   return new Blob([bytes], { type: mime });
 };
 
+/** 鱼声错误中文化（与 elevenLabsTts 的 friendlyElevenLabsError 同风格）。 */
+const friendlyFishAudioError = (status: number, detail: string): string => {
+  const normalized = (detail || '').toLowerCase();
+  if (status === 401 || normalized.includes('unauthorized') || normalized.includes('invalid')) return '鱼声 API Key 无效或已过期';
+  if (status === 402 || normalized.includes('balance') || normalized.includes('quota')) return '鱼声额度不足，请充值后重试';
+  if (status === 403) return '鱼声拒绝访问，请检查 Key 权限';
+  if (status === 429) return '鱼声请求过于频繁，请稍后再试';
+  return `鱼声 TTS 失败 (HTTP ${status})${detail ? `：${detail.slice(0, 200)}` : ''}`;
+};
+
 /**
  * 调鱼声 /v1/tts，拿回音频 Blob。
  * web：默认走 /api/fishaudio/tts 代理；静态预览（github.io / file:）直连上游兜底。
@@ -267,7 +277,7 @@ const fishFetchAudio = async (
       responseType: 'blob',
     });
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`鱼声 TTS 失败 (HTTP ${response.status})`);
+      throw new Error(friendlyFishAudioError(response.status, String(response.data || '')));
     }
     // CapacitorHttp blob 响应：data 是 base64 字符串
     return base64ToBlob(String(response.data || ''));
@@ -293,7 +303,7 @@ const fishFetchAudio = async (
   if (!res.ok) {
     let detail = '';
     try { detail = (await res.text()).slice(0, 200); } catch { /* ignore */ }
-    throw new Error(`鱼声 TTS 失败 (HTTP ${res.status})${detail ? `：${detail}` : ''}`);
+    throw new Error(friendlyFishAudioError(res.status, detail));
   }
   const blob = await res.blob();
   if (!blob.size) throw new Error('鱼声 TTS 返回空音频');

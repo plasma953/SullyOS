@@ -90,6 +90,63 @@ export interface EmotionEvalOutcome {
 }
 
 /**
+ * 零依赖的响应正文解析（本文件禁 import，见文件头——逻辑与
+ * utils/safeApi.ts 的 parseRawBodyText 同款，不直接引用）：
+ * 空正文 / HTML 错误页直接抛；SSE 整包（data: 行）拼成普通 completion 形状；
+ * 其余按 JSON 解析。抛出的消息只含短定位语，外呼前一律再过 maskAndSnip。
+ */
+export const parseEvalBodyText = (text: string): any => {
+  const trimmed = text.trimStart();
+  if (!trimmed) throw new Error('评估接口返回了空响应');
+  if (trimmed.startsWith('<')) throw new Error('评估接口返回了 HTML 而非 JSON');
+  const firstLine = text
+    .split(/\r?\n/)
+    .map((line) => line.trimStart())
+    .find((line) => line.length > 0) || '';
+  const looksSse = firstLine.startsWith('data:')
+    || firstLine.startsWith(':')
+    || firstLine.startsWith('event:')
+    || firstLine.startsWith('id:')
+    || firstLine.startsWith('retry:');
+  if (looksSse && !/^[{["<]/.test(firstLine)) {
+    // 有些 OpenAI 兼容代理无视 stream:false 强行回流式：把 delta/message 增量
+    // 拼成 content（含 reasoning 通道，与 extractAssistantText 的兜底对齐）。
+    let content = '';
+    let reasoning = '';
+    let finishReason: string | null = null;
+    let gotChunk = false;
+    for (const line of text.split(/\r?\n/)) {
+      const item = line.trimStart();
+      if (!item.startsWith('data:')) continue;
+      const payload = item.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+      let chunk: any;
+      try { chunk = JSON.parse(payload); } catch { continue; }
+      gotChunk = true;
+      const choice = chunk?.choices?.[0];
+      if (!choice) continue;
+      const part = choice.delta ?? choice.message;
+      if (part) {
+        if (typeof part.content === 'string') content += part.content;
+        const channel = part.reasoning_content ?? part.reasoning;
+        if (typeof channel === 'string') reasoning += channel;
+      }
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+    }
+    if (gotChunk) {
+      return {
+        choices: [{
+          message: { content, reasoning_content: reasoning || undefined },
+          finish_reason: finishReason,
+        }],
+      };
+    }
+    throw new Error('评估接口的流式响应里没有有效数据');
+  }
+  return JSON.parse(text);
+};
+
+/**
  * 发一次评估请求并解析输出。promptContent 传 restoreEvalPrompt 还原好的整段。
  * 失败绝不抛：给一句已打码的短原因（它最终要走 push 出门，凭据绝不进 push 是红线）。
  */
@@ -119,6 +176,7 @@ export const requestEmotionEval = async (
       }),
       signal: controller.signal,
     });
+    // 正文按分支只读一次：!ok 分支拿它做定位片段，ok 分支拿它做容错解析。
     if (!res.ok) {
       // 正文可能是 HTML 错误页，截一小段够定位即可。
       let body = '';
@@ -127,7 +185,12 @@ export const requestEmotionEval = async (
       const snippet = maskAndSnip(body, api.apiKey);
       return { raw: null, error: `副 API HTTP ${res.status}${snippet ? `：${snippet}` : ''}` };
     }
-    const data = await res.json() as any;
+    // 文本先行再解析：res.json() 遇到 HTML 错误页 / 空响应 / 被代理强回的 SSE
+    // 整包直接抛 Unexpected token；这里走上面的 parseEvalBodyText（与 safeApi 同款
+    // 判定），解析失败同样落进下面的 catch，绝不抛给主流程。
+    let body = '';
+    try { body = await res.text(); } catch { /* 读不出正文就按空响应走解析失败 */ }
+    const data = parseEvalBodyText(body) as any;
     // 个别中转把全部输出塞进 reasoning_content 而 content 留空——与客户端
     // utils/emotionApply.ts 的 extractAssistantText 同一套兜底。
     const message = data?.choices?.[0]?.message;

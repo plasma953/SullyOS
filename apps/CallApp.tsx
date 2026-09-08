@@ -5,7 +5,7 @@ import { extractContent, safeFetchJson } from '../utils/safeApi';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { getCachedTts, saveCachedTts } from '../utils/ttsCache';
-import { buildMiniMaxTtsCacheKey, buildMiniMaxTtsPayload, cleanTextForTts, convertHexAudioToBlob, fetchRemoteAudioBlob, getMiniMaxParamVersion, prepareMiniMaxSpeechText, VALID_EMOTIONS, stripEmotionTags, VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
+import { buildMiniMaxTtsCacheKey, buildMiniMaxTtsPayload, cleanTextForTts, convertHexAudioToBlob, describeMiniMaxErrorMessage, fetchRemoteAudioBlob, getMiniMaxParamVersion, prepareMiniMaxSpeechText, VALID_EMOTIONS, stripEmotionTags, VOICE_ACTING_GUIDE } from '../utils/minimaxTts';
 import { normalizeVoiceTags } from '../utils/sanitize';
 import { FISH_VOICE_ACTING_GUIDE, stripFishMarkupForDisplay } from '../utils/fishAudioTts';
 import { resolveTtsProvider, getElevenLabsModel, getTtsProvider, getVoicePromptOverride } from '../utils/ttsProvider';
@@ -185,12 +185,8 @@ const loadUserCameraPreviewSize = (): UserCameraPreviewSize => {
     return 'medium';
   }
 };
-const buildMiniMaxErrorMessage = (rawMessage: string, traceId?: string): string => {
-  const msg = (rawMessage || '').trim();
-  if (/insufficient\s*balance/i.test(msg)) return 'MiniMax 余额不足，请到 MiniMax 控制台充值后重试。';
-  if (/login\s*fail/i.test(msg) || /authorization/i.test(msg)) return 'MiniMax 鉴权失败，请检查 MiniMax Key 是否正确、是否有权限。';
-  return traceId ? `${msg}（trace_id: ${traceId}）` : msg;
-};
+const buildMiniMaxErrorMessage = (rawMessage: string, traceId?: string): string =>
+  describeMiniMaxErrorMessage(rawMessage, traceId);
 const formatTime = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 const formatDuration = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 const formatTimeByTs = (ts: number) => new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });

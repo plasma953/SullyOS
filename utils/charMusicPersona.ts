@@ -14,10 +14,13 @@
 
 import { APIConfig, CharacterProfile, CharMusicProfile, CharPlaylist, UserProfile } from '../types';
 import { ContextBuilder } from './context';
+import { safeFetchJson } from './safeApi';
 
 const callLlm = async (api: APIConfig, sys: string, user: string): Promise<string> => {
     const baseUrl = api.baseUrl.replace(/\/+$/, '');
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
+    // safeFetchJson：HTML/空响应/SSE 整包兜底 + API 调用记录埋点（第 5 个参数）。
+    // 超时语义保持：原来没有超时，这里传 0（不超时），只换调用层；!ok 照旧抛，绝不降级。
+    const data = await safeFetchJson(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -36,12 +39,8 @@ const callLlm = async (api: APIConfig, sys: string, user: string): Promise<strin
             max_tokens: 8000,
             stream: false,
         }),
-        // API 调用记录标签：音乐人格生成是后台任务，不标会被兜底成「用户当时打开的 App」
-        __sullyMeta: { appName: '音乐', purpose: '音乐人格生成' },
-    } as RequestInit);
-    if (!resp.ok) throw new Error(`LLM ${resp.status}`);
-    const j = await resp.json();
-    return j?.choices?.[0]?.message?.content || '';
+    }, 1, 0, { appName: '音乐', purpose: '音乐人格生成' });
+    return data?.choices?.[0]?.message?.content || '';
 };
 
 /**

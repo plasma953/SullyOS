@@ -124,6 +124,44 @@ describe('评估失败原因的脱敏', () => {
     expect(outcome.error).toContain('***');
     expect(outcome.error, 'key 的前缀一个字节都不许出门').not.toContain(apiKey.slice(0, 10));
   });
+
+  it('代理无视 stream:false 强回 SSE 整包 → 照样拼出评估原文（不判失败）', async () => {
+    const sse = [
+      'data: {"choices":[{"delta":{"content":"情绪"},"finish_reason":null}]}',
+      '',
+      'data: {"choices":[{"delta":{"content":"平稳"},"finish_reason":"stop"}]}',
+      '',
+      'data: [DONE]',
+    ].join('\n');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(sse, { status: 200 })));
+
+    const outcome = await runAmsgEmotionEval(
+      { prompt: TEMPLATE },
+      { baseUrl: 'https://eval.example.com/v1', apiKey: 'sk-x', model: 'eval-mini' },
+      [{ role: 'user', content: '在吗' }],
+      'Nyah',
+    );
+
+    expect(outcome.error).toBeNull();
+    expect(outcome.raw).toContain('情绪平稳');
+  });
+
+  it('副 API 回 HTML 错误页 → 判失败但绝不抛（主回复照发）', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      '<html><head><title>502 Bad Gateway</title></head></html>',
+      { status: 502 },
+    )));
+
+    const outcome = await runAmsgEmotionEval(
+      { prompt: TEMPLATE },
+      { baseUrl: 'https://eval.example.com/v1', apiKey: 'sk-x', model: 'eval-mini' },
+      [{ role: 'user', content: '在吗' }],
+      'Nyah',
+    );
+
+    expect(outcome.raw).toBeNull();
+    expect(outcome.error).toContain('副 API HTTP 502');
+  });
 });
 
 // 评估配置的两种长相：存量任务把副 API 凭据整份塞在 metadata 里；新任务只带提示词模板，
