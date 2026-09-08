@@ -10,10 +10,11 @@
  *   - SW 收到 tool_request push + 当前 window visible 时 postMessage('instant-tool-request'),
  *     ActiveMsgRuntime 收到后立刻调用 runPendingToolCalls()
  *
- * 失败语义:
- *   - dispatch 抛错 (DB / 网络) → 这条 pending 已被 atomic claim 走, 重试需要用户重新触发推送
- *   - POST /continue 失败 → 同上; 留 console.error, 后续 phase 加 dead-letter
- *   - 走"先 ack 后处理"是为了不让重投 push 把 toolCalls 跑两遍 (LLM 费用 + UI 重复)
+  * 失败语义:
+  *   - dispatch 抛错 (DB / 网络) → 这条 pending 已被 atomic claim 走, 重试需要用户重新触发推送
+  *   - POST /continue 终态以 deliver() observed 结论为准 (SW 广播 active-msg-received);
+  *     SSE 中断只 absorb, 不直接判死, 后续补收 / 点名兜底. 详见 docs/instant-push-dual-channel.md
+  *   - 走"先 ack 后处理"是为了不让重投 push 把 toolCalls 跑两遍 (LLM 费用 + UI 重复)
  */
 
 import { ActiveMsgStore } from './activeMsgStore';
@@ -197,6 +198,37 @@ async function runOnePendingToolCall(item: InstantPushPendingToolCall): Promise<
     oversizeTransport: getInstantOversizeTransport(cfg),
   };
 
+  // 双通道终态判定 (docs/instant-push-dual-channel.md): 唯一可信的送达信号是 SW
+  // 广播的 active-msg-received, 不是 SSE 流的 resolve / reject. 这里照抄
+  // sendInstantPushAndAwaitReply 的 deliver({ delivery: { mode: 'observed', observed } })
+  // 口径, 只是 endpointPath 换成 '/continue'. SSE 中断只 absorb 记 trace, 不判死;
+  // 最终结论只看 deliver() 的 observed 结论, 后续补收 / 点名兜底.
+  let sseDeliveryFailed = false;
+  let sseBusinessError: string | undefined;
+  let observedHandler: ((e: Event) => void) | null = null;
+  const observed = new Promise<{ sessionId: string; channel: string }>((resolve) => {
+    observedHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      // sessionId 严格匹配: 杜绝同 char 多轮并发 / 上一轮延迟到达的旧 push 误判.
+      if (detail?.sessionId && detail.sessionId === item.sessionId) {
+        if (observedHandler) {
+          try { window.removeEventListener('active-msg-received', observedHandler); } catch { /* ignore */ }
+          observedHandler = null;
+        }
+        resolve({ sessionId: item.sessionId, channel: 'sw' });
+      }
+    };
+    window.addEventListener('active-msg-received', observedHandler);
+  });
+
+  const abortController = new AbortController();
+  let abortedByCaller = false;
+  const abortOnPageHide = (event: PageTransitionEvent) => {
+    if (event.persisted) return;
+    abortedByCaller = true;
+    abortController.abort();
+  };
+
   try {
     emitToolStatus(item.charId, 'continuing', `${toolLabel}完成了，正在让角色继续回复。`, item.sessionId);
     const reiClient = new ReiClient({
@@ -204,35 +236,66 @@ async function runOnePendingToolCall(item: InstantPushPendingToolCall): Promise<
       instantEncryption: false,
       instantClientToken: cfg.clientToken || '',
     });
-    const abortController = new AbortController();
-    const abortOnPageHide = (event: PageTransitionEvent) => {
-      if (event.persisted) return;
-      abortController.abort();
-    };
     window.addEventListener('pagehide', abortOnPageHide, { once: true });
 
     try {
-      await reiClient.consumeInstantStream(continuePayload, '/continue', {
+      const result = await reiClient.deliver(continuePayload, {
+        delivery: { mode: 'observed', observed },
+        // 与 instantPushClient.DEFAULT_INSTANT_TIMEOUT_MS (300s) 同档: transport + grace 总预算.
+        timeoutMs: 300_000,
+        // transport 落定后最多再等 8s 观察通道 (双通道文档口径).
+        postTransportGraceMs: 8_000,
         signal: abortController.signal,
-        onPayload: async (p: any) => {
-          await postSsePayloadToServiceWorker(p, item.sessionId);
+        endpointPath: '/continue',
+        onChunk: async (p: any) => {
+          const ack = await postSsePayloadToServiceWorker(p, item.sessionId);
+          if (!ack.ok) sseDeliveryFailed = true;
+          if (ack.businessError) sseBusinessError = ack.businessError;
         },
-        onDone: () => {
-          emitToolStatus(item.charId, 'done', `${toolLabel}完成了，角色回复已送达。`, item.sessionId);
-        },
-        onError: (err: any) => {
-          console.warn('[instant-tool-runner] /continue SSE stream error:', err?.code, err?.message);
-          // Error payload has already been ingested via onPayload before onError fires.
-          emitToolStatus(item.charId, 'failed', `${toolLabel}完成了，但续写发生错误。`, item.sessionId);
-        },
+        compressRequest: true,
       });
+
+      if (result.outcome === 'delivered') {
+        emitToolStatus(item.charId, 'done', `${toolLabel}完成了，角色回复已送达。`, item.sessionId);
+        return true;
+      }
+      // 主动 abort (pagehide) 触发的 cancelled 不算 SSE 错, 不置 failed; 终态留给补收 / 点名.
+      if (result.outcome === 'cancelled' || abortController.signal.aborted) {
+        console.warn('[instant-tool-runner] /continue cancelled, leaving verdict to catch-up/polling', item.sessionId);
+        return false;
+      }
+      // timeout / send-failed / completed-unconfirmed (observed 下理论不可达, 防御性同 failed 处理):
+      // deliver() 已把 SSE reject 吸收集并等过 grace, 这里的 failed 是终态结论, 不是 SSE 直判.
+      // SW 自报错只穿插进文案给排查线索, 不覆盖 outcome.
+      const detail = (result.detail ?? {}) as { transportError?: any; waitedMs?: number };
+      const transportError = detail.transportError as any;
+      const sseMsg = transportError?.message || String(transportError ?? result.outcome);
+      const swHint = sseBusinessError
+        ? ` (SW 自报落库错: ${sseBusinessError})`
+        : sseDeliveryFailed
+          ? ' (SW 未确认收下任何 chunk)'
+          : '';
+      console.warn('[instant-tool-runner] /continue not delivered:', result.outcome, sseMsg, swHint, item.sessionId);
+      const failText = result.outcome === 'timeout'
+        ? `${toolLabel}完成了，但角色回复超时未确认送达。${swHint}`
+        : `${toolLabel}完成了，但续写传输中断。${swHint}`;
+      emitToolStatus(item.charId, 'failed', failText, item.sessionId);
+      return false;
     } finally {
       try { window.removeEventListener('pagehide', abortOnPageHide); } catch { /* ignore */ }
+      if (observedHandler) {
+        try { window.removeEventListener('active-msg-received', observedHandler); } catch { /* ignore */ }
+        observedHandler = null;
+      }
     }
-
-    return true;
   } catch (e) {
-    console.error('[instant-tool-runner] /continue consumeInstantStream threw', e);
+    // deliver() 内部已把 SSE 网络 reject 收编, 不会进这里; 能进这里的是入参校验 /
+    // 构造等编程错误. 主动 abort 触发的不算 SSE 错, 不置 failed, 终态留给补收 / 点名.
+    if (abortedByCaller || abortController.signal.aborted) {
+      console.warn('[instant-tool-runner] /continue aborted, leaving verdict to catch-up/polling', item.sessionId);
+      return false;
+    }
+    console.error('[instant-tool-runner] /continue deliver threw', e);
     emitToolStatus(item.charId, 'failed', `${toolLabel}完成了，但续写请求没有发出去。`, item.sessionId);
     return false;
   }
