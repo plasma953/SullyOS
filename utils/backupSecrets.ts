@@ -35,6 +35,21 @@ function stripApiConfig(hit: { hit: boolean }, cfg: any): void {
   if (cfg.api && typeof cfg.api === 'object') blankField(hit, cfg.api, 'apiKey');
 }
 
+/** RealtimeConfig 形态（天气/高德/新闻/Notion/飞书/小红书 cookie/透视窗 anonKey）。Partial 亦可。 */
+function stripRealtimeConfig(hit: { hit: boolean }, cfg: any): void {
+  if (!cfg || typeof cfg !== 'object') return;
+  for (const f of [
+    'weatherApiKey', 'amapApiKey', 'newsApiKey',
+    'notionApiKey', 'notionDatabaseId', 'notionNotesDatabaseId',
+    'feishuAppId', 'feishuAppSecret', 'feishuBaseId', 'feishuTableId',
+    'perspectiveSupabaseAnonKey',
+  ]) blankField(hit, cfg, f);
+  const xhs = cfg.xhsMcpConfig;
+  if (xhs && typeof xhs === 'object') {
+    for (const f of ['cookie', 'rnoteApiKey', 'userXsecToken']) blankField(hit, xhs, f);
+  }
+}
+
 /** 不透明 Record<string,string>：键名命中即清空；值是含密钥键名的 JSON 也整值清空。 */
 function stripOpaqueMap(hit: { hit: boolean }, map: any): void {
   if (!map || typeof map !== 'object' || Array.isArray(map)) return;
@@ -85,6 +100,8 @@ export function stripBackupSecrets(data: any): boolean {
   }
   blankField(hit, data.amsg2GlobalConfig, 'serverToken');
   blankField(hit, data.amsg2GlobalConfig, 'masterKey');
+  stripRealtimeConfig(hit, data.realtimeConfig);
+  blankField(hit, data.browserConfig, 'braveKey');
 
   stripOpaqueMap(hit, data.opencodeLocal);
   stripOpaqueMap(hit, data.luckinLocal);

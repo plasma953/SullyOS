@@ -17,7 +17,14 @@ const EXCLUDED: ReadonlySet<string> = new Set([
     'api_call_log',   // 运行态 API 调用记录（保留近 5 天），明确不属于备份范围
 ]);
 
-/** store → FullBackupData 字段（导入端已支持恢复的集合）。 */
+/** store → FullBackupData 字段（导入端已支持恢复的集合）。
+ * memory_vectors 例外说明：导出不走主 switch（OSContext 经 encodeVectorsForBackup/
+ * encodeVectorsForBackupChunked 拼 bin+index，走 writeV2Backup 二进制旁路，避免
+ * 遗留 number[] 进 JSON 膨胀）；导入经 assembleV2Backup 重建 data.memoryVectors，
+ * 再由 importFullData「记忆向量」段 clear-once 整包写回（keyPath memoryId，不走
+ * saveMany 旁路，见 backupFormat.ts 注释）。此处登记仅作覆盖兜底 +
+ * exportSwitchDefaultCase 漂移防护的回退映射，主路径仍以二进制旁路为准。
+ * 恢复后向量按 memoryId 与 memory_nodes 对齐；备份自带两侧一致，孤向量允许丢弃并记 warn。 */
 const KNOWN: Readonly<Record<string, string>> = {
     characters: 'characters',
     character_groups: 'characterGroups',
@@ -61,6 +68,7 @@ const KNOWN: Readonly<Record<string, string>> = {
     tracker_entries: 'trackerEntries',
     hotnews_snapshots: 'hotNewsSnapshots',
     memory_nodes: 'memoryNodes',
+    memory_vectors: 'memoryVectors',
     memory_links: 'memoryLinks',
     topic_boxes: 'topicBoxes',
     anticipations: 'anticipations',

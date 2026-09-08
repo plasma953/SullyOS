@@ -88,6 +88,92 @@ describe('backup secrets redaction', () => {
     expect(data.worldHomeLocal.world_custom_styles).toBe('[]');
   });
 
+  it('blanks realtimeConfig keys and browser braveKey but keeps non-secret config', () => {
+    const data: any = {
+      realtimeConfig: {
+        weatherEnabled: true,
+        weatherApiKey: 'owm-live',
+        weatherCity: 'Beijing',
+        amapApiKey: 'amap-live',
+        userPerceptionEnabled: true,
+        newsEnabled: true,
+        newsApiKey: 'brave-live',
+        newsPlatforms: ['weibo'],
+        notionEnabled: true,
+        notionApiKey: 'notion-live',
+        notionDatabaseId: 'db-live',
+        notionNotesDatabaseId: 'notes-live',
+        feishuEnabled: true,
+        feishuAppId: 'app-live',
+        feishuAppSecret: 'sec-live',
+        feishuBaseId: 'base-live',
+        feishuTableId: 'tbl-live',
+        xhsEnabled: true,
+        xhsMcpConfig: {
+          enabled: true,
+          mode: 'lite',
+          serverUrl: 'https://xhs-lite.xxx.workers.dev/api',
+          cookie: 'a1=xxx; web_session=yyy',
+          platform: 'xhs',
+          rnoteApiKey: 'rnote-live',
+          loggedInNickname: 'nick',
+          loggedInUserId: 'uid123',
+          userXsecToken: 'xsec-live',
+        },
+        cacheMinutes: 30,
+        perspectiveEnabled: true,
+        perspectiveSupabaseUrl: 'https://xxx.supabase.co',
+        perspectiveSupabaseAnonKey: 'anon-live',
+        perspectiveDays: 7,
+        perspectiveMinIntervalSec: 60,
+        perspectiveSummaryEnabled: true,
+        perspectiveSummaryThreshold: 500,
+      },
+      browserConfig: { braveKey: 'brave-search-live', useRealSearch: true },
+    };
+    expect(hasBackupSecrets(data)).toBe(true);
+    expect(stripBackupSecrets(data)).toBe(true);
+    expect(data.realtimeConfig.weatherApiKey).toBe('');
+    expect(data.realtimeConfig.amapApiKey).toBe('');
+    expect(data.realtimeConfig.newsApiKey).toBe('');
+    expect(data.realtimeConfig.notionApiKey).toBe('');
+    expect(data.realtimeConfig.notionDatabaseId).toBe('');
+    expect(data.realtimeConfig.notionNotesDatabaseId).toBe('');
+    expect(data.realtimeConfig.feishuAppId).toBe('');
+    expect(data.realtimeConfig.feishuAppSecret).toBe('');
+    expect(data.realtimeConfig.feishuBaseId).toBe('');
+    expect(data.realtimeConfig.feishuTableId).toBe('');
+    expect(data.realtimeConfig.xhsMcpConfig.cookie).toBe('');
+    expect(data.realtimeConfig.xhsMcpConfig.rnoteApiKey).toBe('');
+    expect(data.realtimeConfig.xhsMcpConfig.userXsecToken).toBe('');
+    expect(data.realtimeConfig.perspectiveSupabaseAnonKey).toBe('');
+    expect(data.browserConfig.braveKey).toBe('');
+    // 非密钥字段原样保留
+    expect(data.realtimeConfig.weatherEnabled).toBe(true);
+    expect(data.realtimeConfig.weatherCity).toBe('Beijing');
+    expect(data.realtimeConfig.userPerceptionEnabled).toBe(true);
+    expect(data.realtimeConfig.newsEnabled).toBe(true);
+    expect(data.realtimeConfig.newsPlatforms).toEqual(['weibo']);
+    expect(data.realtimeConfig.notionEnabled).toBe(true);
+    expect(data.realtimeConfig.feishuEnabled).toBe(true);
+    expect(data.realtimeConfig.xhsEnabled).toBe(true);
+    expect(data.realtimeConfig.xhsMcpConfig.enabled).toBe(true);
+    expect(data.realtimeConfig.xhsMcpConfig.mode).toBe('lite');
+    expect(data.realtimeConfig.xhsMcpConfig.serverUrl).toBe('https://xhs-lite.xxx.workers.dev/api');
+    expect(data.realtimeConfig.xhsMcpConfig.platform).toBe('xhs');
+    expect(data.realtimeConfig.xhsMcpConfig.loggedInNickname).toBe('nick');
+    expect(data.realtimeConfig.xhsMcpConfig.loggedInUserId).toBe('uid123');
+    expect(data.realtimeConfig.cacheMinutes).toBe(30);
+    expect(data.realtimeConfig.perspectiveEnabled).toBe(true);
+    expect(data.realtimeConfig.perspectiveSupabaseUrl).toBe('https://xxx.supabase.co');
+    expect(data.realtimeConfig.perspectiveDays).toBe(7);
+    expect(data.realtimeConfig.perspectiveMinIntervalSec).toBe(60);
+    expect(data.realtimeConfig.perspectiveSummaryEnabled).toBe(true);
+    expect(data.realtimeConfig.perspectiveSummaryThreshold).toBe(500);
+    expect(data.browserConfig.useRealSearch).toBe(true);
+    expect(hasBackupSecrets(data)).toBe(false);
+  });
+
   it('returns false and touches nothing when there is nothing secret', () => {
     const data: any = { theme: { id: 't' }, notes: 'hello' };
     expect(stripBackupSecrets(data)).toBe(false);

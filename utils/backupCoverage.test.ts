@@ -37,7 +37,14 @@ describe('findUnregisteredBackupStores（备份覆盖兜底）', () => {
         const known = knownBackupStoreFieldMap();
         expect(known['prompt_presets']).toBe('promptPresets');
         expect(known['xhs_owned_posts']).toBe('xhsOwnedPosts');
-        expect(known['memory_vectors']).toBeUndefined(); // 向量走二进制旁路，不入普通映射
+        // P1-4：memory_vectors 登记为 memoryVectors（导出走二进制旁路、导入走
+        // importFullData 整包写回；此处映射仅作覆盖兜底 + default 漂移防护）。
+        expect(known['memory_vectors']).toBe('memoryVectors');
+    });
+
+    it('P1-4：memory_vectors 漏登记时能被兜底补齐，不再静默丢失', () => {
+        expect(findUnregisteredBackupStores(['memory_vectors'], [])).toEqual(['memory_vectors']);
+        expect(findUnregisteredBackupStores(['memory_vectors'], ['memory_vectors'])).toEqual([]);
     });
 });
 
@@ -66,5 +73,12 @@ describe('exportSwitchDefaultCase（主 switch 漂移防护）', () => {
         const backupData: Record<string, any> = {};
         expect(exportSwitchDefaultCase(backupData, 'unknown_store', [1])).toBe(false);
         expect(Object.keys(backupData)).toEqual([]);
+    });
+
+    it('P1-4：memory_vectors 回退映射落到 memoryVectors 字段', () => {
+        const backupData: Record<string, any> = {};
+        const hit = exportSwitchDefaultCase(backupData, 'memory_vectors', [{ memoryId: 'm1' }]);
+        expect(hit).toBe(true);
+        expect(backupData.memoryVectors).toEqual([{ memoryId: 'm1' }]);
     });
 });
