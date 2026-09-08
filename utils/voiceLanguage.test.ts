@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { APIConfig, CharacterProfile } from '../types';
 import { assertTtsLanguageSupported } from './ttsRouter';
-import { VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue, voiceLanguagePromptLabel } from './voiceLanguage';
+import { VOICE_LANGUAGE_OPTIONS, voiceLanguagePromptLabel } from './voiceLanguage';
 
 const character = (fishModel?: string) => ({
   id: 'char-1',
@@ -18,12 +18,6 @@ describe('Cantonese voice language', () => {
     expect(VOICE_LANGUAGE_OPTIONS.some(option => option.value === 'yue')).toBe(true);
     expect(voiceLanguagePromptLabel('yue')).toContain('粤语口语');
     expect(voiceLanguagePromptLabel('yue')).toContain('不要写成普通话');
-  });
-
-  it('only exposes fixed language enums to analytics', () => {
-    expect(voiceLanguageAnalyticsValue('yue')).toBe('yue');
-    expect(voiceLanguageAnalyticsValue('')).toBe('default');
-    expect(voiceLanguageAnalyticsValue('用户自己填的语种')).toBe('custom');
   });
 
   it('allows MiniMax, Fish S2 and Eleven v3', () => {

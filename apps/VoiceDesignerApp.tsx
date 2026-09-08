@@ -7,7 +7,6 @@ import { getProxyWorkerUrl } from '../utils/proxyWorker';
 import { postBakeVoice, resolveBakeVoiceUrls } from '../utils/minimaxBakeVoice';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { getCachedTts, saveCachedTts } from '../utils/ttsCache';
-import { trackEvent } from '../utils/analytics';
 import { buildMiniMaxTtsCacheKey, buildMiniMaxTtsPayload, getMiniMaxParamVersion, type MiniMaxParamVersion } from '../utils/minimaxTts';
 
 const DEFAULT_MODEL = 'speech-2.8-hd';
@@ -396,7 +395,6 @@ const VoiceDesignerApp: React.FC = () => {
       },
     };
     updateCharacter(selectedChar.id, updatedProfile);
-    trackEvent('把捏好的声音应用到角色');
     addToast(`已将捏好的声音应用到「${selectedChar.name}」`, 'success');
   };
 
@@ -441,11 +439,11 @@ const VoiceDesignerApp: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex border-b border-slate-100 bg-white/60 shrink-0">
-        <button onClick={() => { setTab('mix'); trackEvent('切换捏声音标签页', { tab: 'mix' }); }} className={`flex-1 py-2.5 text-xs font-semibold transition-colors relative ${tab === 'mix' ? 'text-violet-600' : 'text-slate-400'}`}>
+        <button onClick={() => { setTab('mix');  }} className={`flex-1 py-2.5 text-xs font-semibold transition-colors relative ${tab === 'mix' ? 'text-violet-600' : 'text-slate-400'}`}>
           混合音色
           {tab === 'mix' && <div className="absolute bottom-0 left-1/4 w-1/2 h-0.5 bg-violet-500 rounded-full" />}
         </button>
-        <button onClick={() => { setTab('modify'); trackEvent('切换捏声音标签页', { tab: 'modify' }); }} className={`flex-1 py-2.5 text-xs font-semibold transition-colors relative ${tab === 'modify' ? 'text-violet-600' : 'text-slate-400'}`}>
+        <button onClick={() => { setTab('modify');  }} className={`flex-1 py-2.5 text-xs font-semibold transition-colors relative ${tab === 'modify' ? 'text-violet-600' : 'text-slate-400'}`}>
           音色微调
           {tab === 'modify' && <div className="absolute bottom-0 left-1/4 w-1/2 h-0.5 bg-violet-500 rounded-full" />}
         </button>
@@ -528,7 +526,7 @@ const VoiceDesignerApp: React.FC = () => {
                     placeholder="输入 voice_id 或从库中选"
                   />
                   {availableVoices.length > 0 && (
-                    <button onClick={() => { setPickingForIndex(index); setShowVoicePicker(true); trackEvent('打开音色选择器'); }}
+                    <button onClick={() => { setPickingForIndex(index); setShowVoicePicker(true);  }}
                       className="text-[10px] px-2 py-2 rounded-xl bg-violet-50 text-violet-600 font-bold hover:bg-violet-100 shrink-0">
                       选
                     </button>
@@ -604,7 +602,7 @@ const VoiceDesignerApp: React.FC = () => {
           <div className="flex flex-wrap gap-1.5">
             {PREVIEW_SAMPLES.map(s => (
               <button key={s.code}
-                onClick={() => { setPreviewLang(s.code); setPreviewText(s.text); trackEvent('切换试听语种样例', { lang: s.code }); }}
+                onClick={() => { setPreviewLang(s.code); setPreviewText(s.text);  }}
                 className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition-colors ${previewLang === s.code ? 'bg-violet-500 text-white' : 'bg-white text-violet-500 border border-violet-200 hover:bg-violet-100'}`}>
                 {s.label}
               </button>

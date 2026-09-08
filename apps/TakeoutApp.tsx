@@ -13,7 +13,6 @@ import { loadShoppingData, sortShopsForAddress } from '../utils/shoppingData';
 import GoodsSvg from '../components/GoodsSvg';
 import { buildShoppingOrderTag, sanitizeOrderField } from '../utils/shoppingFormat';
 import { roundMoney, sumMoney, formatMoney } from '../utils/format';
-import { trackEvent } from '../utils/analytics';
 import { LoaderDots } from '../utils/appLoaderDots';
 import { CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
 
@@ -325,7 +324,6 @@ export default function TakeoutApp() {
     persistCarts(nextCarts);
     setOrders(prev => [order, ...prev]);
     setLastOrder(order);
-    trackEvent('购物下单', { shop: order.shopName, total: order.total, recipient: target.type });
     setView('orderDetail'); setDetailOrderId(order.id);
   };
 

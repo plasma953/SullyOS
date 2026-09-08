@@ -14,7 +14,6 @@ import TamagotchiHome from '../components/os/TamagotchiHome';
 import { getDailyScheduleForChar } from '../utils/dailySchedule';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../utils/timezone';
-import { trackEvent } from '../utils/analytics';
 
 const CompanionHome = React.lazy(() => import('../components/os/CompanionHome'));
 
@@ -877,7 +876,6 @@ const Launcher: React.FC = () => {
           isDragging.current = false;
           suppressLayoutClickUntil.current = Date.now() + 700;
           setLayoutEditing(true);
-          trackEvent('进入桌面整理模式');
       }, 520);
   };
 
@@ -1077,7 +1075,7 @@ const Launcher: React.FC = () => {
                                   schedule={scheduleData}
                                   character={scheduleChar}
                                   contentColor={contentColor}
-                                  onOpen={() => { setScheduleViewerOpen(true); trackEvent('打开角色日程面板'); }}
+                                  onOpen={() => { setScheduleViewerOpen(true);  }}
                                   acnh={acnh}
                                   paper={paper}
                               />

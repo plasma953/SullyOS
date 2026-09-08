@@ -17,7 +17,6 @@ import { armDateResumeAttempt, clearDateResumeAttempt, takeCrashedDateResume } f
 import { BookOpen, Sparkle, CaretLeft, GearSix } from '@phosphor-icons/react';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import { trimHistoryThrough } from '../utils/dateSessionHistory';
-import { trackEvent } from '../utils/analytics';
 import { getHostGeometry } from '../utils/hostViewport';
 import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import StoryTheater from '../components/date/story/StoryTheater';
@@ -191,7 +190,6 @@ const DateApp: React.FC = () => {
         const crashedCharId = takeCrashedDateResume();
         if (!crashedCharId) return;
         const crashed = characters.find(c => c.id === crashedCharId);
-        trackEvent('检出见面存档崩溃并清理', { 处理结果: crashed?.savedDateState ? '已清理存档' : '无存档可清' });
         if (crashed?.savedDateState) {
             updateCharacter(crashedCharId, { savedDateState: undefined });
             addToast('上次见面异常退出，已清理存档，可重新开始', 'info');
@@ -273,8 +271,6 @@ const DateApp: React.FC = () => {
         setMode('session');
         setPendingSessionChar(null);
         addToast('已恢复上次进度', 'success');
-        trackEvent('选择见面存档处理方式', { choice: 'resume' });
-        trackEvent('恢复上次见面进度');
     };
 
     const handleStartNewSession = () => {
@@ -282,8 +278,6 @@ const DateApp: React.FC = () => {
         // 新会话没有恢复快照可重放，撤销任何残留哨兵。
         clearDateResumeAttempt();
         updateCharacter(pendingSessionChar.id, { savedDateState: undefined });
-        trackEvent('选择见面存档处理方式', { choice: 'new' });
-        trackEvent('见面存档选重新开始');
         startPeek(pendingSessionChar);
         setPendingSessionChar(null);
     };
@@ -315,7 +309,6 @@ const DateApp: React.FC = () => {
 
         // 2. 切换模式并刷新数据
         setMode('session');
-        trackEvent('走过去开始见面会话');
         await loadDateMessages(DATE_SESSION_MESSAGE_LIMIT);
     };
 
@@ -326,7 +319,6 @@ const DateApp: React.FC = () => {
         setPeekLoading(true);
         setPeekStatus('');
         setHasSavedOpening(false);
-        trackEvent('进入见面感知页');
 
         try {
             const msgs = await DB.getRecentMessagesByCharId(c.id, getDateContextFetchLimit(c), true);
@@ -497,7 +489,6 @@ const DateApp: React.FC = () => {
             await DB.deleteMessage(lastMsg.id);
             await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content, metadata: { source: 'date', isOpening: true } });
             markDateTurnDirty(char);
-            trackEvent('重掷见面回复', { 目标: '开场白' });
             // 阅读模式空会话时顶部渲染的开场 & 退出快照里的 peekStatus 同步成新开场
             setPeekStatus(content);
 
@@ -530,7 +521,6 @@ const DateApp: React.FC = () => {
         await DB.deleteMessage(lastMsg.id);
         await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: content, metadata: { source: 'date' } });
         markDateTurnDirty(char);
-        trackEvent('重掷见面回复', { 目标: '回复' });
 
         // Sync
         setDateMessages(await loadRecentDateMessages(char.id));
@@ -548,7 +538,6 @@ const DateApp: React.FC = () => {
         await DB.deleteMessage(msg.id);
         setDateMessages(prev => prev.filter(m => m.id !== msg.id));
         markDateTurnDirty();
-        trackEvent('删除一条见面消息');
     };
 
     const handleDeleteMessages = async (ids: number[]) => {
@@ -557,7 +546,6 @@ const DateApp: React.FC = () => {
         setDateMessages(prev => prev.filter(m => !ids.includes(m.id)));
         markDateTurnDirty();
         addToast(`已删除 ${ids.length} 条记录`, 'success');
-        trackEvent('批量删除见面消息');
     };
 
     const confirmEditMessage = async () => {
@@ -568,7 +556,6 @@ const DateApp: React.FC = () => {
         setIsEditModalOpen(false);
         setEditTargetMsg(null);
         addToast('已修改', 'success');
-        trackEvent('编辑一条见面消息');
     };
 
     // --- History Long Press ---
@@ -602,7 +589,6 @@ const DateApp: React.FC = () => {
         markDateTurnDirty();
         setHistoryMenuMsg(null);
         addToast('已删除', 'success');
-        trackEvent('删除见面记录里的一条消息');
     };
 
     const handleHistoryEditOpen = (msg: Message) => {
@@ -620,7 +606,6 @@ const DateApp: React.FC = () => {
         markDateTurnDirty();
         setHistoryEditMsg(null);
         addToast('已修改', 'success');
-        trackEvent('编辑见面记录里的一条消息');
     };
 
     const onExitSession = (finalState: DateState) => {
@@ -642,7 +627,6 @@ const DateApp: React.FC = () => {
         setActiveCharacterId(c.id);
         setPreviousMode('select');
         setMode('settings');
-        trackEvent('打开见面设置面板', { from: 'select' });
     };
 
     const openHistory = async (c: CharacterProfile) => {
@@ -655,7 +639,6 @@ const DateApp: React.FC = () => {
         setHistoryLoadLimit(DATE_HISTORY_MESSAGE_LIMIT);
         setHistoryReachedEnd(msgs.length < DATE_HISTORY_MESSAGE_LIMIT);
         setMode('history');
-        trackEvent('打开见面记录');
     };
 
     const handleLoadMoreHistory = async () => {
@@ -686,7 +669,6 @@ const DateApp: React.FC = () => {
                 shareTitle: `${char.name}的见面记录`,
             });
             addToast(result === 'shared' ? '已打开分享面板' : '见面记录已导出', 'success');
-            trackEvent('导出见面记录', { 范围: scope, 整理方式: historyView === 'encounter' ? '按次' : '按日期' });
         } catch (error) {
             console.error('Export Date History Error', error);
             addToast('见面记录导出失败', 'error');
@@ -713,7 +695,6 @@ const DateApp: React.FC = () => {
                 shareTitle: `${char.name}的全部见面记录`,
             });
             addToast(result === 'shared' ? '已打开分享面板' : '全部见面记录已导出', 'success');
-            trackEvent('导出全部见面记录', { 整理方式: historyView === 'encounter' ? '按次' : '按日期' });
         } catch (error) {
             console.error('Export All Date History Error', error);
             addToast('全部见面记录导出失败', 'error');
@@ -1035,9 +1016,9 @@ const DateApp: React.FC = () => {
                              <div className="w-full flex gap-3">
                                  {/* 修改这里：调用 handleEnterSession 确保开场白被保存 */}
                                  <button onClick={handleEnterSession} className="flex-1 h-14 bg-white text-black rounded-full font-bold tracking-[0.1em] text-sm shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95 transition-transform hover:bg-neutral-200">走过去 (Approach)</button>
-                                 <button onClick={() => { trackEvent('重新感知一次角色状态'); startPeek(char); }} className="w-14 h-14 bg-neutral-800 text-white rounded-full flex items-center justify-center border border-neutral-700 shadow-lg active:scale-90 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg></button>
+                                 <button onClick={() => {  startPeek(char); }} className="w-14 h-14 bg-neutral-800 text-white rounded-full flex items-center justify-center border border-neutral-700 shadow-lg active:scale-90 transition-transform"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg></button>
                              </div>
-                             <div className="flex flex-col items-center gap-3 text-[10px] text-neutral-600 font-medium tracking-wider"><button onClick={() => { setPreviousMode('peek'); setMode('settings'); trackEvent('打开见面设置面板', { from: 'peek' }); }} className="hover:text-neutral-400 transition-colors">布置场景 / 设定立绘</button><button onClick={handleBack} className="hover:text-neutral-400 transition-colors">悄悄离开</button></div>
+                             <div className="flex flex-col items-center gap-3 text-[10px] text-neutral-600 font-medium tracking-wider"><button onClick={() => { setPreviousMode('peek'); setMode('settings');  }} className="hover:text-neutral-400 transition-colors">布置场景 / 设定立绘</button><button onClick={handleBack} className="hover:text-neutral-400 transition-colors">悄悄离开</button></div>
                         </div>
                     </div>
                 )}
@@ -1046,7 +1027,7 @@ const DateApp: React.FC = () => {
                 {!peekLoading && !peekStatus && (
                     <div className="flex-1 flex flex-col items-center justify-center gap-8 -mt-20 z-10 animate-fade-in">
                         <p className="text-sm font-light text-neutral-500 italic tracking-widest">未能感知到 {char.name} 的状态</p>
-                        <button onClick={() => { trackEvent('重新感知一次角色状态'); startPeek(char); }} className="h-12 px-10 bg-white text-black rounded-full font-bold tracking-[0.1em] text-sm active:scale-95 transition-transform hover:bg-neutral-200">重新感知</button>
+                        <button onClick={() => {  startPeek(char); }} className="h-12 px-10 bg-white text-black rounded-full font-bold tracking-[0.1em] text-sm active:scale-95 transition-transform hover:bg-neutral-200">重新感知</button>
                         <button onClick={handleBack} className="text-[10px] text-neutral-600 font-medium tracking-wider hover:text-neutral-400 transition-colors">悄悄离开</button>
                     </div>
                 )}

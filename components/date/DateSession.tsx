@@ -25,8 +25,7 @@ import { fetchBlobForShare } from '../../utils/shareExport';
 import VoiceFavoriteActionSheet from '../voice/VoiceFavoriteActionSheet';
 import { getVoiceFavorite, makeVoiceFavoriteId, removeVoiceFavorite, saveVoiceFavorite } from '../../utils/voiceFavorites';
 import { MEETING_CONTINUE_DISPLAY_TEXT } from '../../utils/meetingContinue';
-import { VOICE_LANGUAGE_OPTIONS, voiceLanguageAnalyticsValue, voiceLanguageLabel, voiceLanguagePromptLabel } from '../../utils/voiceLanguage';
-import { trackEvent } from '../../utils/analytics';
+import { VOICE_LANGUAGE_OPTIONS, voiceLanguageLabel, voiceLanguagePromptLabel } from '../../utils/voiceLanguage';
 
 // 语音情绪标记 [v:xxx]：跟立绘情绪 [emotion] 分开的独立通道。立绘的 happy 是
 // 夸张的表情、语音的 happy 是音色情绪，两者强度/语义差异大，不能一概而论。
@@ -1033,7 +1032,7 @@ const DateSession: React.FC<DateSessionProps> = ({
                         {voiceEnabled && showVoiceLangPicker && (
                             <div className="flex flex-wrap justify-end gap-1 max-w-[200px] animate-fade-in">
                                 {VOICE_LANGUAGE_OPTIONS.map(opt => (
-                                    <button key={opt.value} onClick={() => { updateCharacter(char.id, { dateVoiceLang: opt.value }); trackEvent('设置见面语音语种', { 语种: voiceLanguageAnalyticsValue(opt.value) }); setShowVoiceLangPicker(false); }}
+                                    <button key={opt.value} onClick={() => { updateCharacter(char.id, { dateVoiceLang: opt.value }); setShowVoiceLangPicker(false); }}
                                         className={`h-7 px-2.5 rounded-full text-[10px] font-bold transition-all active:scale-95 whitespace-nowrap ${voiceLang === opt.value ? 'bg-white/30 text-white shadow-md' : 'bg-black/30 backdrop-blur-md text-white/60 border border-white/10'}`}>
                                         {opt.label}
                                     </button>

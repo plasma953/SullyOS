@@ -74,7 +74,6 @@ import { resolveActiveSound, playWhiteboxSound, unlockWhiteboxAudio, parseWhiteb
 import WhiteboxSoundEditor from '../components/chat/WhiteboxSoundEditor';
 import { normalizeTranslationLangLabel, isTranslationLangPreset } from '../utils/translationLang';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
-import { trackEvent, noteMessageSent, presetOrCustom } from '../utils/analytics';
 import { markAmsgStateDirty, markAmsgStateDirtyForAll } from '../utils/amsgStateSync';
 import { AMSG_INSTANT_CHAT_PENDING_EVENT, AMSG_INSTANT_CHAT_PENDING_LS_KEY, getInstantChatPending } from '../utils/amsgInstantChat';
 import { formatAmsgToolTrace } from '../utils/amsgToolTrace';
@@ -711,7 +710,6 @@ const Chat: React.FC = () => {
             const result = await shareOrDownloadBlob({ blob, fileName: fname, shareTitle: `${char?.name || '角色'}的语音` });
             if (result === 'cancelled') return;
             addToast(result === 'shared' ? '已打开系统保存/分享' : '语音已开始下载', 'success');
-            trackEvent('下载语音条');
         } catch {
             addToast('语音下载失败', 'error');
         }
@@ -757,7 +755,6 @@ const Chat: React.FC = () => {
             setChatFavoriteKeys(prev => new Set(prev).add(sourceKey));
             setVoiceDataMap(prev => ({ ...prev, [msg.id]: { ...prev[msg.id], favorite: true } }));
             addToast('已收藏语音，可在“收藏”里查看', 'success');
-            trackEvent('收藏语音条');
         } catch (e) {
             console.warn('[Chat] favorite voice failed', e);
             addToast('收藏失败，请检查浏览器存储空间', 'error');
@@ -1358,7 +1355,6 @@ const Chat: React.FC = () => {
     const handleSendText = async (customContent?: string, customType?: MessageType, metadata?: any) => {
         if (!char || (!input.trim() && !customContent)) return;
         // 只累加内存里的计数，这里不发任何请求；页面切走时才按区间报一次。见 utils/analytics.ts
-        noteMessageSent();
         // 借用户"发送"这个手势解锁音频上下文，好让稍后 AI 回复时的白框提示音能顺利播放（移动端自动播放策略）。
         unlockWhiteboxAudio();
         const text = customContent || input.trim();
@@ -1385,7 +1381,6 @@ const Chat: React.FC = () => {
                 return;
             }
             setMcdAppOpen(true);
-            trackEvent('打开麦当劳点单小程序');
             setShowPanel('none');
             return;
         }
@@ -1736,7 +1731,6 @@ const Chat: React.FC = () => {
         const newHistory = messages.slice(0, index + 1);
         setMessages(newHistory);
         addToast('回溯对话中...', 'info');
-        trackEvent('重新生成回复');
 
         // 重 roll：不注入上一轮残留的情绪 buff 与意识流（innerState），两边独立重新生成。
         triggerAI(newHistory, undefined, undefined, { skipEmotionInjection: true });
@@ -1763,7 +1757,6 @@ const Chat: React.FC = () => {
             // send-emoji / select-category 这些是「挑哪一个」，不进名单。
             'poke', 'emoji-import', 'add-category', 'mcd-end', 'luckin-end',
         ].includes(type)) {
-            trackEvent('打开聊天功能面板项', { action: type });
         }
         switch (type) {
             case 'collaboration': setShowPanel('none'); setCollaborationOpen(true); break;
@@ -1794,7 +1787,6 @@ const Chat: React.FC = () => {
                 break;
             case 'mcd-request':
                 setMcdAppOpen(true);
-                trackEvent('打开麦当劳点单小程序');
                 break;
             case 'mcd-end':
                 handleSendText(MCD_DEACTIVATE_TRIGGER, 'text', { mcdDeactivate: true });
@@ -1858,7 +1850,6 @@ const Chat: React.FC = () => {
         luckinChatRef.current = { active: true, longitude: lng, latitude: lat, cityName };
         setLuckinMode(true);
         setShowLuckinLoc(false);
-        trackEvent('开启瑞一杯聊天点单');
         addToast(`瑞一杯已开启 ☕ 定位: ${cityName || '已设置'}`, 'info');
         // 首次启动: 自动弹一次使用说明 (之后收在 banner 的 ? 里)
         try {
@@ -2103,7 +2094,6 @@ const Chat: React.FC = () => {
         if (!char || !scheduleData) return;
         const slot = scheduleData.slots[index];
         if (!slot) return;
-        trackEvent('打开日程小剧场', { mode: forceRegenerate ? 'replay' : 'play' });
         // 命中缓存且非重演：直接打开，不烧 token
         if (!forceRegenerate && slot.theater && slot.theater.lines.length > 0) {
             setTheaterSlotIdx(index);
@@ -2404,10 +2394,6 @@ const Chat: React.FC = () => {
 
     const handleToggleContextSuite = () => {
         const enabled = !contextSuiteAnyEnabled;
-        trackEvent('切换智能语境', {
-            状态: enabled ? '开' : '关',
-            此前: contextSuiteAllEnabled ? '全开' : contextSuiteAnyEnabled ? '部分开' : '全关',
-        });
         updateMemoryPalaceConfig({
             featureFlags: {
                 ...memoryPalaceConfig.featureFlags,
@@ -2421,9 +2407,6 @@ const Chat: React.FC = () => {
 
     const restoreAdaptiveContext = () => {
         if (!char.autoArchiveEnabled && !char.contextFollowsMemoryPalaceHwm) return;
-        trackEvent('恢复自适应上下文', {
-            来源: char.autoArchiveEnabled ? '全自动记忆' : '记忆水位线',
-        });
         setSettingsContextRangeMode('adaptive');
         setSettingsContextLimit(500);
         updateCharacter(char.id, {
@@ -2483,7 +2466,6 @@ const Chat: React.FC = () => {
                 setVisibleCount(LOAD_BATCH_SIZE);
                 visibleCountRef.current = LOAD_BATCH_SIZE;
                 addToast(`已安全清理 ${processedMsgs.length} 条已处理记录，保留 ${remaining.length} 条未处理记录`, 'success');
-                trackEvent('清空聊天记录');
                 setModalType('none');
                 return;
             }
@@ -2518,7 +2500,6 @@ const Chat: React.FC = () => {
             addToast('已清空', 'success');
         }
         markAmsgStateDirty({ char, userProfile, groups, realtimeConfig });
-        trackEvent('清空聊天记录');
         setModalType('none');
     };
 
@@ -2774,7 +2755,6 @@ const Chat: React.FC = () => {
             await saveMessageContentFavorite(msg, char?.name || '未知角色');
             setContentFavoriteIds(previous => new Set(previous).add(favoriteId));
             addToast(msg.type === 'image' ? '已收藏图片（仅保存引用）' : '已收藏聊天消息', 'success');
-            trackEvent(msg.type === 'image' ? '收藏聊天图片' : '收藏聊天消息');
         } catch (error) {
             console.warn('[Chat] favorite content failed', error);
             addToast('收藏失败，请稍后重试', 'error');
@@ -2848,7 +2828,6 @@ const Chat: React.FC = () => {
         setShowPanel('none');
         setArchiveProgress(`准备归档 ${datesToProcess.length} 天...`);
         addToast(`开始归档 ${datesToProcess.length} 天聊天记录`, 'info');
-        trackEvent('归档聊天记录');
 
         try {
             let processedCount = 0;
@@ -2966,7 +2945,6 @@ const Chat: React.FC = () => {
         setModalType('none');
         setSelectedMessage(null);
         addToast('消息已删除', 'success');
-        trackEvent('删除一条消息');
     };
 
     const confirmEditMessage = async () => {
@@ -2981,7 +2959,6 @@ const Chat: React.FC = () => {
         setModalType('none');
         setSelectedMessage(null);
         addToast('消息已修改', 'success');
-        trackEvent('编辑一条消息');
     };
 
     const handleQuickReply = useCallback((message: Message) => {
@@ -2989,7 +2966,6 @@ const Chat: React.FC = () => {
             ...message,
             metadata: { ...message.metadata, senderName: message.role === 'user' ? '我' : char.name }
         });
-        trackEvent('引用回复一条消息');
     }, [char.name]);
 
     const handleReplyMessage = () => {
@@ -3004,7 +2980,6 @@ const Chat: React.FC = () => {
         setModalType('none');
         setSelectedMessage(null);
         addToast('已复制到剪贴板', 'success');
-        trackEvent('复制一条消息');
     };
 
     const handleDeleteEmoji = async () => {
@@ -3902,7 +3877,7 @@ const Chat: React.FC = () => {
                 onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
                 allCharacters={characters} onSaveCategoryVisibility={handleSaveCategoryVisibility}
                 translationEnabled={translationEnabled}
-                onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (next) { trackEvent('开启聊天翻译', { targetLang: isTranslationLangPreset(translateTargetLang) ? translateTargetLang : 'custom' }); } if (!next) { setShowingTargetIds(new Set()); } }}
+                onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (next) {  } if (!next) { setShowingTargetIds(new Set()); } }}
                 translateSourceLang={translateSourceLang}
                 translateTargetLang={translateTargetLang}
                 translationExpanded={translationExpanded}
@@ -3911,7 +3886,6 @@ const Chat: React.FC = () => {
                     setTranslationExpanded(next);
                     localStorage.setItem(`chat_translate_expanded_${activeCharacterId}`, JSON.stringify(next));
                     setShowingTargetIds(new Set());
-                    trackEvent('切换翻译展开模式', { enabled: next ? 'on' : 'off' });
                 }}
                 onSetTranslateSourceLang={(lang: string) => { const next = normalizeTranslationLangLabel(lang); if (!next) return; setTranslateSourceLang(next); localStorage.setItem(`chat_translate_source_lang_${activeCharacterId}`, next); setShowingTargetIds(new Set()); }}
                 onSetTranslateLang={(lang: string) => { const next = normalizeTranslationLangLabel(lang); if (!next) return; setTranslateTargetLang(next); localStorage.setItem(`chat_translate_lang_${activeCharacterId}`, next); setShowingTargetIds(new Set()); }}
@@ -3930,7 +3904,6 @@ const Chat: React.FC = () => {
                 chatVoiceLang={char.chatVoiceLang || ''}
                 onSetChatVoiceLang={(lang: string) => {
                     updateCharacter(char.id, { chatVoiceLang: lang });
-                    trackEvent('设置聊天语音语种', { 语种: voiceLanguageAnalyticsValue(lang) });
                 }}
                 voiceAvailable={characterHasVoice(char, apiConfig)}
                 onGenerateVoice={selectedMessage ? () => handleManualTts(selectedMessage) : undefined}

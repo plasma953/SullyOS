@@ -37,9 +37,7 @@ import { isGlobalStreamEnabled, upgradeChatBodyToStream, assembleUpgradedRespons
 import { rewriteStaleWorkerUrl } from '../utils/proxyWorker';
 import { writeUserCityMirror } from '../utils/cityPlaces';
 import { buildFetchFailureDetail, classifyFetchFailure, describeReachabilityProbe, parseTargetUrl, probeOriginReachability, shouldProbeReachability, summarizeFetchRequestBody } from '../utils/networkFailureDiagnosis';
-import { INSTALLED_APPS, HIDDEN_APP_NAMES } from '../constants';
-import { isAnalyticsRequestUrl, trackEvent, trackDataScaleOnce, trackCurrentAppearanceOnce, trackCurrentCharSettingsOnce, trackCurrentFeaturesOnce } from '../utils/analytics';
-import { collectAppearance, collectCharSettings, collectDataScale, collectFeatureFlagsAsync } from '../utils/analyticsSnapshot';
+import { INSTALLED_APPS } from '../constants';
 import { normalizeApiConfig, normalizeApiPreset } from '../utils/apiConfigNormalize';
 import { getCheckPhoneApi, setCheckPhoneApi } from '../utils/checkPhoneApi';
 import { isPhoneAutoRefreshDue, maybeAutoRefreshPhone, type PhoneAutoApiConfig } from '../utils/phoneAutoRefresh';
@@ -1069,69 +1067,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       setApiCallAmbientContext({ appId: activeApp, appName, charId: char?.id, charName: char?.name });
   }, [activeApp, activeCharacterId, characters]);
 
-  // --- 使用统计：打开了哪个 App ---
-  // 挂在 activeApp 上而不是塞进 openApp，是因为进一个 App 有好几条路（桌面点图标、
-  // 从聊天直接进见面、通话挂起后回来…），activeApp 是它们唯一的共同落点。
-  // 回桌面不算「用了某个功能」，跳过。只发功能名，不带角色、不带任何内容。
-  useEffect(() => {
-      if (activeApp === AppID.Launcher) return;
-      const appName = INSTALLED_APPS.find(a => a.id === activeApp)?.name ?? HIDDEN_APP_NAMES[activeApp];
-      if (!appName) return;
-      trackEvent(`打开${appName}`);
-  }, [activeApp]);
-
-  // --- 使用统计：数据规模档位 ---
-  // 数据加载完之后报一次区间（0 / 1-100 / …），不报精确值、不报任何内容。
-  // 聊天条数走 IndexedDB 的 count()，一条消息都不会被读出来；存储占用是浏览器
-  // 给的字节数。每次会话最多一次，节流标记只在内存里（见 utils/analytics.ts）。
-  const scaleReportedRef = useRef(false);
-  useEffect(() => {
-      if (!isDataLoaded || scaleReportedRef.current) return;
-      scaleReportedRef.current = true;
-      void (async () => {
-          trackDataScaleOnce(await collectDataScale(characters));
-      })();
-  }, [isDataLoaded, characters]);
-
-  // --- 使用统计：当前在用哪套外观 / 角色级设置 ---
-  // 报「现在用的是哪个」而不是「点过哪个」——后者只有折腾的人会出现，
-  // 拿来决定砍哪个预设会砍反。取数和收敛都在 utils/analyticsSnapshot.ts 里，
-  // 用户自己捏的主题、字体、白框 CSS 一律收敛成 custom / 用了，不带他起的名字。
-  useEffect(() => {
-      if (!isDataLoaded) return;
-      trackCurrentAppearanceOnce(collectAppearance(theme, characters.find(c => c.id === activeCharacterId)));
-  }, [isDataLoaded, characters, activeCharacterId, theme]);
-
-  useEffect(() => {
-      if (!isDataLoaded || characters.length === 0) return;
-      trackCurrentCharSettingsOnce(collectCharSettings(characters, activeCharacterId));
-  }, [isDataLoaded, characters, activeCharacterId]);
-
-  // --- 使用统计：现在开着哪些功能 ---
-  // 跟「当前外观」一个道理：外部服务这类配置配一次就长期生效，只看「打开过配置页」
-  // 那种流量点的话，配好之后再没进过设置页的人永远不出现，拿来判断「有没有人要」会判反。
-  //
-  // 收敛全在 utils/analyticsSnapshot.ts 里做，这里只负责把 OSContext 手上那几份
-  // state 递过去。地址、密钥、token、账号名一个字都不会进上报。
-  // 自己拦一道「只跑一次」：上报侧本来就有 once 门，但取数要读 IndexedDB
-  // （彼方独立线路、主动消息 2.0 全局配置、协同库 count），不让它随 state 变更白跑。
-  const featuresReportedRef = useRef(false);
-  useEffect(() => {
-      if (!isDataLoaded || featuresReportedRef.current) return;
-      featuresReportedRef.current = true;
-      void (async () => {
-          trackCurrentFeaturesOnce(await collectFeatureFlagsAsync({
-              realtimeConfig,
-              cloudBackupConfig,
-              memoryPalaceConfig,
-              remoteVectorConfig,
-              apiConfig,
-              apiPresetCount: apiPresets.length,
-              characters,
-          }));
-      })();
-  }, [isDataLoaded, realtimeConfig, cloudBackupConfig, memoryPalaceConfig, remoteVectorConfig, apiConfig, apiPresets, characters]);
-
   // --- Global Error Interception ---
   useEffect(() => {
       if (interceptorsInitialized.current) return;
@@ -1345,7 +1280,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   updateApiRequestCaptureUsage({ captureId: apiRequestCaptureId, ok: false });
                   recordApiCall({ requestId: (config as any)?.__sullyApiCallId, url: urlStr, body: (sendArgs[1] as any)?.body, ok: false, meta: (config as any)?.__sullyMeta || ambientMetaAtStart, durationMs: Date.now() - fetchStartedAt });
               }
-              if (!isAnalyticsRequestUrl(urlStr)) {
+              { // 统计 URL 过滤已随统计设施移除：网络失败诊断无条件执行
                   // 光秃秃一句 "Failed to fetch" + 一个 URL 排查不了任何东西（社区里这条卡过好几个人）。
                   // 这里把浏览器肯在 JS 侧交出来的旁证一次性补齐：方法、耗时、在线状态、是否跨域、
                   // Resource Timing 里那条记录，再给一句初判；随后异步做一次 no-cors 连通性复检，
@@ -3153,20 +3088,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           setSysOperation({ status: 'idle', message: '', progress: 100 });
           addToast('云端备份完成', 'success');
-          // provider / mode 都是代码里写死的枚举；连接地址、账号、错误原文一概不带。
-          trackEvent('上传备份到云端', {
-              provider: cloudBackupConfig.provider === 'github' ? 'github' : 'webdav',
-              mode,
-              result: '成功',
-          });
       } catch (e: any) {
           setSysOperation({ status: 'idle', message: '', progress: 0 });
           addToast(`云端备份失败: ${e.message}`, 'error');
-          trackEvent('上传备份到云端', {
-              provider: cloudBackupConfig.provider === 'github' ? 'github' : 'webdav',
-              mode,
-              result: '失败',
-          });
           throw e;
       }
   };
@@ -3659,12 +3583,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const addToast = (message: string, type: Toast['type'] = 'info') => { const id = Date.now().toString(); setToasts(prev => [...prev, { id, message, type }]); setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000); };
   const showError = (title: string, details: string) => {
       setErrorDialog({ title, details });
-      // showError 是分发型入口，title 由调用方传。这里写显式白名单：
-      // 只有下面这三个写死的 title 会上报，其它（含以后新加的）一律不发，
-      // 也绝不把 title 原样透传出去（免得哪天有人往里塞 URL 或报错原文）。
-      if (title === 'Instant Push 发送失败') trackEvent('弹出报错详情弹窗', { 报错来源: 'Instant Push 发送失败' });
-      else if (title === '导入失败') trackEvent('弹出报错详情弹窗', { 报错来源: '导入失败' });
-      else if (title === '云端恢复失败') trackEvent('弹出报错详情弹窗', { 报错来源: '云端恢复失败' });
   };
   const dismissError = () => { setErrorDialog(null); };
 

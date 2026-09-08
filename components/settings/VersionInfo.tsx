@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { querySwVersion } from '../../utils/swVersion';
 import { APP_VERSION, BUILD_LABEL, BUILD_TIME_LABEL } from '../../utils/buildInfo';
 import { isDevDebugAvailable, subscribeDevDebugAvailability, unlockDevDebug } from '../../utils/devDebug';
-import { trackEvent } from '../../utils/analytics';
 import AndroidUpdateControl from './AndroidUpdateControl';
 
 /**
@@ -47,7 +46,6 @@ const VersionInfo: React.FC = () => {
                 swVersionResultReported = true;
                 // 只报「SW 有没有回话」。'?' = 没注册 / 被禁用 / 1.5 秒内没回包，
                 // 版本号字符串本身不上报。
-                trackEvent('查询 Service Worker 版本', { 结果: v === '?' ? '无应答' : '已应答' });
             }
         });
         return () => { cancelled = true; };
@@ -76,7 +74,6 @@ const VersionInfo: React.FC = () => {
         if (remaining <= 0) {
             tapCountRef.current = 0;
             unlockDevDebug();
-            trackEvent('连点版本号解锁调试面板');
             showHint('🔧 调试面板已解锁（刷新即关闭）', 2600);
             return;
         }

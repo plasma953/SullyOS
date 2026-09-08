@@ -27,7 +27,6 @@ import {
 } from '@phosphor-icons/react';
 import type { APIConfig, ApiPreset, CharacterProfile, ChatTheme, Emoji, EmojiCategory, GroupProfile, Message, RealtimeConfig, UserProfile } from '../../types';
 import TokenImg from '../../components/os/TokenImg';
-import { bucketFewCount, trackEvent } from '../../utils/analytics';
 import { shareOrDownloadBlob } from '../../utils/shareExport';
 import {
   collaborationProfileFromApi,
@@ -111,18 +110,6 @@ const MODE_DESCRIPTIONS: Record<CollaborationMode, string> = {
   immersive: '和日常聊天用同一整套上下文，还带上最近聊天；最连贯，也最吃上下文。',
   focused: '只带核心人设、你们是谁和 5 条相关记忆；更专心办事，也更省上下文。',
 };
-
-const ANALYTICS_UI_THEMES: readonly CollaborationUiTheme[] = ['sully', 'gpt', 'claude', 'gemini', 'kimi', 'deepseek'];
-const ANALYTICS_AVATAR_MODES: readonly CollaborationAvatarMode[] = ['theme', 'both', 'character', 'user', 'none'];
-const ANALYTICS_AVATAR_STYLES: readonly CollaborationAvatarStyle[] = ['circle', 'rounded', 'portrait'];
-
-const analyticsEnum = (value: string | undefined, allowed: readonly string[], fallback: string): string => (
-  value && allowed.includes(value) ? value : fallback
-);
-
-const analyticsMakerKind = (value: string | undefined): string => (
-  value && Object.prototype.hasOwnProperty.call(COLLABORATION_MAKER_MAP, value) ? value : 'unknown'
-);
 
 const COLLABORATION_UI_THEMES: Array<{
   id: CollaborationUiTheme;
@@ -1558,7 +1545,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         if (!COLLABORATION_MAKER_MAP[parsed.kind]) throw new Error('未知作品类型');
         if (!cancelled) {
           setPreviewArtifact(parsed);
-          trackEvent('预览协同作品', { 类型: analyticsMakerKind(parsed.kind), 来源: '普通聊天' });
         }
       } catch (error: any) {
         if (!cancelled) notifyRef.current(`作品无法预览：${error?.message || '数据损坏'}`, 'error');
@@ -1651,7 +1637,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       audio.onended = () => setPlayingVoiceId(null);
       await audio.play();
       setPlayingVoiceId(message.id);
-      trackEvent('播放协同语音条');
     } catch (error: any) {
       notify(`语音生成失败：${error?.message || '请检查语音设置'}`, 'error');
     } finally {
@@ -1762,7 +1747,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
     setShowModePicker(false);
     setShowEntryChooser(false);
     setDrawerOpen(false);
-    trackEvent('新建协同窗口', { 模式: mode });
   };
 
   const updateSession = async (session: CollaborationSession) => {
@@ -1817,7 +1801,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
     }
     const updated = { ...session, ...memoryArchivePatch, archivedAt: archived ? Date.now() : undefined, updatedAt: Date.now() };
     await updateSession(updated);
-    trackEvent('归档协同窗口', { 动作: archived ? '归档' : '撤销', 记忆: memoryAction });
     if (archived && session.id === activeSessionId) {
       setActiveSessionId(null);
       setMessages([]);
@@ -1838,7 +1821,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
     });
     if (choice !== 'confirm') return;
     await CollaborationStore.deleteSession(session.id);
-    trackEvent('删除协同窗口');
     const next = sessions.filter(item => item.id !== session.id);
     setSessions(next);
     if (activeSessionId === session.id) {
@@ -1878,28 +1860,12 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
 
   const saveSettings = async (next: CollaborationSettings) => {
     await CollaborationStore.saveSettings(next);
-    trackEvent('保存协同设置', {
-      沉浸线路: analyticsEnum(next.immersive.source, ['chat', 'preset', 'custom'], 'custom'),
-      中度线路: analyticsEnum(next.focused.source, ['chat', 'preset', 'custom'], 'custom'),
-    });
-    if (
-      next.uiTheme !== settings.uiTheme
-      || next.avatarMode !== settings.avatarMode
-      || next.avatarStyle !== settings.avatarStyle
-    ) {
-      trackEvent('设置协同界面', {
-        主题: analyticsEnum(next.uiTheme, ANALYTICS_UI_THEMES, 'custom'),
-        头像: analyticsEnum(next.avatarMode, ANALYTICS_AVATAR_MODES, 'custom'),
-        形状: analyticsEnum(next.avatarStyle, ANALYTICS_AVATAR_STYLES, 'custom'),
-      });
-    }
     setSettings(next);
     notify('协同设置已保存', 'success');
   };
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
-    let acceptedCount = 0;
     for (const file of Array.from(files)) {
       if (file.size > 30 * 1024 * 1024) {
         notify(`${file.name} 超过 30MB，暂时无法读取`, 'error');
@@ -1920,14 +1886,12 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
           pageCount: extracted.pageCount,
         };
         setPendingAttachments(previous => [...previous, { attachment, blob: file }]);
-        acceptedCount += 1;
       } catch (error: any) {
         notify(`${file.name}：${error?.message || '读取失败'}`, 'error');
       } finally {
         setUploadStatus('');
       }
     }
-    if (acceptedCount > 0) trackEvent('协同上传文件', { 数量: bucketFewCount(acceptedCount) });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -1942,7 +1906,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         const parsed = JSON.parse(await blob.text()) as CollaborationInstallableArtifact;
         if (!COLLABORATION_MAKER_MAP[parsed.kind]) throw new Error('未知作品类型');
         setPreviewArtifact(parsed);
-        trackEvent('预览协同作品', { 类型: analyticsMakerKind(parsed.kind) });
       } catch (error: any) {
         notify(`作品无法预览：${error?.message || '数据损坏'}`, 'error');
       }
@@ -1956,7 +1919,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       });
       if (result === 'shared') notify('已打开系统分享面板', 'success');
       else if (result === 'downloaded') notify('文件已下载', 'success');
-      if (result !== 'cancelled') trackEvent('打开协同文件', { 方式: result === 'shared' ? '分享' : '下载' });
     } catch (error: any) {
       notify(error?.message || '无法分享或导出这个文件', 'error');
     }
@@ -1979,7 +1941,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         ...message,
         attachments: message.attachments?.filter(attachment => attachment.assetId !== file.assetId),
       })));
-      trackEvent('删除协同文件');
       notify('文件已删除', 'success');
     } catch (error: any) {
       notify(error?.message || '文件删除失败', 'error');
@@ -1989,7 +1950,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
   const chooseMaker = async (kind: CollaborationMakerKind) => {
     if (!activeSession) return;
     await updateSession({ ...activeSession, makerKind: kind, updatedAt: Date.now() });
-    trackEvent('选择协同制作类型', { 类型: analyticsMakerKind(kind) });
     setMakerOpen(false);
     if (!draft.trim()) setDraft(`请和我一起做「${COLLABORATION_MAKER_MAP[kind].label}」。我希望它的感觉是：`);
   };
@@ -1997,7 +1957,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
   const toggleChatCollaboration = async (enabled: boolean) => {
     if (!enabled) {
       onToggleChatCollaboration(false);
-      trackEvent('切换日常聊天协同', { 状态: '关' });
       return;
     }
     const choice = await requestActionDialog({
@@ -2010,7 +1969,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
     });
     if (choice !== 'confirm') return;
     onToggleChatCollaboration(true);
-    trackEvent('切换日常聊天协同', { 状态: '开' });
   };
 
   const persistPendingAttachments = async () => {
@@ -2109,14 +2067,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         await CollaborationStore.saveAsset({ id: materialized.attachment.assetId, blob: materialized.blob, createdAt: Date.now() });
         generatedAttachments.push(materialized.attachment);
       }
-      if (generatedAttachments.length > 0) {
-        const hasInstallable = generatedAttachments.some(attachment => attachment.kind === 'installable');
-        const hasFile = generatedAttachments.some(attachment => attachment.kind !== 'installable');
-        trackEvent('协同生成文件', {
-          结果: hasInstallable && hasFile ? '文件和作品' : hasInstallable ? '可安装作品' : '文件',
-          数量: bucketFewCount(generatedAttachments.length),
-        });
-      }
       const assistantMessage: CollaborationMessage = {
         id: collaborationId('message'),
         sessionId: sessionAtStart.id,
@@ -2212,9 +2162,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
     const replacedMessages = messages.slice(lastUserIndex + 1);
     await CollaborationStore.deleteMessages(replacedMessages.map(message => message.id));
     setMessages(requestMessages);
-    trackEvent('重新生成协同回复', {
-      上次结果: replacedMessages.some(message => message.role === 'assistant') ? '已完成' : replacedMessages.length > 0 ? '失败或停止' : '无回复',
-    });
     await generateCollaborationReply(activeSession, requestMessages, latestUserMessage);
   };
 
@@ -2254,7 +2201,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       lastMessagePreview: collaborationMessagePreview(lastMessage),
     });
     if (libraryOpen) void refreshLibrary();
-    trackEvent('删除协同消息', { 范围: message.role === 'user' ? '整轮' : '单条' });
     notify(message.role === 'user' ? '这一轮协同已删除' : '这条内容已删除', 'success');
   };
 
@@ -2276,9 +2222,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
       return;
     }
     await onSendToChat(activeSession.title, transferable);
-    trackEvent('发送协同上下文到聊天', {
-      模式: analyticsEnum(activeSession.mode, ['immersive', 'focused'], 'custom'),
-    });
     notify('这个窗口的上下文已经发给 ChatApp', 'success');
   };
 
@@ -2331,7 +2274,7 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
         </div>
         <button type="button" onClick={() => void rerollLatestReply()} disabled={!activeSession || isGenerating || !messages.some(message => message.role === 'user')} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 disabled:opacity-25 active:bg-slate-100/80" aria-label="重新生成上一条回复" title="重新生成上一条回复"><ArrowCounterClockwise size={20} /></button>
         <button type="button" onClick={transferToChat} disabled={!activeSession || messages.length === 0} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 disabled:opacity-25 active:bg-slate-100/80" aria-label="发送上下文到 ChatApp" title="发送上下文到 ChatApp"><PaperPlaneRight size={20} /></button>
-        <button type="button" onClick={() => { setLibraryOpen(true); trackEvent('打开协同文件库'); }} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 active:bg-slate-100/80" aria-label="协同文件库"><Folder size={20} /></button>
+        <button type="button" onClick={() => setLibraryOpen(true)} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 active:bg-slate-100/80" aria-label="协同文件库"><Folder size={20} /></button>
         <button type="button" onClick={() => setSettingsOpen(true)} className="grid h-10 w-10 place-items-center rounded-full text-slate-600 active:bg-slate-100/80" aria-label="协同设置"><GearSix size={20} /></button>
       </header>
 
@@ -2500,10 +2443,6 @@ const CollaborationWindow: React.FC<CollaborationWindowProps> = ({
           onClose={() => setPreviewArtifact(null)}
           onInstall={async targetCharacterId => {
             const message = await onInstallArtifact(previewArtifact, targetCharacterId);
-            trackEvent('使用协同作品', {
-              类型: analyticsMakerKind(previewArtifact.kind),
-              目标: targetCharacterId ? '角色' : '全局',
-            });
             notify(message, 'success');
             setPreviewArtifact(null);
           }}

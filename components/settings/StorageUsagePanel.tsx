@@ -18,7 +18,6 @@ import {
     type BreakdownProgress,
 } from '../../utils/storageStats';
 import { optimizeResourceStorage, type OptimizeProgress, type OptimizeResult } from '../../utils/storageOptimize';
-import { trackEvent } from '../../utils/analytics';
 
 /**
  * 算好的结果放模块级缓存：SettingsSection 收起时会把子树整个卸载，
@@ -134,7 +133,6 @@ const StorageUsagePanel: React.FC = () => {
     const handleToggle = useCallback(() => {
         const next = !expanded;
         setExpanded(next);
-        if (next) trackEvent('查看存储占用明细');
         if (next && !cachedBreakdown && !computing) void runBreakdown();
     }, [expanded, computing, runBreakdown]);
 
@@ -169,7 +167,6 @@ const StorageUsagePanel: React.FC = () => {
         try {
             const granted = await requestPersistentStorage();
             // 成败都记一笔：要是这个按钮的通过率常年是 0，那它就是个摆设，得换做法。
-            trackEvent('申请持久化存储许可', { 结果: granted ? '通过' : '没通过' });
             if (!aliveRef.current) return;
             setAttempt(granted ? 'granted' : 'denied');
             await refreshOverview();

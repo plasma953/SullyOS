@@ -18,7 +18,6 @@ import { type AmsgLastSkip, DEFAULT_MAX_UNANSWERED_SENDS, describeLastSkip } fro
 import { isInstantChatReady } from '../../utils/amsgInstantChat';
 import { syncAmsgLlmCredentials } from '../../utils/amsgStateSync';
 import { buildUserCancelledNotices } from '../../utils/amsg2TaskContext';
-import { trackEvent } from '../../utils/analytics';
 import {
   applyRemoteTaskDelta,
   applyScheduledTask,
@@ -284,8 +283,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
    */
   const handleToggleInstantChat = () => {
     const next = !instantChatOn;
-    // 全局那个开关有自己的事件，这里单独记：想知道「按角色区分」这件事有没有人真的用。
-    trackEvent('切换角色的即时对话', { action: next ? '开' : '关' });
     setInstantChatOn(next);
     onSave((prev) => ({
       ...(prev ?? { enabled: false }),
@@ -323,9 +320,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       onSave((prev) => buildConfig(prev, (list) =>
         list.map((x) => x.taskUuid === t.taskUuid ? { ...x, lastError: '远端取消失败，可重试' } : x)));
       addToast(`任务 [${shortTaskId(t.taskUuid)}] 取消失败（远端未确认），稍后重试。`, 'error');
-      // 排程有埋点、取消没有的话，任务生命周期只记了一半。三个结果各有各的含义：
-      // failed = 远端照发但面板以为拦下了，是对账不平里最难受的一种。
-      trackEvent('取消定时消息', { result: 'failed' });
       return;
     }
     if (editingTaskUuid === t.taskUuid) setEditingTaskUuid(null);
@@ -342,7 +336,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     addToast(alreadyGone
       ? `任务 [${shortTaskId(t.taskUuid)}] 在远端已不存在（多半已经发过了），已从列表移除。`
       : `任务 [${shortTaskId(t.taskUuid)}] 已取消。`, 'info');
-    trackEvent('取消定时消息', { result: alreadyGone ? '远端已不存在' : 'ok' });
   };
 
   const handleSubmit = async () => {
@@ -422,14 +415,6 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
         present: [result.uuid],
         gone: editingTaskUuid && !result.replacedCancelFailed ? [editingTaskUuid] : [],
       }));
-      // 只报枚举构成，内容、时间、编号一概不带。mode/recurrence 虽有 TS 类型，但编辑路径
-      // 是从持久化任务记录读回来的（导入的备份可携带任意字符串），上报前运行时收敛一遍。
-      trackEvent('排程定时消息', {
-        mode: mode === 'fixed' || mode === 'prompted' ? mode : 'auto',
-        recurrence: recurrenceType === 'daily' || recurrenceType === 'weekly' ? recurrenceType : 'none',
-        source: 'user',
-        isEdit: editingTaskUuid ? 'yes' : 'no',
-      });
       setEditingTaskUuid(null);
       // 编辑走的是「先建新的再取消旧的」，编号必然换一个——只说「已更新」的话，
       // 用户会以为列表里那条陌生编号是多出来的。

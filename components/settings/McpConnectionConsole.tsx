@@ -10,7 +10,6 @@ import {
     WarningCircle,
 } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
-import { trackEvent } from '../../utils/analytics';
 import {
     createMcpServer,
     getMcpUseNativeTools,
@@ -121,7 +120,6 @@ const McpConnectionConsole: React.FC<{
         const next = createMcpServer(`MCP 服务器 ${servers.length + 1}`, '');
         persist([...servers, next]);
         setExpandedId(next.id);
-        trackEvent('添加 MCP 服务器');
     };
 
     const removeServer = (server: McpServerConfig) => {
@@ -129,7 +127,6 @@ const McpConnectionConsole: React.FC<{
         resetMcpSession(server.id);
         persist(servers.filter(item => item.id !== server.id));
         setExpandedId(current => current === server.id ? null : current);
-        trackEvent('删除 MCP 服务器');
     };
 
     const discover = async (server: McpServerConfig) => {
@@ -156,23 +153,11 @@ const McpConnectionConsole: React.FC<{
                     [server.id]: { tone: 'ok', message: result.message },
                 }));
                 addToast(`${server.name || 'MCP 服务器'}已连接`, 'success');
-                trackEvent('测试 MCP 服务器连接', {
-                    result: result.tools.length ? 'connected' : 'connected-no-tools',
-                    protocol: result.connection.protocolVersion,
-                });
             } else {
                 setTestStates(current => ({
                     ...current,
                     [server.id]: { tone: 'error', message: result.message },
                 }));
-                const message = result.message || '';
-                const failureKind = /超时/.test(message) ? 'timeout'
-                    : /鉴权失败/.test(message) ? 'auth-failed'
-                    : /请求失败/.test(message) ? 'fetch-failed'
-                    : /协议版本不兼容/.test(message) ? 'protocol-version'
-                    : /MCP HTTP/.test(message) ? 'http-error'
-                    : 'other';
-                trackEvent('测试 MCP 服务器连接', { result: 'failed', failureKind });
             }
         } finally {
             setTestingId(null);
@@ -223,7 +208,6 @@ const McpConnectionConsole: React.FC<{
                         setUseNativeToolsState(next);
                         setMcpUseNativeTools(next);
                         onMcpConfigChanged?.();
-                        trackEvent('切换原生工具调用', { state: next ? 'on' : 'off' });
                     }}
                 />
             </section>

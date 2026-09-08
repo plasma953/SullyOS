@@ -23,7 +23,6 @@ import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } fr
 import { getVirtualDayKey } from '../utils/localDate';
 import { resolveCharTimeZone, nowInTimeZone, tzLabel } from '../utils/timezone';
 import { getDailyScheduleForChar } from '../utils/dailySchedule';
-import { trackEvent } from '../utils/analytics';
 import { normalizeBuiltInRoomTemplateAssetsInPlace, toPortableBuiltinRoomAsset } from '../utils/roomTemplateAssets';
 import { shareOrDownloadFile } from '../utils/shareExport';
 
@@ -590,7 +589,6 @@ const RoomApp: React.FC = () => {
     // 「更新这一天」：进屋后由用户主动触发今日房间生成（首次生成无需二次确认）
     const handleGenerateToday = () => {
         if (char) initializeRoomState(char, items, true);
-        trackEvent('生成今天的房间');
     };
 
     // 梦境全局指示条深链：点一下 → 直接进入对应角色的房间并打开梦境演出
@@ -906,7 +904,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         
         setActorState({ x: item.x, y: targetY, action: 'walk' });
         setTimeout(() => setActorState(prev => ({ ...prev, action: 'interact' })), 600);
-        trackEvent('观察房间里的家具');
 
         const cached = roomDescriptions[item.id] || roomDescriptions[item.name];
         if (cached) {
@@ -934,7 +931,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         setTimeout(() => setActorState(prev => ({ ...prev, action: 'idle' })), 500);
         const thoughts = ["嗯？", "别闹...", "我在呢。", "盯着我看干嘛...", "(发呆)"];
         setAiBubble({ text: thoughts[Math.floor(Math.random() * thoughts.length)], visible: true });
-        trackEvent('戳一戳角色');
     };
 
     const handleToggleTodo = async (index: number) => {
@@ -1053,7 +1049,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         saveRoom([...items, newItem]);
         addToast(`已添加: ${asset.name}`, 'success');
         // 只上报这三个写死的分类，其它一律归到 furniture，别把素材分类名原样透出去
-        trackEvent('摆放一件家具', { type: type === 'rug' ? 'rug' : (type === 'decor' ? 'decor' : 'furniture') });
     };
 
     // PERF: Update items in state immediately (visual), but debounce DB persistence
@@ -1079,7 +1074,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         saveRoom([...items, copy]);
         setSelectedItemId(copy.id);
         addToast(`已复制: ${src.name}`, 'success');
-        trackEvent('复制选中的家具');
     };
 
     // 十字键微调：拖不准时一格一格挪（每格 1%）
@@ -1283,7 +1277,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 });
                 addToast(result === 'shared' ? '已打开小屋样板房分享面板' : '小屋样板房已导出', 'success');
             }
-            trackEvent('导出小屋样板房', { action });
         } catch (e: any) {
             addToast(`导出失败: ${e?.message || e}`, 'error');
         } finally {
@@ -1320,7 +1313,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 : `已批量导入 ${imported.length} 件素材，在「家具超市 · 自定义」里摆放`,
             failed ? 'info' : 'success'
         );
-        trackEvent('批量导入家具素材');
         setIsBatchImporting(false);
         if (imported.length) setShowLibrary(true);
     };
@@ -1433,13 +1425,11 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         const ok = await applyRoomTemplateData(pendingImport, importMode);
         if (ok) {
             setPendingImport(null);
-            trackEvent('导入小屋样板房', { mode: importMode });
         }
     };
 
     const chooseSampleRoom = async (template: BuiltInRoomTemplate) => {
         if (!char) return;
-        trackEvent('套用内置样板房', { template: template.id });
         setSampleRoomLoadingId(template.id);
         try {
             const data = await loadBuiltInRoomTemplate(template);
@@ -1740,7 +1730,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                             const active = homeTab === tab.id;
                             return (
                                 <button key={tab.id}
-                                    onClick={() => { setHomeTab(tab.id); trackEvent('切换小小窝分区', { tab: tab.id }); }}
+                                    onClick={() => { setHomeTab(tab.id);  }}
                                     className="relative flex-1 py-2.5 rounded-xl text-[12px] font-bold tracking-wide transition-all"
                                     style={active ? th.tabActive : { color: th.tabIdle }}>
                                     {tab.label}
@@ -1997,7 +1987,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
             {/* 查看梦境入口 · 左中边缘的「月亮」按钮（只在浏览模式露出，与右侧「生活碎片」对称） */}
             {mode === 'view' && (
-                <button onClick={() => { setShowDream(true); trackEvent('打开梦境剧场'); }} title="查看梦境"
+                <button onClick={() => { setShowDream(true);  }} title="查看梦境"
                     className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 px-2.5 py-3 rounded-r-2xl shadow-lg border border-l-0 z-[300] active:scale-95 transition-transform"
                     style={{ background: 'linear-gradient(135deg, #2a2440, #1a1730)', borderColor: 'rgba(205,214,255,0.25)' }}>
                     <MoonStars size={20} weight="fill" style={{ color: '#cdd6ff' }} />
@@ -2019,9 +2009,9 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                     <button onClick={() => setShowSidebar(false)} className="p-2 -mr-2 text-slate-400 hover:text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></button>
                 </div>
                 <div className="flex p-2 bg-slate-50 border-b border-slate-100">
-                    <button onClick={() => { setActivePanel('todo'); trackEvent('切换生活碎片面板', { panel: 'todo' }); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'todo' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>今日计划</button>
-                    <button onClick={() => { setActivePanel('schedule'); trackEvent('切换生活碎片面板', { panel: 'schedule' }); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'schedule' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>日程</button>
-                    <button onClick={() => { setActivePanel('notebook'); trackEvent('切换生活碎片面板', { panel: 'notebook' }); }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'notebook' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>私密记事</button>
+                    <button onClick={() => { setActivePanel('todo');  }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'todo' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>今日计划</button>
+                    <button onClick={() => { setActivePanel('schedule');  }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'schedule' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>日程</button>
+                    <button onClick={() => { setActivePanel('notebook');  }} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'notebook' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>私密记事</button>
                 </div>
                 
                 {/* Fixed: Add no-scrollbar class to hide scrollbar */}
@@ -2103,7 +2093,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
                         </button>
                     )}
-                    <button onClick={() => { setMode(mode === 'view' ? 'edit' : 'view'); setSelectedItemId(null); trackEvent('进入房间装修模式', { mode: mode === 'view' ? 'edit' : 'view' }); }} className={`px-4 py-2 rounded-full font-bold text-xs shadow-md transition-all ${mode === 'edit' ? 'bg-blue-500 text-white' : 'bg-white text-slate-600'}`}>{mode === 'edit' ? '完成' : '装修'}</button>
+                    <button onClick={() => { setMode(mode === 'view' ? 'edit' : 'view'); setSelectedItemId(null);  }} className={`px-4 py-2 rounded-full font-bold text-xs shadow-md transition-all ${mode === 'edit' ? 'bg-blue-500 text-white' : 'bg-white text-slate-600'}`}>{mode === 'edit' ? '完成' : '装修'}</button>
                 </div>
             </div>
 
@@ -2208,7 +2198,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                         })() : (
                             <div className="space-y-4">
                                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-                                    <button onClick={() => { setShowLibrary(true); trackEvent('打开家具超市'); }} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-md text-xl">+</div><span className="text-[10px] font-bold text-slate-500">家具库</span></button>
+                                    <button onClick={() => { setShowLibrary(true);  }} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-md text-xl">+</div><span className="text-[10px] font-bold text-slate-500">家具库</span></button>
                                     <button onClick={() => setShowCustomModal(true)} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center text-white shadow-md"><Sparkle size={24} /></div><span className="text-[10px] font-bold text-slate-500">自定义</span></button>
                                     <button onClick={() => setShowActorArtModal(true)} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-pink-500 rounded-xl flex items-center justify-center text-white shadow-md"><Camera size={24} /></div><span className="text-[10px] font-bold text-slate-500">角色立绘</span></button>
                                     {/* 批量导入：一次选多张图，全部入库为自定义素材 */}

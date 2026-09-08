@@ -197,7 +197,7 @@ SSE 事件流（`/event`）原样透传。
 - **合同来源**：opencode 官方 JS SDK 类型（`packages/sdk/js/src/gen/types.gen.ts`），
   2026-09-06 抓取的关键形状见 `docs/superpowers/plans/2026-09-06-terminal-opencode-remote.md`
   「合同校准记录」。字段只增不减，运行时对未知字段宽容。
-- **无新埋点**（终端是纯工具，不加统计事件）。
+- 本仓库已无使用统计设施（2026-09-08 移除），终端同样不上报任何数据。
 - **备份**：`exportOpencodeLocal/importOpencodeLocal` 原样搬运 localStorage 字符串，
   与 mcpLocal 同构；roundtrip 测试在 `utils/opencodeClient.test.ts`。
 

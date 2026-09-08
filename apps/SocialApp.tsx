@@ -16,7 +16,6 @@ import {
     fetchDoubanComments, fetchDoubanTopicDetail, fetchDoubanTopics,
     loadDoubanGroups, parseDoubanGroupInput, saveDoubanGroups,
 } from '../utils/doubanSource';
-import { trackEvent } from '../utils/analytics';
 import TokenImg from '../components/os/TokenImg';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
@@ -381,7 +380,6 @@ const SocialApp: React.FC = () => {
             ...prev,
             [charId]: [...(prev[charId] || []), newAcct]
         }));
-        trackEvent('给角色添加一个马甲');
     };
 
     const updateSubAccount = (charId: string, acctId: string, field: keyof SubAccount, value: string) => {
@@ -425,7 +423,6 @@ const SocialApp: React.FC = () => {
                 const blob = await processImageToBlob(file);
                 const ref = await putImageBlob(blob);
                 setSocialProfile(prev => ({ ...prev, avatar: ref }));
-                trackEvent('更换 Spark 头像');
             } catch (err: any) {
                 addToast(err.message, 'error');
             }
@@ -477,7 +474,6 @@ const SocialApp: React.FC = () => {
         const controller = new AbortController();
         refreshRequestRef.current = controller;
         setIsRefreshing(true);
-        trackEvent('刷新 Spark 推荐流');
         // 1) 豆瓣小组真实帖：无需 API Key，先拉先展示；失败静默（LLM 流照常）
         let doubanHotTitles: string[] = [];
         try {
@@ -866,7 +862,6 @@ ${identityMap}
             await DB.saveMessage({ charId: isGroup ? 'user' : targetId, groupId: isGroup ? targetId : undefined, role: 'user', type: 'social_card', content: '[分享帖子]', metadata: { post: selectedPost } });
             setShowShareModal(false);
             addToast('分享成功', 'success');
-            trackEvent('分享帖子到聊天');
         } catch (e) { addToast('分享失败', 'error'); }
     };
 
@@ -901,7 +896,7 @@ ${identityMap}
         // 豆瓣帖删掉后记住 id，下次刷新不再加回来（只记本地，不影响豆瓣本身）
         const target = feedRef.current.find(p => p.id === postId);
         if (target?.origin === 'douban' && target.sourceId) addHiddenDoubanId(target.sourceId);
-        removePostFromFeed(postId); addToast('帖子已删除', 'success'); trackEvent('删除一条帖子');
+        removePostFromFeed(postId); addToast('帖子已删除', 'success'); 
     };
     const handleLike = (e: any, post: SocialPost) => {
         e.stopPropagation();
@@ -910,7 +905,6 @@ ${identityMap}
             isLiked: !current.isLiked,
             likes: current.isLiked ? current.likes - 1 : current.likes + 1,
         }));
-        trackEvent('点赞一条帖子', { action: post.isLiked ? 'unlike' : 'like' });
     };
     
     const handleSendComment = async () => { 
@@ -998,7 +992,6 @@ ${identityMap}
         DB.clearSocialPosts();
         setShowSettings(false);
         addToast('推荐流已清空', 'success');
-        trackEvent('清空 Spark 推荐流');
     };
 
     // --- Renderers ---
@@ -1079,7 +1072,7 @@ ${identityMap}
                             <TokenImg value={doubanImgUrl(selectedPost.authorAvatar)} className="w-8 h-8 rounded-full object-cover border border-white/50" />
                             <span className="text-sm font-bold text-slate-800">{selectedPost.authorName}</span>
                         </div>
-                        <button onClick={() => { setShowShareModal(true); trackEvent('打开分享帖子面板'); }} className="p-2 -m-2 active:opacity-60"><Icons.Share onClick={() => setShowShareModal(true)} className="w-6 h-6 text-slate-800 cursor-pointer hover:text-[#ff2442]" /></button>
+                        <button onClick={() => { setShowShareModal(true);  }} className="p-2 -m-2 active:opacity-60"><Icons.Share onClick={() => setShowShareModal(true)} className="w-6 h-6 text-slate-800 cursor-pointer hover:text-[#ff2442]" /></button>
                     </div>
 
                     {/* Scrollable Area */}
@@ -1150,7 +1143,7 @@ ${identityMap}
                                     <span className="text-[10px] font-medium">{selectedPost.likes}</span>
                                 </div>
                                 <div className="flex flex-col items-center gap-0.5">
-                                    <Icons.Star filled={selectedPost.isCollected} onClick={() => { updatePostInFeed(selectedPost.id, current => ({ ...current, isCollected: !current.isCollected })); trackEvent('收藏一条帖子', { action: selectedPost.isCollected ? 'uncollect' : 'collect' }); }} className="w-6 h-6" />
+                                    <Icons.Star filled={selectedPost.isCollected} onClick={() => { updatePostInFeed(selectedPost.id, current => ({ ...current, isCollected: !current.isCollected }));  }} className="w-6 h-6" />
                                     <span className="text-[10px] font-medium">{selectedPost.isCollected ? '已收藏' : '收藏'}</span>
                                 </div>
                             </div>
@@ -1330,10 +1323,10 @@ ${identityMap}
                     <div className="h-11 flex items-center justify-between px-4">
                         <button onClick={closeApp} className="p-1"><Icons.Back onClick={closeApp} /></button>
                         <div className="flex gap-6 text-base font-bold text-slate-300">
-                            <button className={`${activeTab === 'home' ? 'text-slate-800 scale-110 border-b-2 border-[#ff2442] pb-1' : 'hover:text-slate-500'} transition-all`} onClick={() => { setActiveTab('home'); trackEvent('切换 Spark 主标签', { tab: 'home' }); }}>发现</button>
-                            <button className={`${activeTab === 'me' ? 'text-slate-800 scale-110 border-b-2 border-[#ff2442] pb-1' : 'hover:text-slate-500'} transition-all`} onClick={() => { setActiveTab('me'); trackEvent('切换 Spark 主标签', { tab: 'me' }); }}>我的</button>
+                            <button className={`${activeTab === 'home' ? 'text-slate-800 scale-110 border-b-2 border-[#ff2442] pb-1' : 'hover:text-slate-500'} transition-all`} onClick={() => { setActiveTab('home');  }}>发现</button>
+                            <button className={`${activeTab === 'me' ? 'text-slate-800 scale-110 border-b-2 border-[#ff2442] pb-1' : 'hover:text-slate-500'} transition-all`} onClick={() => { setActiveTab('me');  }}>我的</button>
                         </div>
-                        <button onClick={() => { setShowSettings(true); trackEvent('打开身份管理面板'); }} className="text-slate-800 font-bold text-sm">管理</button>
+                        <button onClick={() => { setShowSettings(true);  }} className="text-slate-800 font-bold text-sm">管理</button>
                     </div>
                 </div>
 
@@ -1445,8 +1438,8 @@ ${identityMap}
 
                             {/* Sticky Tabs */}
                             <div className="sticky top-0 bg-white/90 backdrop-blur-md z-10 border-b border-slate-100 flex">
-                                <button onClick={() => { setProfileTab('notes'); trackEvent('切换个人主页子标签', { tab: 'notes' }); }} className={`flex-1 py-3 text-sm font-bold transition-colors ${profileTab === 'notes' ? 'text-slate-900 border-b-2 border-[#ff2442]' : 'text-slate-400'}`}>笔记</button>
-                                <button onClick={() => { setProfileTab('collects'); trackEvent('切换个人主页子标签', { tab: 'collects' }); }} className={`flex-1 py-3 text-sm font-bold transition-colors ${profileTab === 'collects' ? 'text-slate-900 border-b-2 border-[#ff2442]' : 'text-slate-400'}`}>收藏</button>
+                                <button onClick={() => { setProfileTab('notes');  }} className={`flex-1 py-3 text-sm font-bold transition-colors ${profileTab === 'notes' ? 'text-slate-900 border-b-2 border-[#ff2442]' : 'text-slate-400'}`}>笔记</button>
+                                <button onClick={() => { setProfileTab('collects');  }} className={`flex-1 py-3 text-sm font-bold transition-colors ${profileTab === 'collects' ? 'text-slate-900 border-b-2 border-[#ff2442]' : 'text-slate-400'}`}>收藏</button>
                             </div>
 
                             <div className="p-2 min-h-[300px] bg-slate-50/50 pb-24">
@@ -1477,11 +1470,11 @@ ${identityMap}
 
                 {/* Bottom Navigation - Floating Glass Island (Only shown when not creating) */}
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] h-16 bg-white/80 backdrop-blur-2xl rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/50 flex items-center justify-around z-40">
-                    <button onClick={() => { setActiveTab('home'); trackEvent('切换 Spark 主标签', { tab: 'home' }); }} className={`text-sm font-medium flex flex-col items-center justify-center gap-0.5 transition-all w-12 h-12 rounded-full ${activeTab === 'home' ? 'text-slate-900 bg-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                    <button onClick={() => { setActiveTab('home');  }} className={`text-sm font-medium flex flex-col items-center justify-center gap-0.5 transition-all w-12 h-12 rounded-full ${activeTab === 'home' ? 'text-slate-900 bg-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <House size={24} weight={activeTab === 'home' ? 'fill' : 'regular'} />
                     </button>
-                    <button onClick={() => { setIsCreateOpen(true); trackEvent('打开发布笔记面板'); }} className="w-12 h-12 bg-[#ff2442] text-white rounded-full flex items-center justify-center shadow-lg shadow-red-200 active:scale-95 transition-transform text-2xl font-light -mt-6 border-4 border-white/50">+</button>
-                    <button onClick={() => { setActiveTab('me'); trackEvent('切换 Spark 主标签', { tab: 'me' }); }} className={`text-sm font-medium flex flex-col items-center justify-center gap-0.5 transition-all w-12 h-12 rounded-full ${activeTab === 'me' ? 'text-slate-900 bg-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                    <button onClick={() => { setIsCreateOpen(true);  }} className="w-12 h-12 bg-[#ff2442] text-white rounded-full flex items-center justify-center shadow-lg shadow-red-200 active:scale-95 transition-transform text-2xl font-light -mt-6 border-4 border-white/50">+</button>
+                    <button onClick={() => { setActiveTab('me');  }} className={`text-sm font-medium flex flex-col items-center justify-center gap-0.5 transition-all w-12 h-12 rounded-full ${activeTab === 'me' ? 'text-slate-900 bg-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <User size={24} />
                     </button>
                 </div>

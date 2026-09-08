@@ -6,7 +6,6 @@ import { useOS } from '../context/OSContext';
 import { ChatTheme, BubbleStyle } from '../types';
 import { processImage } from '../utils/file';
 import { validateScopedCss, runCssRenderabilityCheck, CssValidationResult } from '../utils/scopedCss';
-import { trackEvent } from '../utils/analytics';
 import { getHostGeometry } from '../utils/hostViewport';
 import { resolveBubbleCornerRadii, shouldHideBubbleTail } from '../utils/bubbleAppearance';
 import { shareOrDownloadFile } from '../utils/shareExport';
@@ -571,7 +570,6 @@ const ThemeMaker: React.FC = () => {
         editorBubbleDragRef.current = null;
         if (drag && !drag.moved) {
             setEditorPanelOpen(open => !open);
-            trackEvent('开关气泡工坊悬浮设置');
         }
     };
 
@@ -632,13 +630,11 @@ const ThemeMaker: React.FC = () => {
     const requestTabSwitch = (target: 'user' | 'ai' | 'css') => {
         if (target === activeTab) return;
         setActiveTab(target);
-        trackEvent('切换气泡编辑对象', { tab: target });
     };
 
     const requestToolSectionSwitch = (target: 'base' | 'sticker' | 'avatar') => {
         if (target === toolSection) return;
         setToolSection(target);
-        trackEvent('切换编辑工具分区', { section: target });
     };
 
     const requestClose = () => withDiscardGuard(() => closeApp());
@@ -869,7 +865,6 @@ const ThemeMaker: React.FC = () => {
     };
 
     const insertCssSnippet = (snippet: CssSnippet) => {
-        trackEvent('插入限定作用域 CSS 片段', { snippet: snippet.id });
         const textarea = cssTextareaRef.current;
         const currentCss = editingTheme.customCss || '';
         if (!textarea) {
@@ -906,7 +901,6 @@ const ThemeMaker: React.FC = () => {
             customCss: injectShadowCss(prev.customCss || '', template.userShadow, template.aiShadow)
         }));
         addToast(`已应用 ${template.name} 模板`, 'success');
-        trackEvent('应用气泡风格模板', { template: template.id });
     };
 
     const randomizeMonochrome = () => {
@@ -1115,7 +1109,6 @@ const ThemeMaker: React.FC = () => {
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     toggleVoicePreview(voicePreviewKey);
-                                    if (!isVoicePreviewPlaying) trackEvent('播放气泡工坊语音预览');
                                 }}
                                 aria-pressed={isVoicePreviewPlaying}
                                 aria-label={isVoicePreviewPlaying ? '暂停语音条播放预览' : '播放语音条样式预览'}
@@ -1210,7 +1203,7 @@ const ThemeMaker: React.FC = () => {
 
             {/* 用户作品区：保存后的气泡可回到工坊继续编辑，也可单独导出分享。 */}
             <section className="shrink-0 bg-white/80 border-b border-slate-100 px-4 py-3">
-                <button type="button" onClick={() => { setIsThemeLibraryOpen(prev => !prev); if (!isThemeLibraryOpen) trackEvent('展开我的气泡作品库'); }} aria-expanded={isThemeLibraryOpen} className="w-full flex items-center justify-between text-left">
+                <button type="button" onClick={() => { setIsThemeLibraryOpen(prev => !prev);  }} aria-expanded={isThemeLibraryOpen} className="w-full flex items-center justify-between text-left">
                     <div>
                         <h2 className="text-xs font-bold text-slate-600">我的自定义气泡</h2>
                         <p className="text-[10px] text-slate-400 mt-0.5">点击{isThemeLibraryOpen ? '收起' : '展开并选择'} · 可搜索、导入、修改或导出</p>
@@ -1291,7 +1284,7 @@ const ThemeMaker: React.FC = () => {
                         {PREVIEW_SCENES.map(scene => (
                             <button
                                 key={scene.id}
-                                onClick={() => { setPreviewSceneId(scene.id); trackEvent('切换预览场景', { scene: scene.id }); }}
+                                onClick={() => { setPreviewSceneId(scene.id);  }}
                                 className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${previewSceneId === scene.id ? 'bg-primary text-white shadow' : 'bg-white/80 text-slate-500 hover:bg-white'}`}
                             >
                                 {scene.name}

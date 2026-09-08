@@ -41,7 +41,6 @@ import {
   pickChangedCredRows,
   type LlmCredentialRow,
 } from './amsgLlmCredentials';
-import { trackEvent } from './analytics';
 import { DB } from './db';
 
 /** 失败重试的退避起点，逐次翻倍（30s → 60s → 120s）。 */
@@ -256,7 +255,6 @@ export const flushAmsgState = async (reason: string): Promise<void> => {
       // 每次会话最多报一次（一轮退避打完才会走到这儿，但一次会话可以有好几轮）。
       if (!staleStateReported) {
         staleStateReported = true;
-        trackEvent('2.0云端状态同步失败');
       }
       retryCount = 0;
     }

@@ -25,7 +25,6 @@ import { buildFallbackLifeSimSessionSummary, buildLifeSimSessionSummaryPrompt } 
 import { getLifeSimToneEmoji } from '../utils/lifeSimTone';
 // Offline simulation removed — random events didn't match the theme
 import { extractJson, safeFetchJson } from '../utils/safeApi';
-import { trackEvent } from '../utils/analytics';
 import TokenImg from '../components/os/TokenImg';
 import { DB } from '../utils/db';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -592,7 +591,6 @@ const LifeSimApp: React.FC = () => {
     const handleWatch = useCallback(async () => {
         if (!gameState) return;
 
-        trackEvent('吃瓜围观推进一轮');
 
         const userActor = userProfile?.name || '你';
         const actionDesc = buildUserActionDescription('DO_NOTHING', userActor, {});
@@ -1004,7 +1002,7 @@ const LifeSimApp: React.FC = () => {
                             R{gameState.turnNumber} D{gameState.day ?? 1}
                         </span>
                         <button
-                            onClick={() => { trackEvent('打开城市设置面板'); setShowSettings(true); }}
+                            onClick={() => {  setShowSettings(true); }}
                             className="flex items-center justify-center relative"
                             style={{
                                 width: 44, height: 44, borderRadius: 7,
@@ -1185,7 +1183,7 @@ const LifeSimApp: React.FC = () => {
                         ['drama', '动态', MaskSad],
                         ['relations', '关系', HeartHalf],
                     ] as const).map(([tab, label, Icon]) => (
-                        <button key={tab} onClick={() => { trackEvent('切换城市面板标签', { tab }); setActiveTab(tab as any); }}
+                        <button key={tab} onClick={() => {  setActiveTab(tab as any); }}
                             className="flex items-center gap-1 px-3 py-1"
                             style={{
                                 fontSize: 10, fontWeight: 700,

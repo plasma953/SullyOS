@@ -8,7 +8,6 @@ import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import { VALID_INTERJECTION_TAGS, cleanVoiceMarkupForDisplay } from '../../utils/minimaxTts';
 import { stripFishCuesForDisplay } from '../../utils/fishAudioTts';
 import { formatStatCount } from '../../utils/videoParser';
-import { trackEvent } from '../../utils/analytics';
 import { resolveBubbleCornerRadii, shouldHideBubbleTail } from '../../utils/bubbleAppearance';
 import { isImageValue, useBlobRefUrl } from '../../utils/blobRef';
 import { buildReplySnapshotContent } from '../../utils/applyAssistantPostProcessing';
@@ -486,7 +485,6 @@ export const ThinkingChainBlock: React.FC<{
         setCopyState(success ? 'ok' : 'error');
         if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
         feedbackTimerRef.current = setTimeout(() => setCopyState('idle'), 1600);
-        trackEvent('长按复制心象全文');
     };
 
     const resetLongPress = () => {
@@ -878,13 +876,13 @@ const LifeRecordCard: React.FC<{
                 ) : canResolve ? (
                     <div className="mt-2.5 flex gap-2">
                         <button
-                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'confirmed'); trackEvent('处理角色代记的生活记录', { result: 'confirmed' }); }}
+                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'confirmed'); }}
                             className="flex-1 py-1.5 rounded-xl bg-white/85 text-emerald-600 text-[11px] font-bold shadow-sm active:scale-95 transition-transform"
                         >
                             ✓ 确认
                         </button>
                         <button
-                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'rejected'); trackEvent('处理角色代记的生活记录', { result: 'rejected' }); }}
+                            onClick={(e) => { e.stopPropagation(); onResolveLifeRecord?.(m, 'rejected'); }}
                             className="flex-1 py-1.5 rounded-xl bg-white/60 text-slate-500 text-[11px] font-bold shadow-sm active:scale-95 transition-transform"
                         >
                             ✗ 否决
@@ -955,7 +953,6 @@ const TransferCard: React.FC<{
     const handleResolve = (action: 'accepted' | 'returned') => {
         onResolveTransfer?.(m, action);
         setOpen(false);
-        trackEvent('处理收到的转账', { result: action });
     };
 
     return (
@@ -3704,7 +3701,7 @@ const MessageItem = React.memo(({
                     {voiceData?.url ? (
                         <div className="max-w-[260px]">
                             <button
-                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPlayVoice?.(m.id); if (!isVoicePlaying) trackEvent('播放语音条'); }}
+                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPlayVoice?.(m.id); }}
                                 className="sully-voice-bar group flex items-center gap-2.5 w-full px-3 py-2 rounded-2xl transition-all duration-300 active:scale-[0.97] select-none"
                                 style={{
                                     background: isVoicePlaying
@@ -3756,7 +3753,6 @@ const MessageItem = React.memo(({
                                         e.stopPropagation();
                                         e.preventDefault();
                                         setShowVoiceText(v => !v);
-                                        if (!showVoiceText) trackEvent('把语音条转成文字');
                                     }}
                                 >
                                     {showVoiceText ? '收起' : '转文字'}
@@ -3846,7 +3842,7 @@ const MessageItem = React.memo(({
                                             color: vbText || 'rgba(100,116,139,0.7)',
                                             backgroundColor: showVoiceText ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)',
                                         }}
-                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowVoiceText(v => !v); if (!showVoiceText) trackEvent('把语音条转成文字'); }}
+                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowVoiceText(v => !v); }}
                                     >
                                         {showVoiceText ? '收起' : '转文字'}
                                     </div>

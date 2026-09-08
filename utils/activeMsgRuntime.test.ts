@@ -37,7 +37,6 @@ import {
   isOutboxBackfill,
 } from './activeMsgRuntime';
 import { MULTIPART_FAILURE_REASON } from '@rei-standard/amsg-shared';
-import * as Analytics from './analytics';
 import {
   AMSG_INSTANT_CHAT_PENDING_LS_KEY,
   AMSG_OUTBOX_ADOPTED_LS_KEY,
@@ -2115,8 +2114,6 @@ describe('即时对话的待收记录（走真库）', () => {
   });
   afterEach(() => {
     vi.restoreAllMocks();
-    // umami 是直接挂在 window 上的，restoreAllMocks 管不着，留着会串到下一条测试。
-    delete (globalThis as any).window.umami;
   });
 
   /** 服务端账本上的一条：`push` 就是推送信封本身，跟 SW 收到的那份逐字一致。 */
@@ -2319,7 +2316,6 @@ describe('即时对话的待收记录（走真库）', () => {
     await DB.saveCharacter({ id: charId, name: '即时角色' } as any);
     setInstantChatPending(charId, 'uuid-old', Date.now());
     vi.spyOn(ActiveMsgClient, 'getRemoteTaskStatus').mockResolvedValue({ state: 'completed' });
-    (globalThis as any).window.umami = { track: vi.fn() };
 
     // 手动掌控 chat_fail 那次点名：卡在半路，好让「用户重发」精确插进这个空档。
     // outbox 兜底的读照常立即回空——卡住的必须只是失败原因那一步。
@@ -2343,7 +2339,6 @@ describe('即时对话的待收记录（走真库）', () => {
     expect(getInstantChatPending(charId)?.uuid, '新那一轮还等着，别把它的灯灭了').toBe('uuid-new');
     const msgs = await DB.getRecentMessagesByCharId(charId, 50);
     expect(msgs.some((m) => m.role === 'system'), '新那一轮没失败，不该有失败说明').toBe(false);
-    expect((globalThis as any).window.umami.track).not.toHaveBeenCalled();
   }, 20000);
 
   it('云端那行已经没了、outbox 里也没有 → 销账 + 说明「回复没能取回」', async () => {
@@ -2630,7 +2625,6 @@ describe('收件箱处理途中抛错不许吞掉整批（走真库）', () => {
       .mockImplementation(realRecent as any)
       .mockRejectedValueOnce(new Error('IndexedDB 连接被占'));
 
-    const track = vi.spyOn(Analytics, 'trackEvent').mockImplementation(() => {});
     const timers = captureInboxRetryTimer();
     try {
       await flushInboxToChat();
@@ -2638,7 +2632,9 @@ describe('收件箱处理途中抛错不许吞掉整批（走真库）', () => {
       timers.restore();
     }
 
-    expect(track).toHaveBeenCalledWith('主动消息送达失败', { kind: '重试中', stage: '收发' });
+    const requeued = (await ActiveMsgStore.listInboxMessages())
+      .find((m) => m.messageId === 'msg-retry-stage');
+    expect(requeued, '收发失败那条必须压回收件箱重试，不能凭空蒸发').toBeTruthy();
 
     await ActiveMsgStore.consumeInboxMessages(); // 别把这条留给后面的用例
   }, 20000);

@@ -59,16 +59,7 @@ describe('collaboration sidecar wiring', () => {
   });
 
   it('reports collaboration adoption without reading titles, messages, filenames or blobs', () => {
-    const windowSource = read('features/collaboration/CollaborationWindow.tsx');
     const store = read('features/collaboration/store.ts');
-    for (const event of [
-      '新建协同窗口', '保存协同设置', '协同上传文件', '协同生成文件', '选择协同制作类型',
-      '预览协同作品', '使用协同作品', '发送协同上下文到聊天',
-      '归档协同窗口', '打开协同文件库', '删除协同文件', '切换日常聊天协同',
-      '重新生成协同回复', '删除协同消息',
-    ]) {
-      expect(windowSource).toContain(`trackEvent('${event}'`);
-    }
     expect(store).toContain('getUsageCounts');
     expect(store).toContain('transaction.objectStore(storeName).count()');
   });

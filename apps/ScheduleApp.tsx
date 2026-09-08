@@ -20,7 +20,6 @@ import { fetchCnHolidays, getHolidayInfo, dateKeyOf } from '../utils/cnHoliday';
 import { RealtimeContextManager, resolveCharCity } from '../utils/realtimeContext';
 import type { AnniversaryRepeat } from '../types';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
-import { trackEvent } from '../utils/analytics';
 import TokenImg from '../components/os/TokenImg';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
@@ -182,7 +181,6 @@ const ScheduleApp: React.FC = () => {
         const nextMode = modes[nextIndex];
         setCurrentThemeMode(nextMode);
         localStorage.setItem('schedule_app_theme', nextMode);
-        trackEvent('切换日程界面主题', { theme: nextMode });
     };
 
     const loadData = async () => {
@@ -472,9 +470,9 @@ const ScheduleApp: React.FC = () => {
 
                 {/* Tabs */}
                 <div className={`min-w-0 flex-1 mx-1 flex gap-1 p-1 rounded-lg overflow-hidden ${currentThemeMode === 'cyber' ? 'bg-black/40 border border-cyan-900/50' : (currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'bg-white/50')}`}>
-                    <button onClick={() => { setActiveTab('quest'); trackEvent('切换日程标签页', { tab: 'quest' }); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all truncate min-w-0 flex-1 text-center ${activeTab === 'quest' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.label}</button>
-                    <button onClick={() => { setActiveTab('server_events'); trackEvent('切换日程标签页', { tab: 'server_events' }); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all truncate min-w-0 flex-1 text-center ${activeTab === 'server_events' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.eventLabel}</button>
-                    <button onClick={() => { setActiveTab('calendar'); trackEvent('切换日程标签页', { tab: 'calendar' }); }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all truncate min-w-0 flex-1 text-center ${activeTab === 'calendar' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.calendarLabel}</button>
+                    <button onClick={() => { setActiveTab('quest');  }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all truncate min-w-0 flex-1 text-center ${activeTab === 'quest' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.label}</button>
+                    <button onClick={() => { setActiveTab('server_events');  }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all truncate min-w-0 flex-1 text-center ${activeTab === 'server_events' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.eventLabel}</button>
+                    <button onClick={() => { setActiveTab('calendar');  }} className={`px-3 py-1.5 rounded text-xs font-bold transition-all truncate min-w-0 flex-1 text-center ${activeTab === 'calendar' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.calendarLabel}</button>
                 </div>
 
                 {/* Right Actions */}
@@ -487,7 +485,7 @@ const ScheduleApp: React.FC = () => {
                     </button>
 
                     {/* Add Button */}
-                    <button onClick={() => { activeTab === 'quest' ? setShowTaskModal(true) : setShowAnniModal(true); trackEvent('打开新建条目弹窗', { kind: activeTab }); }} className={`p-2 rounded-full active:scale-90 transition-transform ${theme.accent} ${currentThemeMode === 'minimal' ? 'shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-white/10'}`}>
+                    <button onClick={() => { activeTab === 'quest' ? setShowTaskModal(true) : setShowAnniModal(true);  }} className={`p-2 rounded-full active:scale-90 transition-transform ${theme.accent} ${currentThemeMode === 'minimal' ? 'shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-white/10'}`}>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     </button>
                 </div>

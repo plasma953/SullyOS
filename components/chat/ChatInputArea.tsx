@@ -4,7 +4,6 @@ import { PRESET_THEMES } from './ChatConstants';
 import TokenImg from '../os/TokenImg';
 import { AcnhActionTile } from '../os/acnhIcons';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
-import { trackEvent } from '../../utils/analytics';
 
 const EMOJI_PAGE_SIZE = 40;
 
@@ -409,7 +408,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                 <div className={`p-3 flex gap-2 ${isPixelStyle ? 'bg-[#f3e7d6]' : isDiscordStyle ? 'bg-slate-900/60 backdrop-blur-md' : 'bg-white/50 backdrop-blur-md'}`}>
                     {onForwardSelected && (
                         <button
-                            onClick={() => { onForwardSelected?.(); trackEvent('转发选中的消息'); }}
+                            onClick={() => { onForwardSelected?.(); }}
                             disabled={selectedCount === 0}
                             className={`flex-1 py-3 font-bold rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${selectedCount === 0 ? 'bg-slate-200 text-slate-400 shadow-none' : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-blue-200'}`}
                         >
@@ -418,7 +417,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         </button>
                     )}
                     <button
-                        onClick={() => { onDeleteSelected(); trackEvent('批量删除选中的消息'); }}
+                        onClick={() => { onDeleteSelected(); }}
                         className={`${onForwardSelected ? 'flex-1' : 'w-full'} py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2`}
                     >
                         <Trash className="w-5 h-5" weight="bold" />

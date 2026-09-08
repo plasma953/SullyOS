@@ -8,7 +8,6 @@ import EmotionSettingsPanel from './EmotionSettingsPanel';
 import { isTranslationLangPreset, normalizeTranslationLangLabel, TRANSLATION_LANG_MAX_LENGTH, TRANSLATION_LANG_PRESETS } from '../../utils/translationLang';
 import type { ContextRangeMode, ContextRangeSnapshot } from '../../utils/chatContextRange';
 import type { ImageGenResolution } from '../../utils/imageGenTags';
-import { trackEvent } from '../../utils/analytics';
 import { CANTONESE_VOICE_SUPPORT_NOTE, VOICE_LANGUAGE_OPTIONS } from '../../utils/voiceLanguage';
 import { chatMessageFuzzyMatchesKeyword } from '../../utils/chatMessageSearch';
 
@@ -691,7 +690,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                  </span>
                              </button>
                              <button
-                                 onClick={() => { setModalType('memory-vectorize-confirm'); trackEvent('一键把聊天存进记忆宫殿'); }}
+                                 onClick={() => { setModalType('memory-vectorize-confirm'); }}
                                  disabled={isVectorizing}
                                  className="w-full py-3 bg-emerald-50 text-emerald-600 font-bold rounded-2xl border border-emerald-200 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-70"
                              >

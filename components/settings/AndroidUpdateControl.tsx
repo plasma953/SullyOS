@@ -7,7 +7,6 @@ import {
   isAndroidAppUpdateEnabled,
   type AndroidUpdateManifest,
 } from '../../utils/androidAppUpdate';
-import { trackEvent } from '../../utils/analytics';
 
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'permission' | 'installing' | 'latest' | 'error';
 
@@ -38,17 +37,14 @@ const AndroidUpdateControl: React.FC = () => {
         setManifest(null);
         setPhase('latest');
         setMessage(`当前 ${installed.versionName || installed.versionCode} 已是最新版`);
-        trackEvent('Android 检查更新', { result: 'latest', versionCode: installed.versionCode });
         return;
       }
       setManifest(latest);
       setPhase('available');
       setMessage(`发现新版本 ${latest.versionName}`);
-      trackEvent('Android 检查更新', { result: 'available', versionCode: latest.versionCode });
     } catch (error) {
       setPhase('error');
       setMessage(errorMessage(error));
-      trackEvent('Android 检查更新', { result: 'failed' });
     }
   };
 
@@ -72,11 +68,9 @@ const AndroidUpdateControl: React.FC = () => {
       const path = await downloadAndVerifyAndroidUpdate(manifest, setProgress);
       setDownloadedPath(path);
       await install(path, manifest);
-      trackEvent('Android 下载更新', { result: 'installer-opened', versionCode: manifest.versionCode });
     } catch (error) {
       setPhase('error');
       setMessage(errorMessage(error));
-      trackEvent('Android 下载更新', { result: 'failed', versionCode: manifest.versionCode });
     }
   };
 

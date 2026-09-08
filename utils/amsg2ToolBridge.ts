@@ -22,7 +22,6 @@ import {
 import { ActiveMsgClient } from './activeMsgClient';
 import { ActiveMsgStore } from './activeMsgStore';
 import { buildDuplicateToolMessage, toolCallFingerprint, type ToolCallRecord } from './agenticToolFeedback';
-import { trackEvent } from './analytics';
 import {
   applyScheduledTask, currentOccurrenceMs, describeExpirePolicy, describeRecurrence,
   describeTaskMode, describeTaskProgress, findTaskByShortId, formatTaskTime,
@@ -328,12 +327,6 @@ async function handleSchedule(args: Record<string, any>, deps: Amsg2ToolDeps): P
 
   // 只报枚举构成（模式/频率都是写死的取值集合）。内容、时间、编号一概不带。
   // 这份文件只在浏览器聊天侧运行（不进 amsg worker bundle），引 analytics 安全。
-  trackEvent('排程定时消息', {
-    mode,
-    recurrence,
-    source: 'character',
-    isEdit: args.__replaceTaskUuid ? 'yes' : 'no',
-  });
 
   const recurrenceDesc = recurrence === 'none' ? '' : `（${describeRecurrence(recurrence)}重复）`;
   // 续期/替换走的是「先建新的再取消旧的」，编号必然换一个。不说清楚的话，角色刚用

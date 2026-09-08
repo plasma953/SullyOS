@@ -3,13 +3,12 @@ import Modal from '../os/Modal';
 import { ActiveMsg2GlobalConfig, RealtimeConfig } from '../../types';
 import { isAmsgServerVersionAtLeast } from '../../utils/amsgWorkerVersion';
 import {
-  ActiveMsgClient, ActiveMsg2PushStatus, fetchWorkerDiagnostics, readAmsgFailKind,
+  ActiveMsgClient, ActiveMsg2PushStatus, fetchWorkerDiagnostics,
 } from '../../utils/activeMsgClient';
 import {
   AmsgDiagnosticLevel, AmsgDiagnosticsProbe,
   buildAmsgDiagnosticRows, summarizeAmsgDiagnostics,
   INSTANT_CHAT_BLOCKER_HINTS, INSTANT_CHAT_VPS_NOTICE, resolveInstantChatBlocker,
-  type InstantChatGateInput,
 } from '../../utils/amsgDiagnostics';
 import { ActiveMsgStore, maskActiveMsgUserId } from '../../utils/activeMsgStore';
 import { cancelAllRemoteAmsgTasks, isWorkerUrlCleared, wipeAmsgCloudData } from '../../utils/amsgStateSync';
@@ -18,7 +17,6 @@ import {
   loadInstantConfig,
   saveInstantConfig,
 } from '../../utils/instantPushClient';
-import { trackEvent } from '../../utils/analytics';
 
 // 主动消息需要一个 amsg 后端（地址填下面，协议与原 amsg worker 完全一致）。
 // 后端地址与共享密钥是部署者资产，不在仓库里放默认值；在设置页填你自己的。
@@ -103,11 +101,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   const [instantChatSupported, setInstantChatSupported] = useState(false);
   // 后端版本过旧（缺特性或版本号低于门槛）时亮牌。探测失败（断网等）不亮，避免误报。
   const [serverOutdated, setServerOutdated] = useState(false);
-  // 探测结果每次会话只报一次。refresh() 在开面板、连接成功、订阅成功后都会跑一遍，一个
-  // 连不上、反复点「连接」的人否则能一个人刷出十几条同样的结果，把分布带歪。
-  const workerCapsReported = useRef(false);
-  // 「即时对话开不了卡在哪」同样每次会话只报一次，理由同上。
-  const instantChatGateReported = useRef(false);
   // 已经存过盘的那个后端地址。清空确认要用它：确认之前不能换地址，
   // 取消远端任务的那几个请求还得发到旧那台上去。
   const savedWorkerUrlRef = useRef('');
@@ -126,44 +119,18 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
   };
 
   /**
-   * 报一次「即时对话此刻能不能开、开不了卡在哪」。
-   *
-   * 这一格只能在这儿收：开关灰着的时候用户什么都点不动，也就不会产生任何别的事件——
-   * 光看配置快照里那个开/关，被挡在门外的人和「不想要这功能的人」长得一模一样。
-   * 判定跟界面上那行黄字共用 resolveInstantChatBlocker，两处不会各说各话。
-   */
-  const reportInstantChatGate = (gate: InstantChatGateInput, enabled: boolean) => {
-    if (instantChatGateReported.current) return;
-    instantChatGateReported.current = true;
-    trackEvent('即时对话能不能开', {
-      result: resolveInstantChatBlocker(gate) ?? '可以开',
-      vpsMode: gate.vpsMode === true,
-      // 已经开着的人也报：他们卡住意味着「开的时候好好的，后来 Worker 退回旧版了」，那是一种发一条挂一条、但设置页还写着「已开启」的坏法。
-      state: enabled ? '已开着' : '还没开',
-    });
-  };
-
-  /**
    * 版本门槛探测：旧版后端会静默缺席新特性，用户不会来报，
    * 这条提示是唯一出口。后端升级后无需用户操作；停在旧版时亮牌。
    */
   const probeServerVersion = async () => {
-    const shouldReport = !workerCapsReported.current;
-    if (shouldReport) workerCapsReported.current = true;
     try {
       const caps = await ActiveMsgClient.getCapabilities();
       const missingFeature = !caps || REQUIRED_WORKER_FEATURES.some((f) => !caps.features.includes(f));
       const versionTooOld = !caps || !isAmsgServerVersionAtLeast(caps.serverVersion, REQUIRED_WORKER_VERSION);
       setServerOutdated(missingFeature || versionTooOld);
-      if (shouldReport) {
-        trackEvent('探测 2.0 后端能力', {
-          result: !caps ? '端点不存在' : missingFeature ? '缺特性' : versionTooOld ? '版本过旧' : 'ok',
-        });
-      }
     } catch {
       // 探测炸了（断网 / 地址不通）不亮牌免误报；它与「版本旧」是两回事。
       setServerOutdated(false);
-      if (shouldReport) trackEvent('探测 2.0 后端能力', { result: '探测失败' });
     }
   };
   const refresh = async () => {
@@ -176,13 +143,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
     if (nextConfig.workerUrl?.trim()) {
       void ActiveMsgClient.probeInstantChatSupport().then((supported) => {
         setInstantChatSupported(supported);
-        reportInstantChatGate({
-          connected: Boolean(nextConfig.initializedAt),
-          pushSubscribed: Boolean(nextPushStatus?.hasSubscription),
-          workerSupportsInstantChat: supported,
-          instantPushOn: isInstantConfigReady(),
-          vpsMode: nextConfig.instantChatVps === true,
-        }, Boolean(nextConfig.instantChatEnabled));
       });
       void runDiagnostics();
       void probeServerVersion();
@@ -261,12 +221,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       await ActiveMsgClient.registerPushSubscription();
       await refresh();
       addToast('通知权限和推送订阅已准备完成。', 'success');
-      trackEvent('开启通知与推送订阅', { result: 'ok' });
     } catch (error: any) {
       addToast(error?.message || '创建推送订阅失败。', 'error');
-      // 只报抛错那一刻挂上的代号（源码里写死的枚举）。错误原文可能带 push endpoint，
-      // 留在 toast 和 console 里，不进上报。
-      trackEvent('开启通知与推送订阅', { result: readAmsgFailKind(error) });
     } finally {
       setLoading(false);
     }
@@ -289,11 +245,8 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
       // 连上了但有一块是哑的（最典型是推送通道没通：任务建得成、到点一条都推不出去，
       // 而界面上没有任何异常）。这类问题用户自己发现不了，连接这一刻不说就没人说了。
       warnings.forEach((warning) => addToast(warning.message, 'info'));
-      // 只报「这次连接成没成 / 卡在哪一类」。连接串 / tenantToken / 错误原文一概不带。
-      trackEvent('连接并启用主动消息 2.0', { result: 'ok' });
     } catch (error: any) {
       addToast(error?.message || '连接失败。', 'error');
-      trackEvent('连接并启用主动消息 2.0', { result: readAmsgFailKind(error) });
     } finally {
       setLoading(false);
     }
@@ -357,8 +310,6 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
    */
   const handleToggleInstantChat = async () => {
     const next = !config?.instantChatEnabled;
-    // 开了又关是这条路上最值钱的信号：能开、开过、然后放弃了，跟「压根没开」不是一回事。
-    trackEvent('切换即时对话', { action: next ? '开' : '关' });
     patchConfig({ instantChatEnabled: next });
     await ActiveMsgStore.saveGlobalConfig({ instantChatEnabled: next });
     addToast(next ? '已开启即时对话，之后的聊天在你的后端上生成。' : '已关闭即时对话，聊天回到本地生成。', 'success');

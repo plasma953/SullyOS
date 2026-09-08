@@ -314,16 +314,6 @@ describe('设置页那一道门', () => {
     expect(settingsSrc).toContain('INSTANT_CHAT_BLOCKER_HINTS[instantChatBlocker]');
   });
 
-  it('开不了卡在哪要上报，且跟界面共用那份判定', () => {
-    // 开关灰着的时候用户什么都点不动，也就不会产生别的事件——不主动收的话，被挡在门外的人
-    // 和「不想要这功能的人」在数据里长得一模一样。
-    const report = sliceSrc(settingsSrc, '即时对话可用性上报', 'const reportInstantChatGate', '\n  const refresh');
-    expect(report).toContain('resolveInstantChatBlocker(gate)');
-    expect(report).toContain(`trackEvent('即时对话能不能开'`);
-    // 反复点「连接」的人否则一个人能刷出十几条同样的结果，把分布带歪。
-    expect(report).toContain('instantChatGateReported');
-  });
-
   it('开关落盘：两个 saveGlobalConfig 调用点都要带上它', () => {
     // 漏一处的话，用户改完 Worker 地址（或点一次「连接」）开关就被冲回默认值。
     const saves = settingsSrc.match(/ActiveMsgStore\.saveGlobalConfig\(\{[\s\S]{0,220}?\}\)/g) ?? [];

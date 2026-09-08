@@ -58,6 +58,5 @@ describe('换 / 移除桌面静态形象前先问一句衣柜', () => {
 
     it('旧的无条件裸删写法不再存在', () => {
         expect(source).not.toMatch(/if \(previousRef && previousRef !== imageRef\) await deleteBlobRef\(previousRef\);/);
-        expect(source).not.toMatch(/\n\s*await deleteBlobRef\(previousRef\);\s*\n\s*trackEvent/);
     });
 });

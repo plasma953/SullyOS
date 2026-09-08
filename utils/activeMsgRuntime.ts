@@ -35,7 +35,6 @@ import { describeInstantChatFailure, pruneStaleTasks, type RemoteTaskLastError }
 // 线协议常量的唯一出处是 shared（amsg-sw 只是 re-export 同一份）。
 import { MULTIPART_FAILURE_REASON } from '@rei-standard/amsg-shared';
 import { appendInstantTraceEntry } from './instantTraceLog';
-import { trackEvent } from './analytics';
 
 // 同一个 category，两个 tag——保持 console 里现有的 [ActiveMsg] / [amsg] 标签，
 // 方便用户 / 文档里 grep 历史报错信息。两条 tag 都归 instant-push 一类。
@@ -1591,13 +1590,6 @@ const notifyInboxProcessFailed = (
   // 时间线（跟「发消息本身不打点」同一条口径，见 docs/analytics.md）。
   // 三个代号都是这个函数入参上写死的取值，角色名 / 内容 / messageId 一概不带
   // （note 是给界面看的人话，同样不进埋点）。
-  trackEvent('主动消息送达失败', {
-    kind: kind === 'degraded' ? '原文降级'
-      : kind === 'swallowed' ? '被跳过'
-        : kind === 'schedule-missed' ? '日程没落地'
-          : '重试中',
-    stage,
-  });
   try {
     window.dispatchEvent(new CustomEvent('active-msg-process-failed', {
       detail: { charId: message.charId, charName: message.charName, kind, note },
@@ -2278,7 +2270,6 @@ export const resetOutboxCatchUpThrottleForTesting = (): void => { lastOutboxDrai
 const notifyOutboxStaleDropped = (count: number): void => {
   // 跟送达端其它失败共用一个事件名，只多一个写死的代号。条数不进上报——属性只能是
   // 固定枚举（见 docs/analytics.md），而且这一格要的是「有没有人在丢消息」，不是丢了几条。
-  trackEvent('主动消息送达失败', { kind: '超时丢弃', stage: '补收' satisfies InboxFailureStage });
   try {
     window.dispatchEvent(new CustomEvent('active-msg-backfill-stale', { detail: { count } }));
   } catch { /* SSR-safe */ }
@@ -2692,7 +2683,6 @@ export const refreshPushSubscriptionIfMarked = async (): Promise<'no-marker' | '
     log.warn('登记新的推送订阅失败，标记保留下次再试', { error: e });
     // 订阅换了却登记不上去 = 之后所有到点推送都石沉大海，而用户这侧一点感觉都没有
     // （角色就是不说话了）。只报「发生了」，错误原文里可能带 push endpoint，不带。
-    trackEvent('2.0推送订阅自检失败');
     return 'kept';
   }
 };

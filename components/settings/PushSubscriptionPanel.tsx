@@ -34,7 +34,6 @@ import {
   isSupportBad,
   liveFailureKind,
 } from '../../utils/pushDiagnosticsView';
-import { bucketRetryCount, trackEvent } from '../../utils/analytics';
 
 interface PushSubscriptionPanelProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -120,7 +119,6 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
       clearPendingTest();
       setTesting(false);
       addToast('收到了！推送这条链路是通的。', 'success');
-      trackEvent('发送测试推送', { result: 'received' });
     };
     window.addEventListener('active-msg-test', onTestEcho);
     return () => {
@@ -143,10 +141,6 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
       setZombieStreak(0);
       addToast('订阅已重建，并登记到了云端上。', 'success');
       // 只报「成不成 / 是哪一档 / 之前失败了几次」，全是源码里写死的枚举。
-      trackEvent(deepMode ? '深度重置推送订阅' : '重置推送订阅', {
-        result: 'success',
-        attempt: bucketRetryCount(zombieStreak),
-      });
     } catch (error: any) {
       const failKind = readAmsgFailKind(error);
       // 僵尸端点是「重试也没用」的那一类，攒够次数把按钮升级成深度重置。
@@ -154,10 +148,6 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
       if (failKind === '端点僵尸') setZombieStreak((count) => count + 1);
       // 报错原文可能带 push endpoint，只留在 toast 和控制台里，不进上报。
       addToast(error?.message || '重置订阅失败。', 'error');
-      trackEvent(deepMode ? '深度重置推送订阅' : '重置推送订阅', {
-        result: failKind,
-        attempt: bucketRetryCount(zombieStreak),
-      });
     } finally {
       setResetting(false);
       await refresh();
@@ -221,14 +211,11 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
         testTimeoutRef.current = null;
         setTesting(false);
         addToast('页面没收到回音——如果通知栏弹了就是通的（页面在后台时回音送不到）。', 'info');
-        trackEvent('发送测试推送', { result: 'timeout' });
       }, PUSH_TEST_COOLDOWN_MS);
       addToast('测试推送已发出，盯着通知栏看（锁屏/后台也能收到）。', 'info');
-      trackEvent('发送测试推送', { result: 'sent' });
     } catch (error: any) {
       setTesting(false);
       addToast(error?.message || '测试推送发送失败。', 'error');
-      trackEvent('发送测试推送', { result: 'failed' });
     }
   };
 
@@ -265,22 +252,6 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
           <p className="text-xs font-semibold text-slate-600">链路状态</p>
           <button
             onClick={() => {
-              // 全是浏览器/设备状态的固定枚举，不含端点地址、也不含任何用户配置值
-              trackEvent('刷新 Web Push 诊断', browser ? {
-                permission: browser.permission,
-                subscription: !browser.endpoint ? 'none' : browser.endpointDead ? 'dead' : 'active',
-                swState: browser.swState === 'activated' ? 'activated' : browser.swState === 'none' ? 'none' : 'other',
-                platform: browser.capacitorNative ? 'capacitor_native' : browser.iosNeedsPwa ? 'ios_needs_pwa' : 'normal',
-                registration,
-                // 「接口全在但这台设备就是建不出订阅」的唯一可见出口。取的是共用层那个
-                // 固定枚举，不含报错原文。
-                lastFailure: liveFailureKind(browser) ?? 'none',
-                // 「登记全对但推送被退回」有多普遍。四个取值全是这儿写死的字面量，
-                // 不带状态码原文、不带端点、不带失败原因。
-                delivery: !delivery || !delivery.probed ? 'unknown'
-                  : delivery.gone && deliveryVerdict ? 'gone'
-                    : delivery.gone ? 'recovered' : 'clean',
-              } : undefined);
               void refresh();
             }}
             disabled={refreshing || resetting}
