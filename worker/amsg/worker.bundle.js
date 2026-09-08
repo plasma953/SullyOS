@@ -946,7 +946,7 @@ function stripReasoningTags(content) {
   return content.replace(REASONING_TAG_RE_G, "").trim();
 }
 function buildSessionContext({
-  sessionId,
+  sessionId: sessionId2,
   messages,
   llmResponse,
   iteration,
@@ -965,7 +965,7 @@ function buildSessionContext({
     llmResponse.usage
   ) : null;
   const ctx = {
-    sessionId,
+    sessionId: sessionId2,
     charId,
     messages,
     llmResponse,
@@ -2388,7 +2388,7 @@ function createResultEmitter({
   userKey,
   decryptedPayload,
   messageIdBase,
-  sessionId,
+  sessionId: sessionId2,
   occurrenceMs,
   webpush,
   now
@@ -2410,7 +2410,7 @@ function createResultEmitter({
       messageType: decryptedPayload.messageType || "auto",
       source: "scheduled",
       messageId: `${messageIdBase}_result_${seq}`,
-      sessionId,
+      sessionId: sessionId2,
       ...payload,
       // 通知策略：宿主没表态就补一句「弹」。写进 payload 而不是只靠 SW 的默
       // 认行为，是为了让还没升级 SW 的客户端也弹得出来——旧版 SW 不认识
@@ -2608,7 +2608,7 @@ async function runAgenticFire({ task, decryptedPayload, userKey, ctx }) {
     maxStateValueBytes: ctx.maxStateValueBytes,
     now: nowFn
   });
-  const sessionId = task.id != null ? `sess_task_${task.id}${occurrenceSuffix(task)}` : `sess_${randomUUID()}`;
+  const sessionId2 = task.id != null ? `sess_task_${task.id}${occurrenceSuffix(task)}` : `sess_${randomUUID()}`;
   const messageIdBase = task.id != null ? `msg_task_${task.id}${occurrenceSuffix(task)}` : `msg_${randomUUID()}`;
   const occurrenceMs = occurrenceMsOf(task);
   const { emitResult } = createResultEmitter({
@@ -2617,7 +2617,7 @@ async function runAgenticFire({ task, decryptedPayload, userKey, ctx }) {
     userKey,
     decryptedPayload,
     messageIdBase,
-    sessionId,
+    sessionId: sessionId2,
     occurrenceMs,
     webpush: ctx.webpush,
     now: nowFn
@@ -2890,7 +2890,7 @@ async function runAgenticFire({ task, decryptedPayload, userKey, ctx }) {
       resolveLlmCredential: resolveLlmCredential2,
       fireCtx,
       progress,
-      sessionId,
+      sessionId: sessionId2,
       messageIdBase,
       occurrenceMs
     });
@@ -2942,7 +2942,7 @@ async function runFireChain({
   resolveLlmCredential: resolveLlmCredential2,
   fireCtx,
   progress,
-  sessionId,
+  sessionId: sessionId2,
   messageIdBase,
   occurrenceMs
 }) {
@@ -2989,7 +2989,7 @@ async function runFireChain({
     progress.usage = llmResponse && typeof llmResponse === "object" && llmResponse.usage || null;
     const sessionCtx = Object.freeze({
       ...buildSessionContext({
-        sessionId,
+        sessionId: sessionId2,
         messages,
         llmResponse,
         iteration,
@@ -3029,7 +3029,7 @@ async function runFireChain({
         pushPayloads: decision.pushPayloads,
         decryptedPayload,
         ctx,
-        sessionId,
+        sessionId: sessionId2,
         messageIdBase,
         occurrenceMs,
         task,
@@ -3114,7 +3114,7 @@ async function sendHookPushPayloads({
   pushPayloads,
   decryptedPayload,
   ctx,
-  sessionId,
+  sessionId: sessionId2,
   messageIdBase,
   occurrenceMs,
   task,
@@ -3146,7 +3146,7 @@ async function sendHookPushPayloads({
     for (let i = 0; i < total; i++) {
       const push = { ...pushPayloads[i] };
       if (typeof push.messageId !== "string" || !push.messageId) push.messageId = `${messageIdBase}_hook_${i}`;
-      if (typeof push.sessionId !== "string" || !push.sessionId) push.sessionId = sessionId;
+      if (typeof push.sessionId !== "string" || !push.sessionId) push.sessionId = sessionId2;
       if (typeof push.timestamp !== "string" || !push.timestamp) push.timestamp = (/* @__PURE__ */ new Date()).toISOString();
       push.messageIndex = i + 1;
       push.totalMessages = total;
@@ -3327,7 +3327,7 @@ async function processSingleMessage(task, ctx, providedMasterKey, predecrypted =
       userKey,
       legacyFallback: decryptedPayload.pushSubscription ?? null
     });
-    const sessionId = task.id != null ? `sess_task_${task.id}${occurrenceSuffix(task)}` : `sess_${randomUUID()}`;
+    const sessionId2 = task.id != null ? `sess_task_${task.id}${occurrenceSuffix(task)}` : `sess_${randomUUID()}`;
     const source = decryptedPayload.messageType === "instant" ? "instant" : "scheduled";
     const messageSubtype = decryptedPayload.messageSubtype || "chat";
     const avatarUrl = decryptedPayload.avatarUrl || null;
@@ -3341,7 +3341,7 @@ async function processSingleMessage(task, ctx, providedMasterKey, predecrypted =
         messageType: decryptedPayload.messageType,
         source,
         messageId: `${messageIdBase}_reasoning`,
-        sessionId,
+        sessionId: sessionId2,
         reasoningContent: reasoning,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         title: `\u6765\u81EA ${decryptedPayload.contactName}`,
@@ -3357,7 +3357,7 @@ async function processSingleMessage(task, ctx, providedMasterKey, predecrypted =
         messageType: decryptedPayload.messageType,
         source,
         messageId: `${messageIdBase}_${i}`,
-        sessionId,
+        sessionId: sessionId2,
         message: messages[i],
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
         title: `\u6765\u81EA ${decryptedPayload.contactName}`,
@@ -6770,7 +6770,7 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
 }
 
 // utils/amsgBundleVersion.ts
-var AMSG_BUNDLE_VERSION = "2026-08-19";
+var AMSG_BUNDLE_VERSION = "2026-09-08";
 
 // utils/amsgTaskKinds.ts
 var AMSG_TASK_KIND_KEY = "amsgKind";
@@ -9579,7 +9579,7 @@ var callMcpToolCore = async (target, session, toolName, args = {}, opts = {}) =>
     return finish({ success: false, error: e?.message || String(e) });
   }
 };
-var buildMcpDirectHeaders = (server, sessionId, protocolVersion = null) => {
+var buildMcpDirectHeaders = (server, sessionId2, protocolVersion = null) => {
   const headers = {
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream"
@@ -9590,7 +9590,7 @@ var buildMcpDirectHeaders = (server, sessionId, protocolVersion = null) => {
     if (name && value) headers[name] = value;
   }
   if (server.token) headers["Authorization"] = `Bearer ${server.token}`;
-  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  if (sessionId2) headers["Mcp-Session-Id"] = sessionId2;
   if (protocolVersion) headers["MCP-Protocol-Version"] = protocolVersion;
   return headers;
 };
@@ -10255,16 +10255,16 @@ var mcpPost = async (serverUrl, body, expectResponse = true) => {
   };
   if (mcpSessionId) headers["Mcp-Session-Id"] = mcpSessionId;
   const resp = await fetch(serverUrl, { method: "POST", headers, body: JSON.stringify(body) });
-  const sessionId = resp.headers.get("Mcp-Session-Id") || resp.headers.get("mcp-session-id");
-  if (resp.status === 202) return { response: null, sessionId };
+  const sessionId2 = resp.headers.get("Mcp-Session-Id") || resp.headers.get("mcp-session-id");
+  if (resp.status === 202) return { response: null, sessionId: sessionId2 };
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
     throw new Error(`MCP HTTP ${resp.status}: ${errText.slice(0, 200)}`);
   }
-  if (!expectResponse) return { response: null, sessionId };
+  if (!expectResponse) return { response: null, sessionId: sessionId2 };
   const contentType = resp.headers.get("content-type") || "";
   const text = await resp.text();
-  return { response: mcpParseResponse(text, contentType), sessionId };
+  return { response: mcpParseResponse(text, contentType), sessionId: sessionId2 };
 };
 var mcpInitialize = async (serverUrl) => {
   const initReq = mcpBuildRequest("initialize", {
@@ -10272,8 +10272,8 @@ var mcpInitialize = async (serverUrl) => {
     capabilities: {},
     clientInfo: { name: "AetherOS-XhsFreeRoam", version: "1.0.0" }
   });
-  const { response, sessionId } = await mcpPost(serverUrl, initReq);
-  if (sessionId) mcpSessionId = sessionId;
+  const { response, sessionId: sessionId2 } = await mcpPost(serverUrl, initReq);
+  if (sessionId2) mcpSessionId = sessionId2;
   if (response?.error) throw new Error(`MCP Initialize failed: ${response.error.message}`);
   if (!mcpSessionId) {
     console.warn(
@@ -12674,6 +12674,51 @@ var maskAndSnip = (text, apiKey) => {
   if (apiKey && snippet.includes(apiKey)) snippet = snippet.split(apiKey).join("***");
   return snippet.slice(0, ERROR_SNIPPET_MAX);
 };
+var parseEvalBodyText = (text) => {
+  const trimmed = text.trimStart();
+  if (!trimmed) throw new Error("\u8BC4\u4F30\u63A5\u53E3\u8FD4\u56DE\u4E86\u7A7A\u54CD\u5E94");
+  if (trimmed.startsWith("<")) throw new Error("\u8BC4\u4F30\u63A5\u53E3\u8FD4\u56DE\u4E86 HTML \u800C\u975E JSON");
+  const firstLine = text.split(/\r?\n/).map((line) => line.trimStart()).find((line) => line.length > 0) || "";
+  const looksSse = firstLine.startsWith("data:") || firstLine.startsWith(":") || firstLine.startsWith("event:") || firstLine.startsWith("id:") || firstLine.startsWith("retry:");
+  if (looksSse && !/^[{["<]/.test(firstLine)) {
+    let content = "";
+    let reasoning = "";
+    let finishReason = null;
+    let gotChunk = false;
+    for (const line of text.split(/\r?\n/)) {
+      const item = line.trimStart();
+      if (!item.startsWith("data:")) continue;
+      const payload = item.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let chunk;
+      try {
+        chunk = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+      gotChunk = true;
+      const choice = chunk?.choices?.[0];
+      if (!choice) continue;
+      const part = choice.delta ?? choice.message;
+      if (part) {
+        if (typeof part.content === "string") content += part.content;
+        const channel = part.reasoning_content ?? part.reasoning;
+        if (typeof channel === "string") reasoning += channel;
+      }
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+    }
+    if (gotChunk) {
+      return {
+        choices: [{
+          message: { content, reasoning_content: reasoning || void 0 },
+          finish_reason: finishReason
+        }]
+      };
+    }
+    throw new Error("\u8BC4\u4F30\u63A5\u53E3\u7684\u6D41\u5F0F\u54CD\u5E94\u91CC\u6CA1\u6709\u6709\u6548\u6570\u636E");
+  }
+  return JSON.parse(text);
+};
 var requestEmotionEval = async (api, promptContent, timeoutMs = EMOTION_EVAL_TIMEOUT_MS) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -12697,16 +12742,21 @@ var requestEmotionEval = async (api, promptContent, timeoutMs = EMOTION_EVAL_TIM
       signal: controller.signal
     });
     if (!res.ok) {
-      let body = "";
+      let body2 = "";
       try {
-        body = await res.text();
+        body2 = await res.text();
       } catch {
       }
       console.warn("[emotion-eval] \u526F API \u62D2\u4E86\u8FD9\u6B21\u8BC4\u4F30\uFF08\u4E3B\u6D41\u7A0B\u4E0D\u53D7\u5F71\u54CD\uFF09", res.status);
-      const snippet = maskAndSnip(body, api.apiKey);
+      const snippet = maskAndSnip(body2, api.apiKey);
       return { raw: null, error: `\u526F API HTTP ${res.status}${snippet ? `\uFF1A${snippet}` : ""}` };
     }
-    const data = await res.json();
+    let body = "";
+    try {
+      body = await res.text();
+    } catch {
+    }
+    const data = parseEvalBodyText(body);
     const message = data?.choices?.[0]?.message;
     const raw = flattenEvalContent(message?.content) || (typeof message?.reasoning_content === "string" ? message.reasoning_content : "");
     if (!raw.trim()) {
@@ -12913,7 +12963,68 @@ var isFcmConfigured = (env) => Boolean(
   env.FCM_PROJECT_ID?.trim() && env.FCM_SERVICE_ACCOUNT_EMAIL?.trim() && env.FCM_SERVICE_ACCOUNT_PRIVATE_KEY?.trim()
 );
 
+// utils/llmIdentity.ts
+var OPENCODE_HOST_RE = /(^|\.)opencode\.ai$/i;
+var CHAT_COMPLETIONS_RE = /\/chat\/completions$/;
+var INSTALL_FLAG = "__sullyosOpencodeIdentityInstalled";
+var DEFAULT_UA = "SullyOS-Worker/1.0 (+https://github.com/plasma953/SullyOS)";
+var sessionId = null;
+var userAgent = DEFAULT_UA;
+function resolveSessionId() {
+  if (!sessionId) {
+    try {
+      sessionId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    } catch {
+      sessionId = `fallback-${Date.now().toString(36)}`;
+    }
+  }
+  return sessionId;
+}
+function identityHeadersFor(url) {
+  if (!OPENCODE_HOST_RE.test(url.hostname)) return null;
+  if (!CHAT_COMPLETIONS_RE.test(url.pathname)) return null;
+  return {
+    "user-agent": userAgent,
+    "x-opencode-session": resolveSessionId()
+  };
+}
+function parseUrl(input) {
+  try {
+    if (typeof input === "string") return new URL(input);
+    if (input instanceof URL) return input;
+  } catch {
+    return null;
+  }
+  return null;
+}
+function installOpencodeIdentityFetch(ua) {
+  const g = globalThis;
+  if (g[INSTALL_FLAG]) return;
+  g[INSTALL_FLAG] = true;
+  userAgent = ua || DEFAULT_UA;
+  const originalFetch = g.fetch.bind(g);
+  const patched = (input, init) => {
+    try {
+      const url = parseUrl(input);
+      const extra = url ? identityHeadersFor(url) : null;
+      const method = String(init?.method ?? "POST").toUpperCase();
+      if (!extra || method !== "POST" || input instanceof Request) {
+        return originalFetch(input, init);
+      }
+      const headers = new Headers(init?.headers);
+      for (const [name, value] of Object.entries(extra)) {
+        if (!headers.has(name)) headers.set(name, value);
+      }
+      return originalFetch(input, { ...init, headers });
+    } catch {
+      return originalFetch(input, init);
+    }
+  };
+  g.fetch = patched;
+}
+
 // worker/amsg/src/index.ts
+installOpencodeIdentityFetch("SullyOS-AmsgWorker/1.0 (+https://github.com/plasma953/SullyOS)");
 var getFireStash = (scratch) => scratch?.fire;
 var laterOf = (a, b) => a == null ? b : b == null ? a : Math.max(a, b);
 var buildToolCtx = (pack, config) => {

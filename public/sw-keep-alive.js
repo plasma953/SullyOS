@@ -2021,8 +2021,8 @@ async function saveIncomingActiveMessage(payload) {
       return;
     }
     default:
-      console.warn("[amsg] unknown messageKind, falling back to content", messageKind);
-      await saveContentToInbox(payload);
+      traceSw("route-payload-unknown-kind", payload, { route: messageKind });
+      console.warn("[amsg] unknown messageKind, dropped (not content)", messageKind);
   }
 }
 sw.addEventListener("pushsubscriptionchange", (event) => {

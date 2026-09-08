@@ -24,6 +24,11 @@ import { classifyLLMOutput } from './classifier';
 import { sanitizeIntoSegments, type Segment } from '../../../utils/sanitize';
 import { INSTANT_WORKER_VERSION } from '../../../utils/instantWorkerVersion';
 import { requestEmotionEval, restoreEvalPrompt } from '../../../utils/emotionEvalCore';
+import { installOpencodeIdentityFetch } from '../../../utils/llmIdentity';
+
+// opencode.ai 上游自标识（同 worker/amsg）：LLM 凭据是原始供应商地址、直连调用，
+// 必须带 User-Agent + x-opencode-session（Go 防滥用要求）才不会被拒。
+installOpencodeIdentityFetch('SullyOS-InstantPush/1.0 (+https://github.com/plasma953/SullyOS)');
 
 export interface Env {
   VAPID_PUBLIC_KEY: string;

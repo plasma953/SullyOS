@@ -850,7 +850,7 @@ var LlmCallError = class extends Error {
   }
 };
 function buildSessionContext({
-  sessionId,
+  sessionId: sessionId2,
   messages,
   llmResponse,
   iteration,
@@ -861,7 +861,7 @@ function buildSessionContext({
 }) {
   const llmOutputText = readLlmOutputText(llmResponse);
   const ctx = {
-    sessionId,
+    sessionId: sessionId2,
     charId,
     messages,
     llmResponse,
@@ -980,14 +980,14 @@ function ensureStableMessageId(push) {
     { ...obj, messageId: `msg_${randomUUID()}` }
   );
 }
-async function deliverPush(push, payload, ctx, sessionId) {
+async function deliverPush(push, payload, ctx, sessionId2) {
   if (ctx.deliver) {
     await ctx.deliver(push);
   } else {
-    await sendPushWithMaybeBlob(ensureStableMessageId(push), payload, ctx, sessionId);
+    await sendPushWithMaybeBlob(ensureStableMessageId(push), payload, ctx, sessionId2);
   }
 }
-async function sendPushesSequentially(pushPayloads, payload, ctx, sessionId, sleep) {
+async function sendPushesSequentially(pushPayloads, payload, ctx, sessionId2, sleep) {
   const total = pushPayloads.length;
   const spacingMs = Number.isFinite(ctx.spacingMs) && ctx.spacingMs >= 0 ? ctx.spacingMs : SLEEP_BETWEEN_MESSAGES_MS;
   for (let i = 0; i < total; i++) {
@@ -995,7 +995,7 @@ async function sendPushesSequentially(pushPayloads, payload, ctx, sessionId, sle
     push.messageIndex = i + 1;
     push.totalMessages = total;
     try {
-      await deliverPush(push, payload, ctx, sessionId);
+      await deliverPush(push, payload, ctx, sessionId2);
     } catch (err) {
       if (err && (err.code === "HOOK_THREW" || err.code === "PAYLOAD_TOO_LARGE")) {
         throw err;
@@ -1013,8 +1013,8 @@ async function sendPushesSequentially(pushPayloads, payload, ctx, sessionId, sle
   }
   return total;
 }
-async function emitReasoning(reasoningPush, payload, ctx, sessionId) {
-  await deliverPush(reasoningPush, payload, ctx, sessionId);
+async function emitReasoning(reasoningPush, payload, ctx, sessionId2) {
+  await deliverPush(reasoningPush, payload, ctx, sessionId2);
   return 1;
 }
 function normalizeAiApiUrl(apiUrl) {
@@ -1141,7 +1141,7 @@ async function runLegacyInstant(payload, ctx) {
   const onEvent = typeof ctx.onEvent === "function" ? ctx.onEvent : () => {
   };
   const spacingMs = Number.isFinite(ctx.spacingMs) && ctx.spacingMs >= 0 ? ctx.spacingMs : SLEEP_BETWEEN_MESSAGES_MS;
-  const sessionId = typeof payload.sessionId === "string" && payload.sessionId ? payload.sessionId : `sess_${randomUUID()}`;
+  const sessionId2 = typeof payload.sessionId === "string" && payload.sessionId ? payload.sessionId : `sess_${randomUUID()}`;
   let llmResponse;
   let messageContent;
   try {
@@ -1153,7 +1153,7 @@ async function runLegacyInstant(payload, ctx) {
     );
     llmResponse = response;
     messageContent = content.trim();
-    onEvent({ type: "llm_done", sessionId });
+    onEvent({ type: "llm_done", sessionId: sessionId2 });
   } catch (err) {
     const error = new Error(err?.message || "LLM call failed");
     error.code = "LLM_CALL_FAILED";
@@ -1170,7 +1170,7 @@ async function runLegacyInstant(payload, ctx) {
       messageType: MESSAGE_TYPE.INSTANT,
       source: PUSH_SOURCE.INSTANT,
       messageId: `msg_${randomUUID()}_instant_reasoning`,
-      sessionId,
+      sessionId: sessionId2,
       reasoningContent: reasoning,
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       title: `\u6765\u81EA ${contactName}`,
@@ -1181,11 +1181,11 @@ async function runLegacyInstant(payload, ctx) {
     });
     let reasoningShipped = false;
     try {
-      await emitReasoning(reasoningPush, payload, ctx, sessionId);
+      await emitReasoning(reasoningPush, payload, ctx, sessionId2);
       reasoningShipped = true;
-      onEvent({ type: "reasoning_pushed", sessionId });
+      onEvent({ type: "reasoning_pushed", sessionId: sessionId2 });
     } catch (err) {
-      onEvent({ type: "reasoning_push_failed", sessionId, cause: err });
+      onEvent({ type: "reasoning_push_failed", sessionId: sessionId2, cause: err });
     }
     if (reasoningShipped && spacingMs > 0) {
       await sleep(spacingMs);
@@ -1201,7 +1201,7 @@ async function runLegacyInstant(payload, ctx) {
       messageType: MESSAGE_TYPE.INSTANT,
       source: PUSH_SOURCE.INSTANT,
       messageId: `msg_${randomUUID()}_instant_${i}`,
-      sessionId,
+      sessionId: sessionId2,
       message: messages[i],
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       title: `\u6765\u81EA ${contactName}`,
@@ -1214,8 +1214,8 @@ async function runLegacyInstant(payload, ctx) {
       metadata
     });
     try {
-      await deliverPush(contentPush, payload, ctx, sessionId);
-      onEvent({ type: "push_sent", messageIndex: i + 1, totalMessages: messages.length, sessionId });
+      await deliverPush(contentPush, payload, ctx, sessionId2);
+      onEvent({ type: "push_sent", messageIndex: i + 1, totalMessages: messages.length, sessionId: sessionId2 });
     } catch (err) {
       if (err && err.code === "PAYLOAD_TOO_LARGE") throw err;
       const error = new Error(err?.message || "Web Push delivery failed");
@@ -1231,7 +1231,7 @@ async function runLegacyInstant(payload, ctx) {
   return {
     messagesSent: messages.length,
     sentAt: (/* @__PURE__ */ new Date()).toISOString(),
-    sessionId
+    sessionId: sessionId2
   };
 }
 async function runAgenticLoop(payload, ctx) {
@@ -1240,15 +1240,15 @@ async function runAgenticLoop(payload, ctx) {
   const onEvent = typeof ctx.onEvent === "function" ? ctx.onEvent : () => {
   };
   const maxLoopIterations = Number.isInteger(ctx.maxLoopIterations) && ctx.maxLoopIterations > 0 ? ctx.maxLoopIterations : DEFAULT_MAX_LOOP_ITERATIONS;
-  const sessionId = typeof payload.sessionId === "string" && payload.sessionId ? payload.sessionId : randomUUID();
+  const sessionId2 = typeof payload.sessionId === "string" && payload.sessionId ? payload.sessionId : randomUUID();
   const autoEmitReasoning = ctx.autoEmitReasoning !== false;
   if (ctx.isResume) {
-    onEvent({ type: "continue_received", sessionId, iteration: payload.iteration ?? 0 });
+    onEvent({ type: "continue_received", sessionId: sessionId2, iteration: payload.iteration ?? 0 });
   }
   let messages = Array.isArray(payload.messages) ? payload.messages.slice() : [];
   let iteration = Number.isInteger(payload.iteration) ? payload.iteration : 0;
   while (iteration < maxLoopIterations) {
-    onEvent({ type: "llm_start", sessionId, iteration });
+    onEvent({ type: "llm_start", sessionId: sessionId2, iteration });
     let llmResponse;
     try {
       const { response } = await callLlmRaw(
@@ -1259,10 +1259,10 @@ async function runAgenticLoop(payload, ctx) {
       );
       llmResponse = response;
     } catch (err) {
-      onEvent({ type: "llm_call_failed", sessionId, iteration, cause: err });
+      onEvent({ type: "llm_call_failed", sessionId: sessionId2, iteration, cause: err });
       throw new LlmCallError(err?.message || "LLM call failed", { cause: err });
     }
-    onEvent({ type: "llm_done", sessionId, iteration });
+    onEvent({ type: "llm_done", sessionId: sessionId2, iteration });
     const assistantMessage = extractAssistantMessage(llmResponse);
     messages = [...messages, assistantMessage];
     if (autoEmitReasoning) {
@@ -1272,7 +1272,7 @@ async function runAgenticLoop(payload, ctx) {
           messageType: MESSAGE_TYPE.INSTANT,
           source: PUSH_SOURCE.INSTANT,
           messageId: `msg_${randomUUID()}_iter_${iteration}_reasoning`,
-          sessionId,
+          sessionId: sessionId2,
           reasoningContent: reasoning,
           timestamp: (/* @__PURE__ */ new Date()).toISOString(),
           title: payload.contactName ? `\u6765\u81EA ${payload.contactName}` : void 0,
@@ -1282,15 +1282,15 @@ async function runAgenticLoop(payload, ctx) {
           metadata: payload.metadata || {}
         });
         try {
-          await emitReasoning(reasoningPush, payload, ctx, sessionId);
-          onEvent({ type: "reasoning_pushed", sessionId, iteration });
+          await emitReasoning(reasoningPush, payload, ctx, sessionId2);
+          onEvent({ type: "reasoning_pushed", sessionId: sessionId2, iteration });
         } catch (err) {
-          onEvent({ type: "reasoning_push_failed", sessionId, iteration, cause: err });
+          onEvent({ type: "reasoning_push_failed", sessionId: sessionId2, iteration, cause: err });
         }
       }
     }
     const sessionCtx = buildSessionContext({
-      sessionId,
+      sessionId: sessionId2,
       messages,
       llmResponse,
       iteration,
@@ -1304,21 +1304,21 @@ async function runAgenticLoop(payload, ctx) {
       decision = await ctx.onLLMOutput(sessionCtx);
       assertValidDecision(decision);
     } catch (err) {
-      onEvent({ type: "hook_threw", sessionId, iteration, cause: err });
+      onEvent({ type: "hook_threw", sessionId: sessionId2, iteration, cause: err });
       const diagnostic2 = buildErrorPush({
         messageType: MESSAGE_TYPE.INSTANT,
         source: PUSH_SOURCE.INSTANT,
         messageId: `msg_${randomUUID()}_iter_${iteration}_error`,
-        sessionId,
+        sessionId: sessionId2,
         code: "HOOK_THREW",
         message: err?.message ?? "onLLMOutput hook threw",
         iteration,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        await deliverPush(diagnostic2, payload, ctx, sessionId);
+        await deliverPush(diagnostic2, payload, ctx, sessionId2);
       } catch (pushErr) {
-        onEvent({ type: "diagnostic_push_failed", code: "HOOK_THREW", sessionId, cause: pushErr });
+        onEvent({ type: "diagnostic_push_failed", code: "HOOK_THREW", sessionId: sessionId2, cause: pushErr });
       }
       throw new HookError(`onLLMOutput threw: ${err?.message ?? err}`, { cause: err });
     }
@@ -1328,40 +1328,40 @@ async function runAgenticLoop(payload, ctx) {
       continue;
     }
     if (decision.decision === "skip-push") {
-      return { status: "skipped", sessionId, iteration };
+      return { status: "skipped", sessionId: sessionId2, iteration };
     }
     const messagesSent = await sendPushesSequentially(
       decision.pushPayloads,
       payload,
       ctx,
-      sessionId,
+      sessionId2,
       sleep
     );
     onEvent({
       type: decision.decision === "finish" ? "final_pushed" : "tool_request_pushed",
-      sessionId,
+      sessionId: sessionId2,
       iteration,
       messagesSent
     });
-    return { status: decision.decision === "finish" ? "finished" : "tool_requested", sessionId, iteration };
+    return { status: decision.decision === "finish" ? "finished" : "tool_requested", sessionId: sessionId2, iteration };
   }
-  onEvent({ type: "loop_exceeded", sessionId, iteration });
+  onEvent({ type: "loop_exceeded", sessionId: sessionId2, iteration });
   const diagnostic = buildErrorPush({
     messageType: "instant",
     source: "instant",
     messageId: `msg_${randomUUID()}_loop_exceeded`,
-    sessionId,
+    sessionId: sessionId2,
     code: "LOOP_EXCEEDED",
     message: `Agentic loop exceeded ${maxLoopIterations} iterations`,
     iteration,
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
   try {
-    await deliverPush(diagnostic, payload, ctx, sessionId);
+    await deliverPush(diagnostic, payload, ctx, sessionId2);
   } catch (err) {
-    onEvent({ type: "diagnostic_push_failed", code: "LOOP_EXCEEDED", sessionId, cause: err });
+    onEvent({ type: "diagnostic_push_failed", code: "LOOP_EXCEEDED", sessionId: sessionId2, cause: err });
   }
-  return { status: "loop_exceeded", sessionId, iteration };
+  return { status: "loop_exceeded", sessionId: sessionId2, iteration };
 }
 function assertValidDecision(decision) {
   if (!decision || typeof decision !== "object") {
@@ -1429,7 +1429,7 @@ function stringifyForError(value) {
     return String(value);
   }
 }
-async function sendPushWithMaybeBlob(pushPayload, payload, ctx, sessionId) {
+async function sendPushWithMaybeBlob(pushPayload, payload, ctx, sessionId2) {
   const onEvent = typeof ctx.onEvent === "function" ? ctx.onEvent : () => {
   };
   const fetchImpl = ctx.fetch || globalThis.fetch;
@@ -1456,7 +1456,7 @@ async function sendPushWithMaybeBlob(pushPayload, payload, ctx, sessionId) {
   if (!ctx.blobStore || !ctx.blobStore.adapter) {
     const multipart = resolveRuntimeMultipartOptions(ctx);
     if (!multipart.enabled) {
-      onEvent({ type: "payload_too_large", byteLen, maxInline, sessionId });
+      onEvent({ type: "payload_too_large", byteLen, maxInline, sessionId: sessionId2 });
       throw new PayloadTooLargeError(byteLen, maxInline);
     }
     await sendMultipartPushes(pushPayload, {
@@ -1467,7 +1467,7 @@ async function sendPushWithMaybeBlob(pushPayload, payload, ctx, sessionId) {
       onEvent,
       payload,
       serialized,
-      sessionId,
+      sessionId: sessionId2,
       vapid: ctx.vapid
     });
     return;
@@ -1478,10 +1478,10 @@ async function sendPushWithMaybeBlob(pushPayload, payload, ctx, sessionId) {
   try {
     await adapter.put(key, serialized, ttl);
   } catch (err) {
-    onEvent({ type: "blob_put_failed", key, sessionId, cause: err });
+    onEvent({ type: "blob_put_failed", key, sessionId: sessionId2, cause: err });
     throw new PayloadTooLargeError(byteLen, maxInline, { cause: err });
   }
-  onEvent({ type: "blob_written", key, size: byteLen, sessionId });
+  onEvent({ type: "blob_written", key, size: byteLen, sessionId: sessionId2 });
   const blobUrl = buildBlobUrl(ctx.requestUrl, key);
   const payloadObj = pushPayload && typeof pushPayload === "object" ? pushPayload : {};
   const envelope = {
@@ -1514,7 +1514,7 @@ async function sendPushWithMaybeBlob(pushPayload, payload, ctx, sessionId) {
       fetch: fetchImpl
     });
   } catch (err) {
-    onEvent({ type: "blob_orphaned", key, size: byteLen, sessionId, cause: err });
+    onEvent({ type: "blob_orphaned", key, size: byteLen, sessionId: sessionId2, cause: err });
     throw err;
   }
 }
@@ -1548,12 +1548,12 @@ async function sendMultipartPushes(pushPayload, args) {
     onEvent,
     payload,
     serialized,
-    sessionId,
+    sessionId: sessionId2,
     vapid
   } = args;
   const originalMessageKind = getOriginalMessageKind(pushPayload);
   if (originalMessageKind === MULTIPART_MESSAGE_KIND) {
-    onEvent({ type: "payload_too_large", byteLen, maxInline, sessionId });
+    onEvent({ type: "payload_too_large", byteLen, maxInline, sessionId: sessionId2 });
     throw new PayloadTooLargeError(byteLen, maxInline);
   }
   if (byteLen > multipart.maxTotalBytes) {
@@ -1562,7 +1562,7 @@ async function sendMultipartPushes(pushPayload, args) {
       byteLen,
       maxTotalBytes: multipart.maxTotalBytes,
       originalMessageKind,
-      sessionId
+      sessionId: sessionId2
     });
     throw new PayloadTooLargeError(byteLen, maxInline);
   }
@@ -1578,7 +1578,7 @@ async function sendMultipartPushes(pushPayload, args) {
       maxChunks: multipart.maxChunks,
       totalChunks: parts.length,
       originalMessageKind,
-      sessionId
+      sessionId: sessionId2
     });
     throw new PayloadTooLargeError(byteLen, maxInline);
   }
@@ -1593,7 +1593,7 @@ async function sendMultipartPushes(pushPayload, args) {
     byteLen,
     totalChunks: parts.length,
     originalMessageKind,
-    sessionId
+    sessionId: sessionId2
   });
   for (const part of parts) {
     await sendWebPush({
@@ -1603,7 +1603,7 @@ async function sendMultipartPushes(pushPayload, args) {
       fetch: fetchImpl
     });
   }
-  onEvent({ type: "multipart_sent", id, totalChunks: parts.length, originalMessageKind, sessionId });
+  onEvent({ type: "multipart_sent", id, totalChunks: parts.length, originalMessageKind, sessionId: sessionId2 });
 }
 function getOriginalMessageKind(pushPayload) {
   return pushPayload && typeof pushPayload === "object" ? (
@@ -1743,7 +1743,7 @@ function createInstantHandler(options) {
     }
     try {
       const isPurePush = acceptsJsonOnly(request.headers.get("accept"));
-      const sessionId = typeof payload.sessionId === "string" && payload.sessionId ? payload.sessionId : `sess_${randomUUID()}`;
+      const sessionId2 = typeof payload.sessionId === "string" && payload.sessionId ? payload.sessionId : `sess_${randomUUID()}`;
       const processorCtx = {
         vapid: options.vapid,
         fetch: options.fetch || globalThis.fetch,
@@ -1760,13 +1760,13 @@ function createInstantHandler(options) {
       const runWithLifecycleHooks = async () => {
         let pending;
         if (onBeforeLoop) {
-          pending = await onBeforeLoop({ requestBody: payload, sessionId, metadata: hookMetadata });
+          pending = await onBeforeLoop({ requestBody: payload, sessionId: sessionId2, metadata: hookMetadata });
         }
-        const result = await processInstantMessage({ ...payload, sessionId }, processorCtx);
+        const result = await processInstantMessage({ ...payload, sessionId: sessionId2 }, processorCtx);
         if (onAfterLoop) {
           await onAfterLoop({
             deliver: processorCtx.deliver,
-            sessionId,
+            sessionId: sessionId2,
             metadata: hookMetadata,
             requestBody: payload,
             pending
@@ -1776,7 +1776,7 @@ function createInstantHandler(options) {
       };
       if (isPurePush) {
         processorCtx.deliver = async (pushPayload) => {
-          await sendPushWithMaybeBlob(ensureStableMessageId(pushPayload), payload, processorCtx, sessionId);
+          await sendPushWithMaybeBlob(ensureStableMessageId(pushPayload), payload, processorCtx, sessionId2);
         };
         const work = runWithLifecycleHooks();
         registerWaitUntil(work, resolveWaitUntil(envOrRuntime, runtime, options), onEvent);
@@ -1808,13 +1808,13 @@ function createInstantHandler(options) {
       const messageIdOf = (body) => body && typeof body === "object" && typeof body.messageId === "string" ? body.messageId : void 0;
       const scheduleBackupPush = (body) => {
         const messageId = messageIdOf(body);
-        onEvent({ type: "backup_push_scheduled", sessionId, messageId });
+        onEvent({ type: "backup_push_scheduled", sessionId: sessionId2, messageId });
         const work = (async () => {
           try {
-            await sendPushWithMaybeBlob(body, payload, processorCtx, sessionId);
-            onEvent({ type: "backup_push_sent", sessionId, messageId });
+            await sendPushWithMaybeBlob(body, payload, processorCtx, sessionId2);
+            onEvent({ type: "backup_push_sent", sessionId: sessionId2, messageId });
           } catch (pushErr) {
-            onEvent({ type: "backup_push_failed", sessionId, messageId, cause: pushErr });
+            onEvent({ type: "backup_push_failed", sessionId: sessionId2, messageId, cause: pushErr });
           }
         })();
         trackBackupWork(work);
@@ -1848,7 +1848,7 @@ function createInstantHandler(options) {
               if (!streamUsable) return;
               streamUsable = false;
               stopKeepalive();
-              onEvent({ type: "sse_stream_aborted", sessionId });
+              onEvent({ type: "sse_stream_aborted", sessionId: sessionId2 });
             };
             request.signal.addEventListener("abort", onAbort);
             if (request.signal.aborted) onAbort();
@@ -1861,10 +1861,10 @@ function createInstantHandler(options) {
               const messageId = messageIdOf(stableBody);
               const fallback = async () => {
                 try {
-                  await sendPushWithMaybeBlob(stableBody, payload, processorCtx, sessionId);
-                  onEvent({ type: "fallback_push_sent", sessionId, messageId, eventName });
+                  await sendPushWithMaybeBlob(stableBody, payload, processorCtx, sessionId2);
+                  onEvent({ type: "fallback_push_sent", sessionId: sessionId2, messageId, eventName });
                 } catch (pushErr) {
-                  onEvent({ type: "fallback_push_failed", sessionId, messageId, eventName, cause: pushErr });
+                  onEvent({ type: "fallback_push_failed", sessionId: sessionId2, messageId, eventName, cause: pushErr });
                   if (onFallbackFail) onFallbackFail(pushErr);
                 }
               };
@@ -1879,12 +1879,12 @@ function createInstantHandler(options) {
 data: ${JSON.stringify(stableBody)}
 
 `));
-                onEvent({ type: "sse_payload_enqueued", sessionId, messageId, eventName });
+                onEvent({ type: "sse_payload_enqueued", sessionId: sessionId2, messageId, eventName });
                 scheduleBackupPush(stableBody);
               } catch (err) {
                 streamUsable = false;
                 stopKeepalive();
-                onEvent({ type: "sse_payload_enqueue_failed", sessionId, messageId, eventName, cause: err });
+                onEvent({ type: "sse_payload_enqueue_failed", sessionId: sessionId2, messageId, eventName, cause: err });
                 await fallback();
               }
             };
@@ -1906,13 +1906,13 @@ data: ${JSON.stringify(stableBody)}
                   messageType: MESSAGE_TYPE.INSTANT,
                   source: PUSH_SOURCE.INSTANT,
                   messageId: `msg_${randomUUID()}_error`,
-                  sessionId,
+                  sessionId: sessionId2,
                   code: err?.code || "INTERNAL_ERROR",
                   message: err?.message || "\u5185\u90E8\u9519\u8BEF",
                   timestamp: (/* @__PURE__ */ new Date()).toISOString()
                 });
                 await safeEnqueue("error", diag, (pushErr) => {
-                  onEvent({ type: "sse_error_fallback_failed", sessionId, cause: pushErr });
+                  onEvent({ type: "sse_error_fallback_failed", sessionId: sessionId2, cause: pushErr });
                 });
               }
             } finally {
@@ -1925,7 +1925,7 @@ data: ${JSON.stringify(stableBody)}
           cancel(reason) {
             streamUsable = false;
             stopKeepalive();
-            onEvent({ type: "sse_stream_canceled", sessionId, reason });
+            onEvent({ type: "sse_stream_canceled", sessionId: sessionId2, reason });
           }
         }),
         {
@@ -3018,7 +3018,7 @@ function classifyLLMOutput(text) {
 }
 
 // utils/instantWorkerVersion.ts
-var INSTANT_WORKER_VERSION = "2026-08-19";
+var INSTANT_WORKER_VERSION = "2026-09-08";
 
 // utils/emotionEvalCore.ts
 var EMOTION_EVAL_SYSTEM_SLOT = "__EMOTION_EVAL_SYSTEM_PROMPT__";
@@ -3051,6 +3051,51 @@ var maskAndSnip = (text, apiKey) => {
   if (apiKey && snippet.includes(apiKey)) snippet = snippet.split(apiKey).join("***");
   return snippet.slice(0, ERROR_SNIPPET_MAX);
 };
+var parseEvalBodyText = (text) => {
+  const trimmed = text.trimStart();
+  if (!trimmed) throw new Error("\u8BC4\u4F30\u63A5\u53E3\u8FD4\u56DE\u4E86\u7A7A\u54CD\u5E94");
+  if (trimmed.startsWith("<")) throw new Error("\u8BC4\u4F30\u63A5\u53E3\u8FD4\u56DE\u4E86 HTML \u800C\u975E JSON");
+  const firstLine = text.split(/\r?\n/).map((line) => line.trimStart()).find((line) => line.length > 0) || "";
+  const looksSse = firstLine.startsWith("data:") || firstLine.startsWith(":") || firstLine.startsWith("event:") || firstLine.startsWith("id:") || firstLine.startsWith("retry:");
+  if (looksSse && !/^[{["<]/.test(firstLine)) {
+    let content = "";
+    let reasoning = "";
+    let finishReason = null;
+    let gotChunk = false;
+    for (const line of text.split(/\r?\n/)) {
+      const item = line.trimStart();
+      if (!item.startsWith("data:")) continue;
+      const payload = item.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let chunk;
+      try {
+        chunk = JSON.parse(payload);
+      } catch {
+        continue;
+      }
+      gotChunk = true;
+      const choice = chunk?.choices?.[0];
+      if (!choice) continue;
+      const part = choice.delta ?? choice.message;
+      if (part) {
+        if (typeof part.content === "string") content += part.content;
+        const channel = part.reasoning_content ?? part.reasoning;
+        if (typeof channel === "string") reasoning += channel;
+      }
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+    }
+    if (gotChunk) {
+      return {
+        choices: [{
+          message: { content, reasoning_content: reasoning || void 0 },
+          finish_reason: finishReason
+        }]
+      };
+    }
+    throw new Error("\u8BC4\u4F30\u63A5\u53E3\u7684\u6D41\u5F0F\u54CD\u5E94\u91CC\u6CA1\u6709\u6709\u6548\u6570\u636E");
+  }
+  return JSON.parse(text);
+};
 var requestEmotionEval = async (api, promptContent, timeoutMs = EMOTION_EVAL_TIMEOUT_MS) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -3074,16 +3119,21 @@ var requestEmotionEval = async (api, promptContent, timeoutMs = EMOTION_EVAL_TIM
       signal: controller.signal
     });
     if (!res.ok) {
-      let body = "";
+      let body2 = "";
       try {
-        body = await res.text();
+        body2 = await res.text();
       } catch {
       }
       console.warn("[emotion-eval] \u526F API \u62D2\u4E86\u8FD9\u6B21\u8BC4\u4F30\uFF08\u4E3B\u6D41\u7A0B\u4E0D\u53D7\u5F71\u54CD\uFF09", res.status);
-      const snippet = maskAndSnip(body, api.apiKey);
+      const snippet = maskAndSnip(body2, api.apiKey);
       return { raw: null, error: `\u526F API HTTP ${res.status}${snippet ? `\uFF1A${snippet}` : ""}` };
     }
-    const data = await res.json();
+    let body = "";
+    try {
+      body = await res.text();
+    } catch {
+    }
+    const data = parseEvalBodyText(body);
     const message = data?.choices?.[0]?.message;
     const raw = flattenEvalContent(message?.content) || (typeof message?.reasoning_content === "string" ? message.reasoning_content : "");
     if (!raw.trim()) {
@@ -3102,7 +3152,68 @@ var requestEmotionEval = async (api, promptContent, timeoutMs = EMOTION_EVAL_TIM
   }
 };
 
+// utils/llmIdentity.ts
+var OPENCODE_HOST_RE = /(^|\.)opencode\.ai$/i;
+var CHAT_COMPLETIONS_RE = /\/chat\/completions$/;
+var INSTALL_FLAG = "__sullyosOpencodeIdentityInstalled";
+var DEFAULT_UA = "SullyOS-Worker/1.0 (+https://github.com/plasma953/SullyOS)";
+var sessionId = null;
+var userAgent = DEFAULT_UA;
+function resolveSessionId() {
+  if (!sessionId) {
+    try {
+      sessionId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    } catch {
+      sessionId = `fallback-${Date.now().toString(36)}`;
+    }
+  }
+  return sessionId;
+}
+function identityHeadersFor(url) {
+  if (!OPENCODE_HOST_RE.test(url.hostname)) return null;
+  if (!CHAT_COMPLETIONS_RE.test(url.pathname)) return null;
+  return {
+    "user-agent": userAgent,
+    "x-opencode-session": resolveSessionId()
+  };
+}
+function parseUrl(input) {
+  try {
+    if (typeof input === "string") return new URL(input);
+    if (input instanceof URL) return input;
+  } catch {
+    return null;
+  }
+  return null;
+}
+function installOpencodeIdentityFetch(ua) {
+  const g = globalThis;
+  if (g[INSTALL_FLAG]) return;
+  g[INSTALL_FLAG] = true;
+  userAgent = ua || DEFAULT_UA;
+  const originalFetch = g.fetch.bind(g);
+  const patched = (input, init) => {
+    try {
+      const url = parseUrl(input);
+      const extra = url ? identityHeadersFor(url) : null;
+      const method = String(init?.method ?? "POST").toUpperCase();
+      if (!extra || method !== "POST" || input instanceof Request) {
+        return originalFetch(input, init);
+      }
+      const headers = new Headers(init?.headers);
+      for (const [name, value] of Object.entries(extra)) {
+        if (!headers.has(name)) headers.set(name, value);
+      }
+      return originalFetch(input, { ...init, headers });
+    } catch {
+      return originalFetch(input, init);
+    }
+  };
+  g.fetch = patched;
+}
+
 // worker/instant-push/src/index.ts
+installOpencodeIdentityFetch("SullyOS-InstantPush/1.0 (+https://github.com/plasma953/SullyOS)");
 var MULTIPART_TRANSPORT = { enabled: true };
 var UTILITY_CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -3162,23 +3273,23 @@ var TRACE_EVENT_TYPES = /* @__PURE__ */ new Set([
 var POST_ABORT_HEARTBEAT_MS = 1e4;
 var POST_ABORT_HEARTBEAT_MAX_TICKS = 30;
 var postAbortWatchers = /* @__PURE__ */ new Map();
-function startPostAbortHeartbeat(sessionId) {
-  if (postAbortWatchers.has(sessionId)) return;
+function startPostAbortHeartbeat(sessionId2) {
+  if (postAbortWatchers.has(sessionId2)) return;
   const abortedAt = Date.now();
   let ticks = 0;
   const timer = setInterval(() => {
     ticks += 1;
     console.log("[instant-push:trace]", {
       type: "post_abort_alive",
-      sessionId,
+      sessionId: sessionId2,
       sinceAbortMs: Date.now() - abortedAt
     });
     if (ticks >= POST_ABORT_HEARTBEAT_MAX_TICKS) {
       clearInterval(timer);
-      postAbortWatchers.delete(sessionId);
+      postAbortWatchers.delete(sessionId2);
     }
   }, POST_ABORT_HEARTBEAT_MS);
-  postAbortWatchers.set(sessionId, timer);
+  postAbortWatchers.set(sessionId2, timer);
 }
 function flattenAmsgEvent(e) {
   const cause = e.cause;
@@ -3414,15 +3525,15 @@ var cfWorker = createCloudflareWorker((env) => {
       if (!requestBody?.emotionEval) return void 0;
       return { emotionEval: runEmotionEval(requestBody) };
     },
-    onAfterLoop: async ({ deliver, pending, requestBody, sessionId }) => {
+    onAfterLoop: async ({ deliver, pending, requestBody, sessionId: sessionId2 }) => {
       if (!pending?.emotionEval) return;
       try {
         const { raw: emotionRaw, error: emotionError } = await pending.emotionEval;
         const charId = requestBody?.charId || requestBody?.metadata?.charId || "";
         await deliver({
           messageKind: "emotion_update",
-          messageId: `msg_${sessionId}_emotion`,
-          sessionId,
+          messageId: `msg_${sessionId2}_emotion`,
+          sessionId: sessionId2,
           metadata: {
             ...requestBody?.metadata || {},
             charId,
@@ -3538,12 +3649,12 @@ async function onLLMOutput(ctx) {
   return decision;
 }
 function buildPushDecision(input, deps) {
-  const { llmOutputText, sessionId, iteration, contactName, avatarUrl, callerMetadata } = input;
+  const { llmOutputText, sessionId: sessionId2, iteration, contactName, avatarUrl, callerMetadata } = input;
   const result = classifyLLMOutput(llmOutputText);
   const baseCommon = {
     messageType: MESSAGE_TYPE.INSTANT,
     source: PUSH_SOURCE.INSTANT,
-    sessionId,
+    sessionId: sessionId2,
     contactName,
     avatarUrl
   };
@@ -3552,12 +3663,12 @@ function buildPushDecision(input, deps) {
   if (result.kind === "tool-request") {
     const narrationSegments = sanitizeIntoSegments(result.prefix);
     const narrationPushes = narrationSegments.map(
-      (seg, i) => buildSegmentPush({ seg, baseCommon, notificationTitle, callerMetadata, iteration, chunkIdx: i, sessionId })
+      (seg, i) => buildSegmentPush({ seg, baseCommon, notificationTitle, callerMetadata, iteration, chunkIdx: i, sessionId: sessionId2 })
     );
     const toolPush = {
       ...buildToolRequestPush({
         ...baseCommon,
-        messageId: `msg_${sessionId}_${iteration}_toolreq`,
+        messageId: `msg_${sessionId2}_${iteration}_toolreq`,
         message: "",
         toolCalls: result.toolCalls,
         metadata: {
@@ -3579,7 +3690,7 @@ function buildPushDecision(input, deps) {
       baseCommon,
       callerMetadata,
       iteration,
-      sessionId,
+      sessionId: sessionId2,
       directives: result.directives
     });
     warnIfPayloadLarge(directiveOnlyPush, deps?.onSizeWarn);
@@ -3594,7 +3705,7 @@ function buildPushDecision(input, deps) {
       callerMetadata,
       iteration,
       chunkIdx: i,
-      sessionId,
+      sessionId: sessionId2,
       // directives 只挂在最后一条 push 上, 客户端按 messageIndex==totalMessages 守卫
       directives: i === lastIdx ? result.directives : void 0
     })
@@ -3603,10 +3714,10 @@ function buildPushDecision(input, deps) {
   return { decision: "finish", pushPayloads };
 }
 function buildDirectiveOnlyPush(args) {
-  const { baseCommon, callerMetadata, iteration, sessionId, directives } = args;
+  const { baseCommon, callerMetadata, iteration, sessionId: sessionId2, directives } = args;
   return buildContentPush({
     ...baseCommon,
-    messageId: `msg_${sessionId}_${iteration}_directive`,
+    messageId: `msg_${sessionId2}_${iteration}_directive`,
     message: "",
     metadata: {
       ...callerMetadata,
@@ -3616,11 +3727,11 @@ function buildDirectiveOnlyPush(args) {
   });
 }
 function buildSegmentPush(args) {
-  const { seg, baseCommon, notificationTitle, callerMetadata, iteration, chunkIdx, sessionId, directives } = args;
+  const { seg, baseCommon, notificationTitle, callerMetadata, iteration, chunkIdx, sessionId: sessionId2, directives } = args;
   return {
     ...buildContentPush({
       ...baseCommon,
-      messageId: `msg_${sessionId}_${iteration}_chunk_${chunkIdx}`,
+      messageId: `msg_${sessionId2}_${iteration}_chunk_${chunkIdx}`,
       message: seg.raw,
       metadata: {
         ...callerMetadata,

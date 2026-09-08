@@ -160,6 +160,12 @@ import {
 import { buildScheduleChangeResult } from '../../../utils/amsgScheduleResult';
 import type { ActiveMsg2TaskRecord } from '../../../types';
 import { createHybridPushTransport, isFcmConfigured, type NativeFcmEnv } from './nativeFcm';
+import { installOpencodeIdentityFetch } from '../../../utils/llmIdentity';
+
+// opencode.ai 上游自标识：凭据表里存的是原始供应商地址，worker 直连时必须带
+// User-Agent + x-opencode-session（Go 防滥用要求），否则所有 LLM 调用到点必被拒。
+// 上游 SDK 的 callLlm / 情绪评估全在调用时现取 globalThis.fetch，模块顶层装一次全覆盖。
+installOpencodeIdentityFetch('SullyOS-AmsgWorker/1.0 (+https://github.com/plasma953/SullyOS)');
 
 interface Env extends NativeFcmEnv {
   AMSG_MASTER_KEY: string;
