@@ -232,12 +232,11 @@ async function rateLimited(db, ipHash, action, limit, windowMs = WINDOW_MS, cost
   ).bind(bucket, cost, now + windowMs, now, cost, cost, now, now + windowMs).first();
   return (row?.count ?? cost) > limit;
 }
-function isAdmin(req, url, env) {
+function isAdmin(req, _url, env) {
   if (!env.ADMIN_TOKEN) return false;
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  const token = bearer || url.searchParams.get("token") || "";
-  return token === env.ADMIN_TOKEN;
+  return bearer !== "" && bearer === env.ADMIN_TOKEN;
 }
 var src_default = {
   async fetch(req, env) {
