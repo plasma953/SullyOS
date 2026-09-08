@@ -51,52 +51,10 @@ export {
     HOTNEWS_API_BASE_URL,
 } from './realtimeWorldCore';
 
-export interface RealtimeConfig {
-    // 天气配置
-    weatherEnabled: boolean;
-    weatherApiKey: string;  // OpenWeatherMap API Key（可选；留空走免 key 的 Open-Meteo）
-    weatherCity: string;    // 城市名 (如 "北京"、"Beijing"，Open-Meteo 支持中文)
-
-    // 真实地点配置（高德 Web 服务：地理编码 / 逆地理 / POI 检索 / 输入提示）
-    amapApiKey?: string;    // 高德 Web 服务 Key（个人认证免费；留空则地点只走 Open-Meteo 城市级）
-    /** 把「用户那边」（用户所在城市 + 天气）告诉角色。未显式 false 即开。 */
-    userPerceptionEnabled?: boolean;
-
-    // 新闻配置
-    newsEnabled: boolean;
-    newsApiKey?: string;    // 可选，Brave Search 回落源用
-    newsPlatforms?: string[]; // hot_news 热榜平台 key（默认主源，免鉴权），留空用内置默认
-
-    // Notion 配置
-    notionEnabled: boolean;
-    notionApiKey: string;   // Notion Integration Token
-    notionDatabaseId: string; // 日记数据库ID
-    notionNotesDatabaseId?: string; // 用户笔记数据库ID（可选）
-
-    // 飞书配置
-    feishuEnabled?: boolean;
-    feishuAppId?: string;
-    feishuAppSecret?: string;
-    feishuBaseId?: string;
-    feishuTableId?: string;
-
-    // 小红书配置 (xiaohongshu-skills)
-    xhsEnabled?: boolean;
-    xhsMcpConfig?: {
-        enabled: boolean;
-        mode?: 'local' | 'lite';
-        serverUrl: string;
-        cookie?: string;        // Lite 模式：登录后的完整小红书 cookie
-        platform?: 'xhs' | 'rednote'; // Lite 自动识别出的国内 / 全球后端
-        rnoteApiKey?: string;   // Lite 模式：用户自备的 Rnote Key，用于真实评论
-        loggedInNickname?: string;
-        loggedInUserId?: string;
-        userXsecToken?: string; // 从 feed 列表自动获取，用于 getUserProfile 等
-    };
-
-    // 缓存配置
-    cacheMinutes: number;   // 缓存时长（分钟）
-}
+// RealtimeConfig 唯一事实来源：../types（本地重复声明已删，加字段只改那边）。
+// 这里 import + re-export，本地注解与旧导入路径（./realtimeContext）继续可用。
+import type { RealtimeConfig } from '../types';
+export type { RealtimeConfig };
 
 // 默认配置
 export const defaultRealtimeConfig: RealtimeConfig = {
@@ -109,6 +67,11 @@ export const defaultRealtimeConfig: RealtimeConfig = {
     notionEnabled: false,
     notionApiKey: '',
     notionDatabaseId: '',
+    feishuEnabled: false,
+    feishuAppId: '',
+    feishuAppSecret: '',
+    feishuBaseId: '',
+    feishuTableId: '',
     xhsEnabled: false,
     xhsMcpConfig: {
         enabled: false,

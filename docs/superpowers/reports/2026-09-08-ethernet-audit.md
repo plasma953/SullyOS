@@ -146,7 +146,7 @@
 | P3-13 | MiniMax 映射下沉共享层（聊天/见面/番茄钟自动中文化）；鱼声对齐 ElevenLabs 风格 | minimaxTts.ts(+test)、CallApp.tsx（委托）、fishAudioTts.ts |
 | P3-14 | SW 未知 kind 改丢弃+trace（缺字段老 worker 仍走 content） | worker/sw-keep-alive.ts（无单测：export 手术不值得，已逐行复核） |
 | P3-16 | 城市缓存 20 城 LRU（淘汰失败不影响写入） | cityPlaces.ts(.test.ts) |
-| P3-6/8 | 未动：types.ts 有终端 WIP，RealtimeConfig 双声明 + 注入注释两处留给 WIP 合并时顺手收 | — |
+| P3-6/8 | 未动→已收：types.ts 注入注释修正 + realtimeContext 本地声明删除改 import（tsc 48 零新增，实时域 55 用例过；types.ts 那 1 行随终端 WIP 一起提交） | types.ts（未提交）、realtimeContext.ts |
 
 ## 6. 修复分批建议
 
