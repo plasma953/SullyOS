@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
 # 密钥泄露扫描：提交前/部署后检查仓库与运行目录中是否有疑似明文凭证。
-# 检查项：GitHub PAT、API Key、私钥头、.env 实体文件、VAPID 私钥。
+# 检查项：GitHub PAT、API Key、私钥头、.env 实体文件、VAPID 私钥、
+# Replicate r8_、latent lat_sk_、Notion ntn_/secret_（上下文限定）、
+# Supabase JWT（eyJ…）、amap/weather/supabaseAnon/CLIENT_TOKEN 赋值形态。
 #
 # 用法：bash deploy/scripts/secret-scan.sh [仓库根目录]
 
@@ -17,7 +19,20 @@ PATTERNS=(
   'AIza[0-9A-Za-z_-]{30,}'
   '-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----'
   'VAPID_PRIVATE_KEY=[A-Za-z0-9_-]{20,}'
+  'r8_[A-Za-z0-9]{8,}'
+  'lat_sk_[A-Za-z0-9_-]{8,}'
+  'ntn_[A-Za-z0-9]{8,}'
+  '[Nn]otion.{0,80}secret_[A-Za-z0-9]{8,}'
+  'eyJ[A-Za-z0-9_-]{10,}\.'
+  "(amapApiKey|weatherApiKey|supabaseAnonKey|CLIENT_TOKEN)[[:space:]]*[:=][[:space:]]*[\"'][A-Za-z0-9._-]{8,}"
 )
+
+# 占位/示例不算泄露：sk-none 等
+ALLOWLIST=(
+  'sk-none'
+  'sk-test'
+)
+ALLOW_RE=$(IFS='|'; echo "${ALLOWLIST[*]}")
 
 echo "[secret-scan] 扫描: $ROOT"
 while IFS= read -r file; do
@@ -25,9 +40,10 @@ while IFS= read -r file; do
     */node_modules/*|*/.git/*|*/data/*|*/backups/*|*/logs/*|*/bundles/*|*.db|*.db-wal|*.db-shm) continue ;;
   esac
   for pat in "${PATTERNS[@]}"; do
-    if grep -qEn "$pat" "$file" 2>/dev/null; then
+    matches=$(grep -nE "$pat" "$file" 2>/dev/null | grep -vE "$ALLOW_RE" || true)
+    if [ -n "$matches" ]; then
       echo "  ✗ 疑似泄露: $file"
-      grep -nE "$pat" "$file" | sed 's/^/      /' | cut -c1-160
+      echo "$matches" | sed 's/^/      /' | cut -c1-160
       FOUND=1
     fi
   done

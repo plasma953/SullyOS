@@ -682,8 +682,11 @@ async function saveIncomingActiveMessage(payload: any) {
     }
 
     default:
-      console.warn('[amsg] unknown messageKind, falling back to content', messageKind);
-      await saveContentToInbox(payload);
+      // 未知 kind 不再回落 content 写聊天气泡（否则新 kind/老 worker 缺字段
+      // 会污染聊天流）：只记 trace 丢弃。缺字段的老 worker 在上面已默认 content，
+      // 能进这里的一定是带了未知非空 kind 的新 payload。
+      traceSw('route-payload-unknown-kind', payload, { route: messageKind });
+      console.warn('[amsg] unknown messageKind, dropped (not content)', messageKind);
   }
 }
 
