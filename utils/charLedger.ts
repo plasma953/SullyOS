@@ -1,5 +1,6 @@
 // ============================================================
 // charLedger: char-owned bank bookkeeping.
+// 选卡共享 charDefaultCard，写入各走各的（CheckPhone 随机 tx-char-* vs char 下单幂等 tx-order-<orderId>）。
 // Shared by CheckPhone purchase simulation (Phase 3) and char-placed
 // orders (Phase 4). Every char purchase writes exactly one outflow
 // BankTransaction with ownerId=charId, so:

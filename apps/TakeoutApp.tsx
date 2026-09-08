@@ -12,7 +12,7 @@ import {
 import { loadShoppingData, sortShopsForAddress } from '../utils/shoppingData';
 import GoodsSvg from '../components/GoodsSvg';
 import { buildShoppingOrderTag, sanitizeOrderField } from '../utils/shoppingFormat';
-import { roundMoney, sumMoney } from '../utils/format';
+import { roundMoney, sumMoney, formatMoney } from '../utils/format';
 import { trackEvent } from '../utils/analytics';
 import { LoaderDots } from '../utils/appLoaderDots';
 import { CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
@@ -32,11 +32,6 @@ interface TargetInfo {
 const EMOJI_FALLBACK: Record<string, string> = {
   '美食外卖': '🍜', '奶茶饮品': '🧋', '甜品蛋糕': '🍰', '超市便利': '🏪',
   '生鲜果蔬': '🥬', '医药健康': '💊', '鲜花绿植': '💐',
-};
-
-const fmtMoney = (n: number) => {
-  const v = Math.round(n * 100) / 100;
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 };
 
 const STATUS_FLOW: ShoppingOrder['status'][] = ['pending_pay', 'paid', 'accepted', 'delivering', 'delivered'];
@@ -286,7 +281,7 @@ export default function TakeoutApp() {
     }
     const payCard = scoped.find(c => c.isDefault) || scoped[0];
     if (payCard.balance < cartTotal) {
-      setPayErr(`「${payCard.name}·${payCard.tailNo}」余额不足（¥${fmtMoney(payCard.balance)}），去存钱罐充值或换卡`);
+      setPayErr(`「${payCard.name}·${payCard.tailNo}」余额不足（¥${formatMoney(payCard.balance)}），去存钱罐充值或换卡`);
       return;
     }
     const order: ShoppingOrder = {
@@ -465,7 +460,7 @@ export default function TakeoutApp() {
                         <div className="text-[12px] font-bold truncate">{dish.name}</div>
                         <div className="text-[10px] text-slate-400 truncate">{shop.name}{dish.qty ? ` · ${dish.qty}` : ''}</div>
                       </div>
-                      <span className="text-[12px] font-bold text-orange-500 shrink-0">¥{fmtMoney(dish.price)}</span>
+                      <span className="text-[12px] font-bold text-orange-500 shrink-0">¥{formatMoney(dish.price)}</span>
                     </div>
                   ))}
                 </div>
@@ -488,7 +483,7 @@ export default function TakeoutApp() {
                     )}
                   </div>
                   <div className="text-[11px] text-amber-500 font-bold mt-0.5">★ {s.rating?.toFixed(1) || '4.5'} <span className="text-slate-400 font-normal">月售{s.monthlySales || 0}</span></div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">起送¥{fmtMoney(s.minOrder || 0)} · 配送¥{fmtMoney(s.deliveryFee || 0)} · {s.deliveryTime || '30分钟'} · {s.cat}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">起送¥{formatMoney(s.minOrder || 0)} · 配送¥{formatMoney(s.deliveryFee || 0)} · {s.deliveryTime || '30分钟'} · {s.cat}</div>
                 </div>
                 <div className="self-center text-slate-300 shrink-0">›</div>
               </div>
@@ -506,7 +501,7 @@ export default function TakeoutApp() {
             <div className="flex-1" />
             {cart && cart.items.length > 0 && (
               <button onClick={() => setView('checkout')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-400 text-white text-[13px] font-bold">
-                🛒 {cartCount} 件 · ¥{fmtMoney(cartTotal)} 去结算
+                🛒 {cartCount} 件 · ¥{formatMoney(cartTotal)} 去结算
               </button>
             )}
           </div>
@@ -528,7 +523,7 @@ export default function TakeoutApp() {
                     <div className="text-[13px] font-bold truncate">{d.name}</div>
                     <div className="text-[10px] text-slate-400 truncate">{d.qty || d.desc || d.cat}</div>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-[14px] font-bold text-orange-500">¥{fmtMoney(d.price)}</span>
+                      <span className="text-[14px] font-bold text-orange-500">¥{formatMoney(d.price)}</span>
                       <div className="flex items-center gap-1.5">
                         {(() => {
                           const inCart = cart?.items.find(i => i.dishId === d.id);
@@ -551,7 +546,7 @@ export default function TakeoutApp() {
           {cart && cart.items.length > 0 && (
             <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">
               <button onClick={() => setView('checkout')} className="flex-1 flex items-center gap-2 px-4 py-2 rounded-full bg-amber-400 text-white text-[13px] font-bold justify-center">
-                🛒 {cartCount} 件 · ¥{fmtMoney(cartTotal)} 去结算
+                🛒 {cartCount} 件 · ¥{formatMoney(cartTotal)} 去结算
               </button>
             </div>
           )}
@@ -570,17 +565,17 @@ export default function TakeoutApp() {
             {cart.items.map(i => (
               <div key={i.dishId} className="flex justify-between text-[12px]">
                 <span className="truncate">{i.name} × {i.qty}</span>
-                <span className="shrink-0 ml-2">¥{fmtMoney(i.lineTotal)}</span>
+                <span className="shrink-0 ml-2">¥{formatMoney(i.lineTotal)}</span>
               </div>
             ))}
             <div className="border-t border-slate-100 pt-2 flex justify-between text-[13px] font-bold">
-              <span>合计{cartShop ? `（含配送费¥${fmtMoney(cartShop.deliveryFee || 0)}）` : ''}</span>
-              <span className="text-orange-500">¥{fmtMoney(cartTotal + (activeShop?.deliveryFee || 0))}</span>
+              <span>合计{cartShop ? `（含配送费¥${formatMoney(cartShop.deliveryFee || 0)}）` : ''}</span>
+              <span className="text-orange-500">¥{formatMoney(cartTotal + (activeShop?.deliveryFee || 0))}</span>
             </div>
           </div>
           {payErr && <div className="text-[12px] text-red-500 bg-red-50 rounded-xl px-3 py-2">{payErr}</div>}
           <button onClick={placeOrder} className="w-full py-3 rounded-full bg-amber-400 text-white text-[14px] font-bold">
-            银行卡支付 ¥{fmtMoney(cartTotal + (cartShop?.deliveryFee || 0))}
+            银行卡支付 ¥{formatMoney(cartTotal + (cartShop?.deliveryFee || 0))}
           </button>
           <div className="text-[10px] text-slate-300 text-center">模拟支付 · 扣款走存钱罐银行卡</div>
         </div>
@@ -597,7 +592,7 @@ export default function TakeoutApp() {
               <div className="text-[11px] text-slate-400 truncate mt-0.5">{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
               <div className="flex justify-between mt-1">
                 <span className="text-[10px] text-slate-400">{o.recipientType === 'char' ? `给${o.recipientName}点的` : '自购'} · {o.cardLabel}</span>
-                <span className="text-[13px] font-bold">¥{fmtMoney(o.total)}</span>
+                <span className="text-[13px] font-bold">¥{formatMoney(o.total)}</span>
               </div>
             </div>
           ))}
@@ -619,7 +614,7 @@ export default function TakeoutApp() {
             <div className="bg-white rounded-2xl p-4">
               <div className="flex justify-between items-center">
                 <span className="text-[15px] font-bold">{ORDER_STATUS_LABEL[o.status]}</span>
-                <span className="text-[13px] font-bold text-orange-500">¥{fmtMoney(o.total)}</span>
+                <span className="text-[13px] font-bold text-orange-500">¥{formatMoney(o.total)}</span>
               </div>
               <div className="text-[11px] text-slate-400 mt-1">订单号 {o.id} · {o.cardLabel}</div>
               {o.status !== 'delivered' && o.status !== 'cancelled' && (
@@ -635,7 +630,7 @@ export default function TakeoutApp() {
               <div className="text-[13px] font-bold">{o.shopName}</div>
               {o.items.map(i => (
                 <div key={i.dishId} className="flex justify-between text-[12px]">
-                  <span className="truncate">{i.name} × {i.qty}</span><span>¥{fmtMoney(i.lineTotal)}</span>
+                  <span className="truncate">{i.name} × {i.qty}</span><span>¥{formatMoney(i.lineTotal)}</span>
                 </div>
               ))}
             </div>

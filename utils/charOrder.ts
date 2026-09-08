@@ -106,7 +106,7 @@ export async function refundCharOrder(
   await DB.saveTransaction({
     id: refId,
     amount,
-    category: 'refund',
+    category: 'income',
     note: `${opts?.shop || orig.note}退款`,
     timestamp: now,
     dateStr: getLocalDateKey(new Date(now)),

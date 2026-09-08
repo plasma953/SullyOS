@@ -350,7 +350,8 @@ const BankApp: React.FC = () => {
             addToast(`新的一天！获得 ${totalNewAP} AP (预算结余: ${gainedAP})`, 'success');
         }
 
-        const todayTx = txs.filter(t => t.dateStr === today);
+        // 今日支出只看 user 自己的流水：带 ownerId 的 char 账本不进 user 预算（展示层 361 行同口径）
+        const todayTx = txs.filter(t => t.dateStr === today && !(t as any).ownerId);
         // 支出合计（签名兼容）：负值流水=支出取 abs；正值流水里 category==='income' 是收入不计，其余按老语义支出计
         const spent = sumMoney(todayTx.map(t => t.amount < 0 ? -t.amount : (t.category === 'income' ? 0 : t.amount)));
         const appeal = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);

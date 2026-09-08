@@ -14,7 +14,7 @@ import {
 import { loadMallData, searchMallGoods, MallDataset } from '../utils/shoppingData';
 import GoodsSvg from '../components/GoodsSvg';
 import { buildShoppingOrderTag } from '../utils/shoppingFormat';
-import { roundMoney, sumMoney } from '../utils/format';
+import { roundMoney, sumMoney, formatMoney } from '../utils/format';
 import { trackEvent } from '../utils/analytics';
 import { LoaderDots } from '../utils/appLoaderDots';
 import { CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
@@ -30,11 +30,6 @@ interface TargetInfo {
   addressText: string;
   cityTag?: string;
 }
-
-const fmtMoney = (n: number) => {
-  const v = Math.round(n * 100) / 100;
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
-};
 
 const genOrderId = () => {
   const d = new Date();
@@ -254,7 +249,7 @@ export default function ShoppingApp() {
     }
     const payCard = scoped.find(c => c.isDefault) || scoped[0];
     if (payCard.balance < cartTotal) {
-      setPayErr(`「${payCard.name}·${payCard.tailNo}」余额不足（¥${fmtMoney(payCard.balance)}），去存钱罐充值或换卡`);
+      setPayErr(`「${payCard.name}·${payCard.tailNo}」余额不足（¥${formatMoney(payCard.balance)}），去存钱罐充值或换卡`);
       return;
     }
     const order: ShoppingOrder = {
@@ -436,7 +431,7 @@ export default function ShoppingApp() {
                           <div className="text-[12px] font-bold truncate">{g.name}</div>
                           <div className="text-[10px] text-slate-400 truncate">{g.brand} · {shop?.name}</div>
                         </div>
-                        <span className="text-[13px] font-bold text-red-500 shrink-0">¥{fmtMoney(g.price)}</span>
+                        <span className="text-[13px] font-bold text-red-500 shrink-0">¥{formatMoney(g.price)}</span>
                       </div>
                     );
                   })}
@@ -500,7 +495,7 @@ export default function ShoppingApp() {
                     <div className="text-[12px] font-bold leading-snug line-clamp-2">{g.name}</div>
                     <div className="text-[10px] text-slate-400 mt-0.5">{g.brand}</div>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-[14px] font-bold text-red-500">¥{fmtMoney(g.price)}</span>
+                      <span className="text-[14px] font-bold text-red-500">¥{formatMoney(g.price)}</span>
                       <span className="text-[9px] text-slate-400">月销{hashSales(g.id)}</span>
                     </div>
                   </div>
@@ -512,7 +507,7 @@ export default function ShoppingApp() {
           {cart && cart.items.length > 0 && (
             <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-white border-t border-slate-100">
               <button onClick={() => setView('cart')} className="flex-1 flex items-center gap-2 px-4 py-2 rounded-full bg-red-500 text-white text-[13px] font-bold justify-center">
-                🛒 {cartCount} 件 · ¥{fmtMoney(cartTotal)} 去结算
+                🛒 {cartCount} 件 · ¥{formatMoney(cartTotal)} 去结算
               </button>
             </div>
           )}
@@ -526,7 +521,7 @@ export default function ShoppingApp() {
             <GoodsSvg imgKey={activeGood.imgKey} name={activeGood.name} className="w-full aspect-[1.5] rounded-none" />
             <div className="px-4 py-3 space-y-2">
               <div className="text-[17px] font-bold leading-snug">{activeGood.name}</div>
-              <div className="text-[20px] font-bold text-red-500">¥{fmtMoney(activeGood.price)} <span className="text-[11px] text-slate-400 font-normal">{activeGood.brand}官方正品</span></div>
+              <div className="text-[20px] font-bold text-red-500">¥{formatMoney(activeGood.price)} <span className="text-[11px] text-slate-400 font-normal">{activeGood.brand}官方正品</span></div>
               <div className="text-[11px] text-slate-400">{shop?.name} · 7天无理由退货 · 顺丰包邮</div>
               <div className="text-[11px] text-slate-500 bg-white rounded-xl p-2.5">📍 送货至：{target.type === 'user' ? '我的地址' : `${target.name} 的地址`} · {target.addressText || '（未填地址）'}</div>
             </div>
@@ -549,9 +544,9 @@ export default function ShoppingApp() {
                   <GoodsSvg imgKey={i.imgKey} name={i.name} className="w-14 h-14 rounded-lg shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[13px] font-bold leading-snug line-clamp-2">{i.name}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">¥{fmtMoney(i.unitPrice)}/件</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">¥{formatMoney(i.unitPrice)}/件</div>
                     <div className="flex items-center justify-between mt-1.5">
-                      <span className="text-[15px] font-bold text-red-500">¥{fmtMoney(i.lineTotal)}</span>
+                      <span className="text-[15px] font-bold text-red-500">¥{formatMoney(i.lineTotal)}</span>
                       <div className="flex items-center gap-1.5">
                         <button onClick={() => changeQty(i.dishId, -1)} className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold">−</button>
                         <span className="text-[12px] font-bold w-4 text-center">{i.qty}</span>
@@ -561,13 +556,13 @@ export default function ShoppingApp() {
                   </div>
                 </div>
               ))}
-              <div className="text-[11px] text-slate-400 text-center">合计 ¥{fmtMoney(cartTotal)} · 免运费（虚拟物流 2-3 天送达）</div>
+              <div className="text-[11px] text-slate-400 text-center">合计 ¥{formatMoney(cartTotal)} · 免运费（虚拟物流 2-3 天送达）</div>
             </>
           ) : (
             <div className="text-center text-[12px] text-slate-400 py-10">购物车是空的，去逛逛吧～</div>
           )}
           {cart && cart.items.length > 0 && (
-            <button onClick={() => setView('checkout')} className="w-full py-3 rounded-full bg-red-500 text-white text-[14px] font-bold">去结算（¥{fmtMoney(cartTotal)}）</button>
+            <button onClick={() => setView('checkout')} className="w-full py-3 rounded-full bg-red-500 text-white text-[14px] font-bold">去结算（¥{formatMoney(cartTotal)}）</button>
           )}
         </div>
       )}
@@ -584,17 +579,17 @@ export default function ShoppingApp() {
             {cart.items.map(i => (
               <div key={i.dishId} className="flex justify-between text-[12px]">
                 <span className="truncate mr-2">{i.name} × {i.qty}</span>
-                <span className="shrink-0">¥{fmtMoney(i.lineTotal)}</span>
+                <span className="shrink-0">¥{formatMoney(i.lineTotal)}</span>
               </div>
             ))}
             <div className="border-t border-slate-100 pt-2 flex justify-between text-[13px] font-bold">
               <span>合计（免运费）</span>
-              <span className="text-red-500">¥{fmtMoney(cartTotal)}</span>
+              <span className="text-red-500">¥{formatMoney(cartTotal)}</span>
             </div>
           </div>
           {payErr && <div className="text-[12px] text-red-500 bg-red-50 rounded-xl px-3 py-2">{payErr}</div>}
           <button onClick={placeOrder} className="w-full py-3 rounded-full bg-red-500 text-white text-[14px] font-bold">
-            银行卡支付 ¥{fmtMoney(cartTotal)}
+            银行卡支付 ¥{formatMoney(cartTotal)}
           </button>
           <div className="text-[10px] text-slate-300 text-center">模拟支付 · 扣款走存钱罐银行卡 · 不真实付款</div>
         </div>
@@ -611,7 +606,7 @@ export default function ShoppingApp() {
               <div className="text-[11px] text-slate-400 truncate mt-0.5">{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
               <div className="flex justify-between mt-1">
                 <span className="text-[10px] text-slate-400">{o.recipientType === 'char' ? `给${o.recipientName}买的` : '自购'} · {o.cardLabel}</span>
-                <span className="text-[13px] font-bold">¥{fmtMoney(o.total)}</span>
+                <span className="text-[13px] font-bold">¥{formatMoney(o.total)}</span>
               </div>
             </div>
           ))}
@@ -627,7 +622,7 @@ export default function ShoppingApp() {
             <div className="bg-white rounded-2xl p-4">
               <div className="flex justify-between items-center">
                 <span className="text-[15px] font-bold">{ORDER_STATUS_LABEL[o.status]}</span>
-                <span className="text-[13px] font-bold text-red-500">¥{fmtMoney(o.total)}</span>
+                <span className="text-[13px] font-bold text-red-500">¥{formatMoney(o.total)}</span>
               </div>
               <div className="text-[11px] text-slate-400 mt-1">订单号 {o.id} · {o.cardLabel}</div>
               {o.status !== 'delivered' && o.status !== 'cancelled' && (
@@ -646,7 +641,7 @@ export default function ShoppingApp() {
               <div className="text-[13px] font-bold">商品清单</div>
               {o.items.map(i => (
                 <div key={i.dishId} className="flex justify-between text-[12px]">
-                  <span className="truncate mr-2">{i.name} × {i.qty}</span><span>¥{fmtMoney(i.lineTotal)}</span>
+                  <span className="truncate mr-2">{i.name} × {i.qty}</span><span>¥{formatMoney(i.lineTotal)}</span>
                 </div>
               ))}
             </div>
