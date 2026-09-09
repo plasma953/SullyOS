@@ -1,0 +1,32 @@
+name: Build APK
+on:
+  workflow_dispatch: {}
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build web bundle (capacitor mode, loads .env.capacitor)
+        run: npx vite build --mode capacitor
+      - name: Sync Capacitor android platform
+        run: npx cap sync android
+      - name: Assemble debug APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sullyos-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
