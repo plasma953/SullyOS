@@ -7,6 +7,7 @@ import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import TokenImg from '../components/os/TokenImg';
 import { useBlobRefUrl } from '../utils/blobRef';
+import { useWheelPager } from '../utils/wheelPager';
 import { safeResponseJson, extractContent, extractJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
@@ -369,6 +370,11 @@ const CheckPhone: React.FC = () => {
     // Derived state for evidence records
     const records = (targetChar?.phoneState?.records || []).map(normalizePhoneEvidence);
     const customApps = targetChar?.phoneState?.customApps || [];
+    // 滚轮翻页（桌面鼠标）：查手机桌面横向翻页；手机端无滚轮硬件不触发。
+    const onPagerWheel = useWheelPager((delta: 1 | -1) => {
+        const maxPage = customApps.length > 0 ? 2 : 1;
+        setPage(p => Math.max(0, Math.min(maxPage - 1, p + delta)));
+    });
     const contacts = targetChar?.phoneState?.contacts || [];
     const allowFictional = targetChar?.phoneState?.allowFictionalContacts !== false;
     // Keep the contact-chat scroll effect tied to this conversation's actual
@@ -3818,7 +3824,7 @@ ${olderText}
                 <StatusStrip />
 
                 {/* Pager */}
-                <div className="flex-1 relative z-10 overflow-hidden" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+                <div className="flex-1 relative z-10 overflow-hidden" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onWheel={onPagerWheel}>
                     <div className="flex h-full w-[200%] transition-transform duration-500 ease-out"
                         style={{ transform: `translateX(-${page * 50}%)` }}>
                         {renderHomePage()}

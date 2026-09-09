@@ -15,7 +15,7 @@ declare global {
 
 import { setPortalHost } from './portalHost';
 
-export const PIP_WINDOW_FALLBACK_SIZE = { width: 420, height: 900 };
+export const PIP_WINDOW_FALLBACK_SIZE = { width: 408, height: 884 };
 const PIP_MIN_SIZE = { width: 200, height: 100 };
 
 export const isPipSupported = (): boolean =>
@@ -159,6 +159,10 @@ export const openPipShell = async (opts?: { width?: number; height?: number }): 
     const size = clampPipSize(opts?.width ?? PIP_WINDOW_FALLBACK_SIZE.width, opts?.height ?? PIP_WINDOW_FALLBACK_SIZE.height);
     const pipWin = await api.requestWindow({ width: size.width, height: size.height });
     activePip = pipWin;
+    try {
+        pipWin.document.documentElement.style.background = '#000';
+        pipWin.document.body.style.background = '#000';
+    } catch { /* ignore */ }
     cloneStylesTo(pipWin.document);
     if (document.title) pipWin.document.title = document.title;
     syncPipVars(pipWin);

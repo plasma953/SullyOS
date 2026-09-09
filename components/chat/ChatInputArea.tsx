@@ -4,6 +4,7 @@ import { PRESET_THEMES } from './ChatConstants';
 import TokenImg from '../os/TokenImg';
 import { AcnhActionTile } from '../os/acnhIcons';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
+import { useWheelPager } from '../../utils/wheelPager';
 
 const EMOJI_PAGE_SIZE = 40;
 
@@ -82,6 +83,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [actionsPage, setActionsPage] = useState<0 | 1 | 2>(0);
+    const onActionsPanelWheel = useWheelPager((delta: 1 | -1) => {
+        setActionsPage(prev => Math.max(0, Math.min(2, prev + delta)) as 0 | 1 | 2);
+    });
     // 气泡样式面板：搜索 + 两步确认删除（防止 hover 小 × 误删）
     const [bubbleSearch, setBubbleSearch] = useState('');
     // 会话面板的主要用途仍是切换聊天；气泡选择作为次级工具默认收起。
@@ -629,6 +633,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             onTouchStart={handleActionsSwipeStart}
                             onTouchMove={handleActionsSwipeMove}
                             onTouchEnd={handleActionsSwipeEnd}
+                            onWheel={onActionsPanelWheel}
                             onClickCapture={handleActionsClickCapture}
                         >
                           <div className={`p-6 grid grid-cols-4 gap-8 ${actionsPage === 0 ? '' : 'hidden'}`}>

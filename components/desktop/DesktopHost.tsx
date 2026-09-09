@@ -15,6 +15,14 @@ export const DesktopHost: React.FC<{ children: React.ReactNode }> = ({ children 
     const vp = useDesktopViewport();
     const [pipActive, setPipActive] = useState(false);
     useEffect(() => onPipChange(setPipActive), []);
+    if (pipActive) {
+        // 投屏悬浮窗：只显示一台撑满小窗的带框手机，无背景层。
+        return (
+            <div className="fixed inset-0 z-0 flex items-center justify-center overflow-hidden bg-black">
+                <DesktopFrame variant="pip">{children}</DesktopFrame>
+            </div>
+        );
+    }
     if (!resolveDesktopMode(theme.desktopMode, vp)) return <>{children}</>;
     const toggleCast = () => {
         if (pipActive) closePipShell();

@@ -37,7 +37,7 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
   const sizeClasses =
     size === 'lg' ? 'w-[4.25rem] h-[4.25rem]' :
     size === 'sm' ? 'w-[2.75rem] h-[2.75rem]' :
-    'w-[3.5rem] h-[3.5rem]';
+    'w-[var(--app-icon-size,3.5rem)] h-[var(--app-icon-size,3.5rem)]';
 
   // 动森彩蛋模式：整机统一 NookPhone 外观，连用户自定义图标也一并盖掉。
   if (isNook) {

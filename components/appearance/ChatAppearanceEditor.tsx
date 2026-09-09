@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useWheelPager } from '../../utils/wheelPager';
 import { AppID, OSTheme, ChatFineTuneFields } from '../../types';
 import WhiteboxSoundEditor from '../chat/WhiteboxSoundEditor';
 import { WhiteboxSound } from '../../utils/whiteboxSound';
@@ -454,6 +455,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
     const [page, setPage] = useState(0);
     const swipeStartX = useRef<number | null>(null);
     const goPage = (next: number) => setPage(Math.max(0, Math.min(PAGE_TITLES.length - 1, next)));
+    const onWheelPage = useWheelPager((delta: 1 | -1) => goPage(page + delta));
 
     // 聊天细节微调 → 预览联动（近似演示：字号按比例缩小 3px 以配合迷你预览）
     const fineVis = theme.chatAvatarVisibility || 'both';
@@ -652,6 +654,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                     >›</button>
                 </div>
                 <div
+                    onWheel={onWheelPage}
                     onTouchStart={(e) => {
                         // 滑杆等横向控件里起手的触摸不算翻页手势（否则拖「垂直微调」滑杆会误翻页）
                         swipeStartX.current = (e.target as HTMLElement).closest('input') ? null : (e.touches[0]?.clientX ?? null);

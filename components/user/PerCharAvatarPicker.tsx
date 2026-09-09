@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
+import { useWheelPager } from '../../utils/wheelPager';
 import { useOS } from '../../context/OSContext';
 import { processImage } from '../../utils/file';
 import { migrateDataUrlToRef } from '../../utils/blobRef';
@@ -52,6 +53,7 @@ const PerCharAvatarPicker: React.FC = () => {
         setSlideDir(clamped > safePage ? 'l' : 'r');
         setPage(clamped);
     };
+    const onWheelPage = useWheelPager((delta: 1 | -1) => goPage(safePage + delta));
 
     const setOverride = (charId: string, avatar: string | undefined) => {
         const next = { ...overrides };
@@ -133,6 +135,7 @@ const PerCharAvatarPicker: React.FC = () => {
                 <div className="py-8 text-center text-[11px] text-slate-300">没有叫这个名字的角色</div>
             ) : (
                 <div
+                    onWheel={onWheelPage}
                     onTouchStart={(e) => { swipeStartX.current = e.touches[0]?.clientX ?? null; }}
                     onTouchEnd={(e) => {
                         const startX = swipeStartX.current;

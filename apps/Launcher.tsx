@@ -14,6 +14,7 @@ import TamagotchiHome from '../components/os/TamagotchiHome';
 import { getDailyScheduleForChar } from '../utils/dailySchedule';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../utils/timezone';
+import { useWheelPager } from '../utils/wheelPager';
 
 const CompanionHome = React.lazy(() => import('../components/os/CompanionHome'));
 
@@ -695,6 +696,18 @@ const Launcher: React.FC = () => {
       }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 滚轮翻页（桌面鼠标）：纵向滚轮 → 上一页/下一页；触控板横滑走原生 snap。
+  const onWheelPage = useWheelPager((delta: 1 | -1) => {
+      const scroller = scrollContainerRef.current;
+      if (!scroller || layoutEditing) return;
+      const next = Math.max(0, Math.min(totalPages - 1, activePageIndexRef.current + delta));
+      if (next === activePageIndexRef.current) return;
+      activePageIndexRef.current = next;
+      setActivePageIndex(next);
+      _lastPageIndex = next;
+      scroller.scrollTo({ left: scroller.clientWidth * next, behavior: 'smooth' });
+  });
+
   const handleScroll = () => {
       if (scrollContainerRef.current) {
           const width = scrollContainerRef.current.clientWidth;
@@ -1027,6 +1040,7 @@ const Launcher: React.FC = () => {
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
+        onWheel={onWheelPage}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -1208,12 +1222,15 @@ const Launcher: React.FC = () => {
            style={{ paddingBottom: launcherBottomInset }}
       >
            <div
-             className={`rounded-[1.75rem] px-4 py-3 flex gap-3 sm:gap-6 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu ${acnh || paper ? '' : 'bg-white/30 border border-white/25 shadow-[0_8px_40px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.08)]'}`}
-             style={acnh ? { background: 'transparent' } : paper ? {
-               background: 'rgba(224,221,215,0.42)',
-               border: '1px solid rgba(91,72,51,0.07)',
-               boxShadow: '0 6px 18px rgba(91,72,51,0.065)',
-             } : undefined}
+              className={`rounded-[1.75rem] px-4 py-3 flex gap-3 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu ${acnh || paper ? '' : 'bg-white/30 border border-white/25 shadow-[0_8px_40px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.08)]'}`}
+              style={{
+                  '--app-icon-size': 'clamp(2.75rem, calc((var(--vp-width, 100vw) - 6.5rem) / 4), 3.5rem)',
+                  ...(acnh ? { background: 'transparent' } as React.CSSProperties : paper ? {
+                      background: 'rgba(224,221,215,0.42)',
+                      border: '1px solid rgba(91,72,51,0.07)',
+                      boxShadow: '0 6px 18px rgba(91,72,51,0.065)',
+                  } as React.CSSProperties : {}),
+              } as React.CSSProperties}
            >
                {dockAppsConfig.map(app => (
                    <div key={app.id} data-launcher-item={app.id} data-launcher-kind="dock" className={`relative ${layoutEditing ? 'launcher-edit-item' : ''}`}>

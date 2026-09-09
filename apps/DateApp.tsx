@@ -21,6 +21,7 @@ import { getHostGeometry } from '../utils/hostViewport';
 import { markAmsgStateDirty } from '../utils/amsgStateSync';
 import StoryTheater from '../components/date/story/StoryTheater';
 import { dateLaunch } from '../utils/dateLaunch';
+import { useWheelPager } from '../utils/wheelPager';
 import { materializeVisionDescriptions } from '../utils/visionApi';
 import { shareOrDownloadFile } from '../utils/shareExport';
 import { buildInPersonContinueInstruction } from '../utils/meetingContinue';
@@ -94,6 +95,15 @@ const DateApp: React.FC = () => {
         if (!el) return;
         el.scrollTo({ left: pi * el.clientWidth, behavior: 'smooth' });
     };
+    // 滚轮翻页（桌面鼠标）：选择页 6 角色一页横向翻页；页内卡片列表可先纵向滚动，到底再翻。
+    const onPagerWheel = useWheelPager((delta: 1 | -1) => {
+        const el = pagerRef.current;
+        if (!el || el.clientWidth === 0) return;
+        const maxPage = Math.max(0, Math.round(el.scrollWidth / el.clientWidth) - 1);
+        const current = Math.round(el.scrollLeft / el.clientWidth);
+        const next = Math.max(0, Math.min(maxPage, current + delta));
+        if (next !== current) el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
+    });
 
     const [peekStatus, setPeekStatus] = useState<string>('');
     const [peekLoading, setPeekLoading] = useState(false);
@@ -774,7 +784,7 @@ const DateApp: React.FC = () => {
                         <span className="text-xs tracking-wider">{characters.length ? '该分组下没有角色' : '还没有可见面的角色'}</span>
                     </div>
                 ) : (
-                    <div ref={pagerRef} onScroll={onPagerScroll}
+                    <div ref={pagerRef} onScroll={onPagerScroll} onWheel={onPagerWheel}
                          className="relative z-10 flex-1 min-h-0 flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
                          style={{ scrollSnapType: 'x mandatory' }}>
                         {pages.map((page, pi) => (
