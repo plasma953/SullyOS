@@ -25,8 +25,8 @@ import AndroidUpdateControl from './AndroidUpdateControl';
 const UNLOCK_TAP_COUNT = 5;
 const TAP_RESET_MS = 2000;
 
-// 「SW 有没有应答」每次会话只报一次：设置页反复开关会重复查询，重复上报会把
-// 这项的分母冲淡。标记只存内存变量，标签页一关就没了（跟 utils/analytics.ts 同口径）。
+// 「SW 有没有应答」每次会话只查一次：设置页反复开关会重复查询。标记只存内存变量，
+// 标签页一关就没了。
 let swVersionResultReported = false;
 
 const VersionInfo: React.FC = () => {
