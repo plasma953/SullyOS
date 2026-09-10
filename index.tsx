@@ -13,9 +13,13 @@ import { Capacitor } from '@capacitor/core';
 // 默认构建不开启时 Rollup 会整段裁掉；普通浏览器/PWA 不加载原生插件、不申请权限。
 if (import.meta.env.VITE_AMSG_NATIVE_PUSH === 'true' && Capacitor.isNativePlatform()) {
   if (Capacitor.getPlatform() === 'android') {
-    void import('./utils/unifiedPushRuntime').then(({ initUnifiedPushRuntime }) => initUnifiedPushRuntime());
+    void import('./utils/unifiedPushRuntime')
+      .then(({ initUnifiedPushRuntime }) => initUnifiedPushRuntime())
+      .catch((err) => console.warn('[UnifiedPush] module load failed:', err));
   } else {
-    void import('./utils/nativeAmsgPush').then(({ initNativeAmsgPush }) => initNativeAmsgPush());
+    void import('./utils/nativeAmsgPush')
+      .then(({ initNativeAmsgPush }) => initNativeAmsgPush())
+      .catch((err) => console.warn('[NativePush] module load failed:', err));
   }
 }
 
