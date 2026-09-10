@@ -491,9 +491,14 @@ describe('parseTargetUrl / 自查清单', () => {
         expect(toSameOriginProxyUrl('https://backend.example.com/agent/health', BACKEND, 'https://backend.example.com')).toBeNull();
     });
     it('returns null for non-https pages and non-proxied paths', () => {
-        expect(toSameOriginProxyUrl('https://backend.example.com/agent/health', BACKEND, 'http://localhost:5173')).toBeNull();
-        expect(toSameOriginProxyUrl('https://backend.example.com/', BACKEND, PAGE)).toBeNull();
-        expect(toSameOriginProxyUrl('not a url', BACKEND, PAGE)).toBeNull();
+      expect(toSameOriginProxyUrl('https://backend.example.com/agent/health', BACKEND, 'http://localhost:5173')).toBeNull();
+      expect(toSameOriginProxyUrl('https://backend.example.com/', BACKEND, PAGE)).toBeNull();
+      expect(toSameOriginProxyUrl('not a url', BACKEND, PAGE)).toBeNull();
+    });
+    it('returns null for the capacitor WebView origin (APK shell has no same-origin proxy)', () => {
+      // capacitor.config.json androidScheme:"https" → APK 页面 origin 是 https://localhost
+      expect(toSameOriginProxyUrl('https://backend.example.com/agent/health', BACKEND, 'https://localhost')).toBeNull();
+      expect(toSameOriginProxyUrl('https://backend.example.com/amsg/v1/tools', BACKEND, 'https://localhost')).toBeNull();
     });
     it('returns null when the backend base itself is unparsable', () => {
         expect(toSameOriginProxyUrl('https://backend.example.com/agent/health', 'not a url', PAGE)).toBeNull();

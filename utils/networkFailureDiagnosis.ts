@@ -423,6 +423,11 @@ export const toSameOriginProxyUrl = (directUrl: string, backendBase: string, pag
     try {
         const raw = (pageOrigin ?? (typeof location !== 'undefined' ? location.origin : '')).replace(/\/+$/, '');
         if (!/^https:\/\/[^/]+$/.test(raw)) return null;
+        // Capacitor Android 壳的 WebView origin 是 https://localhost（见 capacitor.config.json
+        // 的 androidScheme）。同源代理只存在于 Vercel 部署（vercel.json rewrites）；APK 本地
+        // 壳没有 /agent、/amsg 路由，映射出去就是打空枪——甚至命中壳的 SPA 兜底假 200，
+        // 让设置页把 location.origin 当中转地址写进 agentUrl。这里直接拒绝。
+        if (new URL(raw).hostname === 'localhost') return null;
         const backendHost = new URL(backendBase).host;
         const u = new URL(directUrl);
         if (!backendHost || u.host !== backendHost) return null;
