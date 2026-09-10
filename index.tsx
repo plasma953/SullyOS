@@ -8,6 +8,7 @@ import { ProactiveChat } from './utils/proactiveChat';
 import { VRScheduler } from './utils/vrWorld/scheduler';
 import { installIOSStandaloneWorkaround } from './utils/iosStandalone';
 import { installWakeListener } from './utils/proactivePushConfig';
+import { detectCapacitorNative } from './utils/pushSubscribeShared';
 import { Capacitor } from '@capacitor/core';
 
 // 默认构建不开启时 Rollup 会整段裁掉；普通浏览器/PWA 不加载原生插件、不申请权限。
@@ -23,8 +24,14 @@ if (import.meta.env.VITE_AMSG_NATIVE_PUSH === 'true' && Capacitor.isNativePlatfo
   }
 }
 
-// Register the keep-alive Service Worker early so it's ready before any AI calls
-KeepAlive.init().then(() => {
+// Register the keep-alive Service Worker early so it's ready before any AI calls.
+// 原生壳（APK/WKWebView）跳过：M1 计划 §已知事实 的既定结论——WebView 里 SW
+// 可注册但 push 永不可达，注册即半工作状态。守卫后 .then 链照常执行（resume 们
+// 不依赖 SW 本身，只依赖 init 已 settle）。
+const runtimeBootstrap = detectCapacitorNative()
+  ? Promise.resolve()
+  : KeepAlive.init();
+runtimeBootstrap.then(() => {
   // Resume any active proactive schedule after SW is ready
   ProactiveChat.resume();
   // Resume 「彼方」 autonomous-login schedules
