@@ -253,14 +253,16 @@ const AppGridPage = React.memo(({
     openApp,
     acnh = false,
     editing = false,
+    columns = 4,
 }: {
     apps: typeof INSTALLED_APPS,
     openApp: (id: AppID) => void,
     acnh?: boolean,
     editing?: boolean,
+    columns?: 4 | 6,
 }) => {
     return (
-        <div className={`grid place-items-center animate-fade-in relative grid-cols-4 ${(apps.length > 8) ? 'gap-y-5 gap-x-2 content-center' : 'gap-y-6 gap-x-2'}`}>
+        <div className={`grid place-items-center animate-fade-in relative ${columns === 6 ? 'grid-cols-6' : 'grid-cols-4'} ${(apps.length > 8) ? 'gap-y-5 gap-x-2 content-center' : 'gap-y-6 gap-x-2'}`}>
              {apps.map(app => (
                  <div
                     key={app.id}
@@ -475,7 +477,7 @@ let _lastPageIndex = 0;
 
 // --- Main Launcher ---
 
-const Launcher: React.FC = () => {
+const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
   const { openApp, characters, activeCharacterId, theme, updateTheme, lastMsgTimestamp, isDataLoaded, unreadMessages } = useOS();
 
   // Local state for widget data to prevent context trashing
@@ -979,6 +981,62 @@ const Launcher: React.FC = () => {
       <React.Suspense fallback={<div className="h-full w-full bg-[#100d1c]" />}>
         <CompanionHome />
       </React.Suspense>
+    );
+  }
+
+  // 桌面形态：复用手机版小部件（时钟 / 角色卡 / 纪念日 / 日程）做桌面双列排布 + 宽 App 网格。
+  // 底部 dock 交给左侧 DesktopDock，这里不渲染；横向分页、滚轮翻页也一并跳过。
+  if (desktop) {
+    return (
+      <div className="h-full w-full overflow-y-auto no-scrollbar px-8 py-8">
+        <div className="mx-auto grid w-full max-w-[1280px] grid-cols-1 gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+          {/* 左列：小部件 */}
+          <div className="space-y-5">
+            <DesktopClock />
+            <CharacterWidget
+              char={widgetChar}
+              unreadCount={widgetUnread}
+              lastMessage={lastMessage}
+              onClick={() => openApp(AppID.Chat)}
+              contentColor={contentColor}
+              paper={paper}
+            />
+            <WidgetsPage
+              contentColor={contentColor}
+              openApp={openApp}
+              anniversaries={anniversaries}
+              characters={characters}
+              acnh={acnh}
+              paper={paper}
+            />
+            {scheduleChar && (
+              <ScheduleHomeWidget
+                schedule={scheduleData}
+                character={scheduleChar}
+                contentColor={contentColor}
+                onOpen={() => setScheduleViewerOpen(true)}
+                acnh={acnh}
+                paper={paper}
+              />
+            )}
+          </div>
+          {/* 右列：宽 App 网格（6 列，图标走原生 AppIcon） */}
+          <div className="min-w-0">
+            <AppGridPage apps={availableGridApps} openApp={openApp} acnh={acnh} editing={layoutEditing} columns={6} />
+          </div>
+        </div>
+
+        <ScheduleFullscreenViewer
+          open={scheduleViewerOpen}
+          onClose={() => setScheduleViewerOpen(false)}
+          characters={characters}
+          activeCharId={scheduleChar?.id || null}
+          onSwitchCharacter={(id) => setScheduleCharId(id)}
+          schedule={scheduleData}
+          activeCharacter={scheduleChar}
+          contentColor={contentColor}
+        />
+      </div>
     );
   }
 

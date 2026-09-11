@@ -75,31 +75,6 @@ const IDLE_PRELOAD_START_MS = 600;
 const IDLE_PRELOAD_GAP_MS = 250;
 let idlePreloadCursor = 0;
 
-// 桌面形态下各 App 的内容区最大宽度：阅读/表单类收窄，画布/网格类放宽。
-// 未列出的走默认 1400px。
-const DESKTOP_CONTENT_WIDTH: Partial<Record<AppID, string>> = {
-  [AppID.Chat]: 'max-w-3xl',
-  [AppID.GroupChat]: 'max-w-4xl',
-  [AppID.Terminal]: 'max-w-4xl',
-  [AppID.Settings]: 'max-w-3xl',
-  [AppID.Appearance]: 'max-w-3xl',
-  [AppID.Character]: 'max-w-3xl',
-  [AppID.Journal]: 'max-w-3xl',
-  [AppID.Novel]: 'max-w-3xl',
-  [AppID.Guidebook]: 'max-w-3xl',
-  [AppID.Handbook]: 'max-w-3xl',
-  [AppID.Worldbook]: 'max-w-3xl',
-  [AppID.FAQ]: 'max-w-3xl',
-  [AppID.Schedule]: 'max-w-3xl',
-  [AppID.Preset]: 'max-w-3xl',
-  [AppID.User]: 'max-w-3xl',
-  [AppID.HotNews]: 'max-w-3xl',
-  [AppID.MemoryPalace]: 'max-w-4xl',
-  [AppID.Study]: 'max-w-4xl',
-  [AppID.Songwriting]: 'max-w-4xl',
-  [AppID.Game]: 'max-w-4xl',
-};
-
 // AppID → 懒加载组件，供「按下即预取」复用同一个模块 Promise。
 // AppID 由下方 import 引入，ES 模块提升后全模块可用。
 const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
@@ -143,7 +118,6 @@ import BootSequence from './os/BootSequence';
 import { setAppPayloadWarmer, shouldUseIdleAppPreload } from './os/appPreload';
 import { isBrowserBackGuardState, makeBrowserBackGuardState } from '../utils/browserBackGuard';
 import { DesktopDock } from './desktop/DesktopDock';
-import { DesktopHome } from './desktop/DesktopHome';
 import { useLayoutMode } from '../utils/layoutMode';
 
 /*
@@ -945,7 +919,7 @@ const PhoneShell: React.FC = () => {
         }
       >
           {/* App Container */}
-          <div className={`flex-1 relative overflow-hidden ${isDesktopLayout ? `mx-auto w-full ${DESKTOP_CONTENT_WIDTH[activeApp] ?? 'max-w-[1400px]'}` : ''}`} style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
+          <div className="flex-1 relative overflow-hidden min-w-0" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
             <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>
               <Suspense fallback={<AppLoadingFallback onReturn={closeApp} animationEnabled={theme.appLoadingAnimationEnabled !== false} />}>
                 {/* 统一「淡入」过渡：每次切换 App 时 key 变化 → 重新挂载并淡入，
@@ -955,7 +929,7 @@ const PhoneShell: React.FC = () => {
                     时长也压短，进重 App 时不至于多等。 */}
                 <div key={activeApp} className="w-full h-full" style={{ animation: 'appEnterFade 200ms ease-out both' }}>
                   <style>{`@keyframes appEnterFade{from{opacity:0}to{opacity:1}}`}</style>
-                  {isDesktopLayout && activeApp === AppID.Launcher ? <DesktopHome /> : renderApp()}
+                  {isDesktopLayout && activeApp === AppID.Launcher ? <Launcher desktop /> : renderApp()}
                 </div>
               </Suspense>
             </AppErrorBoundary>
