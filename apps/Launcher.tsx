@@ -1,7 +1,6 @@
 import React, { useMemo, useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { isPaperWallpaper, useOS } from '../context/OSContext';
-import { INSTALLED_APPS, DOCK_APPS } from '../constants';
-import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../utils/devDebug';
+import { INSTALLED_APPS } from '../constants';
 import AppIcon from '../components/os/AppIcon';
 import TokenImg from '../components/os/TokenImg';
 import { useBlobRefUrl } from '../utils/blobRef';
@@ -15,6 +14,9 @@ import { getDailyScheduleForChar } from '../utils/dailySchedule';
 import { useLocalDateKey } from '../hooks/useLocalDateKey';
 import { resolveCharTimeZone } from '../utils/timezone';
 import { useWheelPager } from '../utils/wheelPager';
+import { useLauncherLayout } from '../context/LauncherLayoutContext';
+import { useLauncherDrag } from '../hooks/useLauncherDrag';
+import { reorderIds } from '../utils/launcherLayout';
 
 const CompanionHome = React.lazy(() => import('../components/os/CompanionHome'));
 
@@ -487,23 +489,6 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
   const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
   const [scheduleCharId, setScheduleCharId] = useState<string | null>(null);
   const [scheduleViewerOpen, setScheduleViewerOpen] = useState(false);
-  const [layoutEditing, setLayoutEditing] = useState(false);
-  const layoutPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const layoutPointer = useRef<{
-      pointerId: number;
-      key: string;
-      kind: string;
-      x: number;
-      y: number;
-      active: boolean;
-      element: HTMLElement;
-      ghost?: HTMLElement;
-      grabOffsetX?: number;
-      grabOffsetY?: number;
-      lastTarget?: string;
-      targetElement?: HTMLElement;
-  } | null>(null);
-  const suppressLayoutClickUntil = useRef(0);
   const layoutPageTurnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutPageTurnDirection = useRef<-1 | 0 | 1>(0);
 
@@ -518,52 +503,15 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
   const dragMoved = useRef(0);
 
   // Pagination Logic
-  // 跟随 DevDebug 可用性：prod 用户在设置页连点 5 下解锁后，CharCreatorDev 立刻出现；
-  // 点「关闭」/ 刷新（prod 自动失效）也立刻消失。useMemo deps 没列 devDebugVisible
-  // 会让它锁在 mount 时的初值。
-  const [devDebugVisible, setDevDebugVisible] = useState(() => isDevDebugAvailable());
-  useEffect(() => subscribeDevDebugAvailability(setDevDebugVisible), []);
-  const availableGridApps = useMemo(() => {
-    return INSTALLED_APPS.filter(app =>
-      !DOCK_APPS.includes(app.id)
-      // 「捏脸·开发」仅在开发模式（右下角开发徽标可见或手动解锁时）显示
-      && (app.id !== AppID.CharCreatorDev || devDebugVisible)
-    );
-  }, [devDebugVisible]);
-
-  const normalizeOrder = useCallback((saved: string[] | undefined, available: string[]) => {
-      const valid = new Set(available);
-      return [...(saved || []).filter((id, index, all) => valid.has(id) && all.indexOf(id) === index), ...available.filter(id => !(saved || []).includes(id))];
-  }, []);
-
-  const availableGridIds = useMemo(() => availableGridApps.map(app => app.id), [availableGridApps]);
-  const [launcherAppOrder, setLauncherAppOrder] = useState<string[]>(() => normalizeOrder(theme.launcherAppOrder, INSTALLED_APPS.filter(app => !DOCK_APPS.includes(app.id)).map(app => app.id)));
-  const [launcherDockOrder, setLauncherDockOrder] = useState<string[]>(() => normalizeOrder(theme.launcherDockOrder, DOCK_APPS));
+  // 网格/Dock 的成员与顺序由 LauncherLayoutProvider 统一持有（手机与电脑共用同一份）。
+  const { gridApps, dockApps: dockAppsConfig, editing: layoutEditing, beginEdit, finishEdit, drop: dropLauncherLayout } = useLauncherLayout();
   const [pinwheelOrder, setPinwheelOrder] = useState<Array<'music' | 'appsA' | 'appsB' | 'image'>>(() => {
       const available = ['music', 'appsA', 'appsB', 'image'] as const;
       const saved = theme.launcherPinwheelOrder || [];
       return [...saved.filter((id, index) => available.includes(id) && saved.indexOf(id) === index), ...available.filter(id => !saved.includes(id))];
   });
-  const launcherAppOrderRef = useRef(launcherAppOrder);
-  const launcherDockOrderRef = useRef(launcherDockOrder);
   const pinwheelOrderRef = useRef(pinwheelOrder);
-
-  useEffect(() => {
-      setLauncherAppOrder(prev => {
-          const next = normalizeOrder(prev.length ? prev : theme.launcherAppOrder, availableGridIds);
-          launcherAppOrderRef.current = next;
-          return next;
-      });
-  }, [availableGridIds, normalizeOrder, theme.launcherAppOrder]);
-  useEffect(() => { launcherAppOrderRef.current = launcherAppOrder; }, [launcherAppOrder]);
-  useEffect(() => { launcherDockOrderRef.current = launcherDockOrder; }, [launcherDockOrder]);
   useEffect(() => { pinwheelOrderRef.current = pinwheelOrder; }, [pinwheelOrder]);
-  useEffect(() => {
-      if (layoutEditing) return;
-      const next = normalizeOrder(theme.launcherDockOrder, DOCK_APPS);
-      launcherDockOrderRef.current = next;
-      setLauncherDockOrder(next);
-  }, [layoutEditing, normalizeOrder, theme.launcherDockOrder]);
   useEffect(() => {
       if (layoutEditing) return;
       const available = ['music', 'appsA', 'appsB', 'image'] as const;
@@ -573,15 +521,7 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
       setPinwheelOrder(next);
   }, [layoutEditing, theme.launcherPinwheelOrder]);
 
-  const gridApps = useMemo(() => {
-      const byId = new Map(availableGridApps.map(app => [app.id, app]));
-      return launcherAppOrder.map(id => byId.get(id as AppID)).filter(Boolean) as typeof INSTALLED_APPS;
-  }, [availableGridApps, launcherAppOrder]);
-
-  const dockAppsConfig = useMemo(() => {
-      const byId = new Map(INSTALLED_APPS.map(app => [app.id, app]));
-      return launcherDockOrder.map(id => byId.get(id as AppID)).filter(Boolean) as typeof INSTALLED_APPS;
-  }, [launcherDockOrder]);
+  // gridApps / dockAppsConfig 由 LauncherLayoutProvider 提供。
 
   // Split apps: pages with widgets keep 4x2 (8), pure grid pages use 4x4 (16).
   // Pages: 0 = clock+chat+grid (8, original), 1 = pinwheel (8),
@@ -760,42 +700,11 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
   };
 
   const handleClickCapture = (e: React.MouseEvent) => {
-      if (dragMoved.current > 5 || Date.now() < suppressLayoutClickUntil.current) {
+      if (dragMoved.current > 5 || Date.now() < drag.suppressClickUntil.current) {
           e.stopPropagation();
           e.preventDefault();
       }
   };
-
-  const reorderByTarget = useCallback((kind: string, source: string, target: string) => {
-      if (source === target) return;
-      const reorder = <T extends string>(items: T[]) => {
-          const from = items.indexOf(source as T);
-          const to = items.indexOf(target as T);
-          if (from < 0 || to < 0) return items;
-          const next = [...items];
-          const [moved] = next.splice(from, 1);
-          next.splice(to, 0, moved);
-          return next;
-      };
-      if (kind === 'app') {
-          const next = reorder(launcherAppOrderRef.current);
-          launcherAppOrderRef.current = next;
-          setLauncherAppOrder(next);
-      } else if (kind === 'dock') {
-          const next = reorder(launcherDockOrderRef.current);
-          launcherDockOrderRef.current = next;
-          setLauncherDockOrder(next);
-      } else if (kind === 'widget') {
-          const next = reorder(pinwheelOrderRef.current) as Array<'music' | 'appsA' | 'appsB' | 'image'>;
-          pinwheelOrderRef.current = next;
-          setPinwheelOrder(next);
-      }
-  }, []);
-
-  const clearLayoutPressTimer = useCallback(() => {
-      if (layoutPressTimer.current) clearTimeout(layoutPressTimer.current);
-      layoutPressTimer.current = null;
-  }, []);
 
   const clearLayoutPageTurn = useCallback(() => {
       if (layoutPageTurnTimer.current) clearTimeout(layoutPageTurnTimer.current);
@@ -803,43 +712,15 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
       layoutPageTurnDirection.current = 0;
   }, []);
 
-  const activateLayoutDrag = useCallback((pointer: NonNullable<typeof layoutPointer.current>) => {
-      if (pointer.ghost) return;
-      const rect = pointer.element.getBoundingClientRect();
-      const ghost = pointer.element.cloneNode(true) as HTMLElement;
-      ghost.removeAttribute('data-launcher-item');
-      ghost.removeAttribute('data-launcher-kind');
-      ghost.classList.remove('launcher-edit-item', 'launcher-drop-target');
-      ghost.classList.add('launcher-drag-ghost');
-      Object.assign(ghost.style, {
-          position: 'fixed',
-          left: `${rect.left}px`,
-          top: `${rect.top}px`,
-          width: `${rect.width}px`,
-          height: `${rect.height}px`,
-          margin: '0',
-          pointerEvents: 'none',
-          zIndex: '9999',
-          transform: 'scale(1.055)',
-          transformOrigin: 'center',
-          transition: 'none',
-      });
-      document.body.appendChild(ghost);
-      pointer.ghost = ghost;
-      pointer.grabOffsetX = pointer.x - rect.left;
-      pointer.grabOffsetY = pointer.y - rect.top;
-      pointer.element.classList.add('launcher-dragging');
-      pointer.element.style.pointerEvents = 'none';
-  }, []);
+  const clearDropTargetRef = useRef<() => void>(() => {});
 
   const queueLayoutPageTurn = useCallback((direction: -1 | 1) => {
       if (layoutPageTurnDirection.current === direction && layoutPageTurnTimer.current) return;
       clearLayoutPageTurn();
       layoutPageTurnDirection.current = direction;
       const turn = () => {
-          const pointer = layoutPointer.current;
           const scroller = scrollContainerRef.current;
-          if (!pointer?.active || pointer.kind !== 'app' || !scroller || layoutPageTurnDirection.current !== direction) {
+          if (!scroller || layoutPageTurnDirection.current !== direction) {
               clearLayoutPageTurn();
               return;
           }
@@ -849,9 +730,7 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
               clearLayoutPageTurn();
               return;
           }
-          pointer.targetElement?.classList.remove('launcher-drop-target');
-          pointer.targetElement = undefined;
-          pointer.lastTarget = undefined;
+          clearDropTargetRef.current();
           activePageIndexRef.current = nextPage;
           setActivePageIndex(nextPage);
           _lastPageIndex = nextPage;
@@ -861,99 +740,43 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
       layoutPageTurnTimer.current = setTimeout(turn, 560);
   }, [appPages.length, clearLayoutPageTurn]);
 
-  useEffect(() => () => {
-      clearLayoutPressTimer();
-      clearLayoutPageTurn();
-      layoutPointer.current?.ghost?.remove();
-  }, [clearLayoutPageTurn, clearLayoutPressTimer]);
-
-  const handleLayoutPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      const launcherRoot = e.currentTarget;
-      const item = (e.target as HTMLElement).closest<HTMLElement>('[data-launcher-item]');
-      if (!item) return;
-      const key = item.dataset.launcherItem;
-      const kind = item.dataset.launcherKind;
-      if (!key || !kind) return;
-      clearLayoutPressTimer();
-      layoutPointer.current = { pointerId: e.pointerId, key, kind, x: e.clientX, y: e.clientY, active: layoutEditing, element: item };
-      if (layoutEditing) {
-          activateLayoutDrag(layoutPointer.current);
-          launcherRoot.setPointerCapture(e.pointerId);
-          e.preventDefault();
+  const reorderByTarget = useCallback((kind: string, source: string, target: string) => {
+      if (source === target) return;
+      if (kind === 'widget') {
+          const next = reorderIds(
+              pinwheelOrderRef.current,
+              source as 'music' | 'appsA' | 'appsB' | 'image',
+              target as 'music' | 'appsA' | 'appsB' | 'image',
+          );
+          if (next === pinwheelOrderRef.current) return;
+          pinwheelOrderRef.current = next;
+          setPinwheelOrder(next);
+          void updateTheme({ launcherPinwheelOrder: next });
           return;
       }
-      layoutPressTimer.current = setTimeout(() => {
-          if (!layoutPointer.current || layoutPointer.current.pointerId !== e.pointerId) return;
-          layoutPointer.current.active = true;
-          activateLayoutDrag(layoutPointer.current);
-          launcherRoot.setPointerCapture(e.pointerId);
+      dropLauncherLayout(
+          { id: source, kind: kind as 'app' | 'dock' },
+          { id: target, kind: kind as 'app' | 'dock' },
+      );
+  }, [dropLauncherLayout, updateTheme]);
+
+  const drag = useLauncherDrag({
+      editing: layoutEditing,
+      beginEdit: () => {
           isDragging.current = false;
-          suppressLayoutClickUntil.current = Date.now() + 700;
-          setLayoutEditing(true);
-      }, 520);
-  };
+          beginEdit();
+      },
+      onDrop: (source, target) => reorderByTarget(source.kind, source.id, target.id),
+      onPageTurn: queueLayoutPageTurn,
+      onPageTurnEnd: clearLayoutPageTurn,
+  });
+  clearDropTargetRef.current = drag.clearDropTarget;
 
-  const handleLayoutPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-      const pointer = layoutPointer.current;
-      if (!pointer || pointer.pointerId !== e.pointerId) return;
-      if (!pointer.active) {
-          if (Math.hypot(e.clientX - pointer.x, e.clientY - pointer.y) > 9) {
-              clearLayoutPressTimer();
-              layoutPointer.current = null;
-          }
-          return;
-      }
-      e.preventDefault();
-      if (pointer.ghost) {
-          pointer.ghost.style.left = `${e.clientX - (pointer.grabOffsetX || 0)}px`;
-          pointer.ghost.style.top = `${e.clientY - (pointer.grabOffsetY || 0)}px`;
-      }
-      const rootRect = e.currentTarget.getBoundingClientRect();
-      if (pointer.kind === 'app' && e.clientX <= rootRect.left + 72) queueLayoutPageTurn(-1);
-      else if (pointer.kind === 'app' && e.clientX >= rootRect.right - 72) queueLayoutPageTurn(1);
-      else clearLayoutPageTurn();
-      const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-launcher-item]');
-      const targetKey = target?.dataset.launcherItem;
-      const targetKind = target?.dataset.launcherKind;
-      const validTarget = !!targetKey && targetKind === pointer.kind && targetKey !== pointer.key;
-      if (!validTarget) {
-          pointer.targetElement?.classList.remove('launcher-drop-target');
-          pointer.targetElement = undefined;
-          pointer.lastTarget = undefined;
-          return;
-      }
-      if (target === pointer.targetElement) return;
-      pointer.targetElement?.classList.remove('launcher-drop-target');
-      target?.classList.add('launcher-drop-target');
-      pointer.targetElement = target;
-      pointer.lastTarget = targetKey;
-  };
-
-  const finishLayoutPointer = (e?: React.PointerEvent<HTMLDivElement>) => {
-      const pointer = layoutPointer.current;
-      if (e && pointer && pointer.pointerId !== e.pointerId) return;
-      clearLayoutPressTimer();
-      clearLayoutPageTurn();
-      if (pointer?.active) {
-          suppressLayoutClickUntil.current = Date.now() + 500;
-          pointer.element.style.pointerEvents = '';
-          pointer.element.classList.remove('launcher-dragging');
-          pointer.ghost?.remove();
-          pointer.targetElement?.classList.remove('launcher-drop-target');
-          if (pointer.lastTarget) reorderByTarget(pointer.kind, pointer.key, pointer.lastTarget);
-          void updateTheme({
-              launcherAppOrder: launcherAppOrderRef.current,
-              launcherDockOrder: launcherDockOrderRef.current,
-              launcherPinwheelOrder: pinwheelOrderRef.current,
-          });
-      }
-      layoutPointer.current = null;
-  };
+  useEffect(() => () => clearLayoutPageTurn(), [clearLayoutPageTurn]);
 
   const finishLayoutEditing = () => {
-      finishLayoutPointer();
-      setLayoutEditing(false);
+      drag.cancelDrag();
+      finishEdit();
   };
 
   const contentColor = theme.contentColor || '#ffffff';
@@ -988,7 +811,14 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
   // 底部 dock 交给左侧 DesktopDock，这里不渲染；横向分页、滚轮翻页也一并跳过。
   if (desktop) {
     return (
-      <div className="h-full w-full overflow-y-auto no-scrollbar px-8 py-8">
+      <div className="relative h-full w-full overflow-y-auto no-scrollbar px-8 py-8" {...drag.handlers}>
+        {layoutEditing && (
+          <div className="fixed top-[calc(var(--safe-top)+0.65rem)] left-[84px] z-50 flex items-center gap-3 rounded-full px-3 py-2"
+              style={{ background: 'rgba(75,65,54,0.88)', color: '#fffdf8', boxShadow: '0 8px 24px rgba(75,65,54,0.20)' }}>
+              <span className="text-[10px] font-semibold tracking-wide">按住拖动，松手交换位置</span>
+              <button onClick={finishLayoutEditing} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white/15 active:scale-95">完成</button>
+          </div>
+        )}
         <div className="mx-auto grid w-full max-w-[1280px] grid-cols-1 gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
           {/* 左列：小部件 */}
           <div className="space-y-5">
@@ -1022,7 +852,7 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
           </div>
           {/* 右列：宽 App 网格（6 列，图标走原生 AppIcon） */}
           <div className="min-w-0">
-            <AppGridPage apps={availableGridApps} openApp={openApp} acnh={acnh} editing={layoutEditing} columns={6} />
+            <AppGridPage apps={gridApps} openApp={openApp} acnh={acnh} editing={layoutEditing} columns={6} />
           </div>
         </div>
 
@@ -1043,38 +873,8 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
   return (
     <div
       className="h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none"
-      onPointerDown={handleLayoutPointerDown}
-      onPointerMove={handleLayoutPointerMove}
-      onPointerUp={finishLayoutPointer}
-      onPointerCancel={finishLayoutPointer}
-      onContextMenu={(e) => {
-          if ((e.target as HTMLElement).closest('[data-launcher-item]')) e.preventDefault();
-      }}
+      {...drag.handlers}
     >
-      <style>{`
-        .launcher-edit-item {
-          touch-action: none;
-          cursor: grab;
-          transition: transform 180ms cubic-bezier(.2,.75,.25,1), opacity 150ms ease, filter 150ms ease;
-          will-change: transform;
-        }
-        .launcher-dragging {
-          cursor: grabbing;
-          opacity: .18;
-        }
-        .launcher-drag-ghost {
-          opacity: .96;
-          filter: drop-shadow(0 12px 14px rgba(75,65,54,.18));
-          cursor: grabbing;
-        }
-        .launcher-drop-target {
-          transform: scale(.93);
-          opacity: .52;
-          outline: 1.5px dashed rgba(75,65,54,.36);
-          outline-offset: 5px;
-          border-radius: 1.35rem;
-        }
-      `}</style>
 
       {layoutEditing && (
           <div className="absolute top-[calc(var(--safe-top)+0.65rem)] left-4 right-4 z-50 flex items-center justify-between rounded-full px-3 py-2"

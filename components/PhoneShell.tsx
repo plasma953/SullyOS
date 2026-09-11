@@ -119,6 +119,7 @@ import { setAppPayloadWarmer, shouldUseIdleAppPreload } from './os/appPreload';
 import { isBrowserBackGuardState, makeBrowserBackGuardState } from '../utils/browserBackGuard';
 import { DesktopDock } from './desktop/DesktopDock';
 import { useLayoutMode } from '../utils/layoutMode';
+import { LauncherLayoutProvider } from '../context/LauncherLayoutContext';
 
 /*
 // Internal Error Boundary Component
@@ -886,6 +887,7 @@ const PhoneShell: React.FC = () => {
   const isDesktopLayout = layoutMode === 'desktop';
 
   return (
+    <LauncherLayoutProvider>
     <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none" data-shell-layout={layoutMode}>
        {/* Optimized Background Layer */}
        {/* 壁纸底层：进 App 时只柔和虚化/压暗作背景，不再做缩放「过场」——
@@ -1016,6 +1018,7 @@ const PhoneShell: React.FC = () => {
          />
        )}
     </div>
+    </LauncherLayoutProvider>
   );
 };
 
