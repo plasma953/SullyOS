@@ -33,7 +33,7 @@ export interface TarotCard {
   astrology?: string;
   upright: TarotCardFace;
   reversed: TarotCardFace;
-  /** public/ 下的相对路径，如 tarot/rws/major-00-fool.jpg */
+  /** public/ 下的相对路径，如 tarot/rws/major-00-fool.webp */
   image: string;
 }
 
@@ -86,7 +86,7 @@ const toCard = (raw: RawCard, index: number): TarotCard => ({
   astrology: raw.astrology,
   upright: { keywords: raw.up, meaning: raw.upM },
   reversed: { keywords: raw.rev, meaning: raw.revM },
-  image: `tarot/rws/${raw.id}.jpg`,
+  image: `tarot/rws/${raw.id}.webp`,
 });
 
 // ─── 大阿尔卡纳 0..21 ───

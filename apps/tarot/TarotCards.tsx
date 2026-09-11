@@ -2,7 +2,7 @@ import React from 'react';
 import type { TarotCard } from '../../utils/tarotData';
 
 export const tarotImageUrl = (id: string): string =>
-  `${(import.meta as any).env?.BASE_URL ?? '/'}tarot/rws/${id}.jpg`;
+  `${(import.meta as any).env?.BASE_URL ?? '/'}tarot/rws/${id}.webp`;
 
 const CARD_RATIO = '800 / 1372';
 

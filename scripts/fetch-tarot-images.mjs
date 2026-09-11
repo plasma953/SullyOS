@@ -1,7 +1,7 @@
-// 下载 RWS 公有领域牌图（Geldard 扫描版，Commons 分类共 78 张）→ public/tarot/rws/{id}.jpg
+// 下载 RWS 公有领域牌图（Geldard 扫描版，Commons 分类共 78 张）→ public/tarot/rws/{id}.webp
 // 图源：Category:Rider-Waite-Smith tarot deck (Geldard)，1909 原版，已过版权期（PD）。
-// 用法: node scripts/fetch-tarot-images.mjs
-// 行为：枚举分类 → 900px 缩略图 → sharp 转 800px JPEG q82；78 张缺一不可，否则 exit 1。
+// 用法: node scripts/fetch-tarot-images.mjs（需先临时安装 sharp）
+// 行为：枚举分类 → 800px 缩略图 → sharp 转 640px WebP q72；78 张缺一不可，否则 exit 1。
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -114,7 +114,7 @@ async function main() {
   const workers = Array.from({ length: CONCURRENCY }, async () => {
     while (queue.length) {
       const job = queue.shift();
-      const out = path.join(OUT_DIR, `${job.id}.jpg`);
+      const out = path.join(OUT_DIR, `${job.id}.webp`);
       if (fs.existsSync(out)) { done++; continue; }
       const fileName = job.title.replace(/^File:/, '');
       const thumb = `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(fileName)}?width=800`;
@@ -127,7 +127,7 @@ async function main() {
           } else {
             buf = await downloadBuffer(thumb);
           }
-          const jpg = await sharp(buf).resize({ width: 800, withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+          const jpg = await sharp(buf).resize({ width: 640, withoutEnlargement: true }).webp({ quality: 72 }).toBuffer();
           fs.writeFileSync(out, jpg);
           break;
         } catch (e) {
@@ -143,8 +143,8 @@ async function main() {
   await Promise.all(workers);
 
   // 4. 收尾校验
-  const files = fs.readdirSync(OUT_DIR).filter((f) => f.endsWith('.jpg'));
-  const missing = jobs.filter((j) => !files.includes(`${j.id}.jpg`));
+  const files = fs.readdirSync(OUT_DIR).filter((f) => f.endsWith('.webp'));
+  const missing = jobs.filter((j) => !files.includes(`${j.id}.webp`));
   if (missing.length) throw new Error(`missing images: ${missing.map((m) => m.id).join(', ')}`);
   const totalMB = files.reduce((s, f) => s + fs.statSync(path.join(OUT_DIR, f)).size, 0) / 1048576;
   console.log(`done: ${files.length} images, ${totalMB.toFixed(1)} MB in ${OUT_DIR}`);

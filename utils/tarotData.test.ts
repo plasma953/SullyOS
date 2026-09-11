@@ -27,7 +27,7 @@ describe('tarot deck integrity', () => {
       expect(c.reversed.keywords.length, `${c.id} reversed keywords`).toBeGreaterThanOrEqual(3);
       expect(c.upright.meaning.length, `${c.id} upright meaning`).toBeGreaterThan(20);
       expect(c.reversed.meaning.length, `${c.id} reversed meaning`).toBeGreaterThan(20);
-      expect(c.image, `${c.id} image`).toMatch(/^tarot\/rws\/.+\.jpg$/);
+      expect(c.image, `${c.id} image`).toMatch(/^tarot\/rws\/.+\.webp$/);
     }
   });
 

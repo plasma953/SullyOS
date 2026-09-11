@@ -7,7 +7,7 @@ describe('tarot image contract', () => {
   it('ships one bundled image per card (scripts/fetch-tarot-images.mjs)', () => {
     const dir = path.join(process.cwd(), 'public', 'tarot', 'rws');
     const missing = CARDS.map((c) => c.id).filter(
-      (id) => !fs.existsSync(path.join(dir, `${id}.jpg`)),
+      (id) => !fs.existsSync(path.join(dir, `${id}.webp`)),
     );
     expect(missing).toEqual([]);
   });
