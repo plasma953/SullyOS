@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { querySwVersion } from '../../utils/swVersion';
 import { APP_VERSION, BUILD_LABEL, BUILD_TIME_LABEL } from '../../utils/buildInfo';
 import { isDevDebugAvailable, subscribeDevDebugAvailability, unlockDevDebug } from '../../utils/devDebug';
-import AndroidUpdateControl from './AndroidUpdateControl';
 
 /**
  * Settings 底部的版本信息脚注。
@@ -109,7 +108,6 @@ const VersionInfo: React.FC = () => {
                     {hint}
                 </div>
             )}
-            <AndroidUpdateControl />
         </div>
     );
 };

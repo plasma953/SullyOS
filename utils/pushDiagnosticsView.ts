@@ -49,7 +49,6 @@ export const describeSubscription = (state: BrowserPushState): string => {
  * 也算进来。
  */
 export const describeSupport = (state: BrowserPushState): string => {
-  if (state.capacitorNative) return '否（现在跑在 App 里）';
   if (!state.supported) return '否（浏览器缺少推送相关接口）';
   const failure = liveFailureKind(state);
   if (failure === 'channel-unreachable') return '接口齐全，但连不上推送服务器';
@@ -60,7 +59,7 @@ export const describeSupport = (state: BrowserPushState): string => {
 
 /** 「浏览器支持」这行要不要标红。 */
 export const isSupportBad = (state: BrowserPushState): boolean => {
-  if (!state.supported || state.capacitorNative) return true;
+  if (!state.supported) return true;
   const failure = liveFailureKind(state);
   return failure !== null && DEVICE_LEVEL_FAILURES.includes(failure);
 };

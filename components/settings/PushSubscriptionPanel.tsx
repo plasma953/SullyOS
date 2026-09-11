@@ -355,22 +355,16 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
                 iOS 的网页推送必须先「添加到主屏幕」、再从主屏图标打开才能用。
               </div>
             )}
-            {browser.capacitorNative && (
-              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-700 leading-relaxed">
-                你现在用的是<b>打包好的 App</b>，不是浏览器网页。网页推送这条通道在 App 里不存在，
-                这个面板可以直接忽略——不影响正常使用。
-              </div>
-            )}
           </div>
         ) : (
           <p className="text-[10px] text-slate-400">读取中…</p>
         )}
 
         <button
-          disabled={resetting || refreshing || browser?.capacitorNative}
+          disabled={resetting || refreshing}
           onClick={() => void handleReset()}
           className={`mt-4 w-full py-2 rounded-xl text-xs font-bold border ${
-            resetting || refreshing || browser?.capacitorNative
+            resetting || refreshing
               ? 'bg-slate-100 text-slate-400 border-slate-200'
               : deepMode || browser?.endpointDead || registrationText.bad || deliveryText.bad
                 ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600'
@@ -385,9 +379,8 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
           {deepMode && <><br/>连着几次都没成，已经切到「深度重置」——它会把 Service Worker 整个装一遍，更彻底。</>}
         </p>
 
-        {/* 推送测试：发一条真推送验证整条链路（订阅→云端→推送服务→这台设备）。
-            App 里没有网页推送，直接不渲染那一块（和上面的重置按钮一个口径）。 */}
-        {workerConfigured && !browser?.capacitorNative && (
+        {/* 推送测试：发一条真推送验证整条链路（订阅→云端→推送服务→这台设备）。 */}
+        {workerConfigured && (
           <>
             <button
               disabled={testing || refreshing || resetting || registration !== 'matched'}
@@ -413,7 +406,7 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
             平时冷启动和回到前台会自动捞一次，这个按钮是给「我确实少收了东西」的时候用的：
             它连头一趟的账本存量也当补收处理，而自动那条路会把存量整批销掉（分不清哪些是
             真丢的、哪些是当时收到了只是老版本不会销账，倒出来就是重放）。 */}
-        {workerConfigured && !browser?.capacitorNative && (
+        {workerConfigured && (
           <>
             <button
               disabled={catchingUp || resetting || refreshing}

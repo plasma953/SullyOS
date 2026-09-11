@@ -566,8 +566,6 @@ export interface PushDiagnostics {
   lastWakeChar: string | null;
   /** True if we are inside an iOS Safari that is NOT a standalone PWA */
   iosNeedsPwa: boolean;
-  /** True if we are running inside a Capacitor native app (Android/iOS WebView) */
-  capacitorNative: boolean;
 }
 
 export async function getPushDiagnostics(): Promise<PushDiagnostics> {
@@ -597,7 +595,6 @@ export async function getPushDiagnostics(): Promise<PushDiagnostics> {
     lastWakeAt,
     lastWakeChar,
     iosNeedsPwa: browser.iosNeedsPwa,
-    capacitorNative: browser.capacitorNative,
   };
 }
 

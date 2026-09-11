@@ -160,22 +160,6 @@ export function detectPushChannel(endpoint: string | null | undefined): string {
 }
 
 /**
- * 页面是不是跑在 Capacitor 打包的原生壳里（安卓/iOS 的 WebView），而不是普通
- * 浏览器标签页。探全局而不 import `@capacitor/core`，这个文件才能继续被 SW
- * 侧的打包 tree-shake 掉。
- */
-export function detectCapacitorNative(): boolean {
-  if (typeof window === 'undefined') return false;
-  const cap = (window as any).Capacitor;
-  if (!cap) return false;
-  if (typeof cap.isNativePlatform === 'function') {
-    try { return !!cap.isNativePlatform(); } catch { /* ignore */ }
-  }
-  // 老版本 Capacitor 没有 isNativePlatform，退回读 platform。
-  return cap.platform === 'android' || cap.platform === 'ios';
-}
-
-/**
  * 在 iOS Safari 里、但没走「添加到主屏幕」的 PWA 启动。iOS 的 Web Push 只在
  * 主屏 PWA 里可用，这种情况得先引导用户装到主屏，光讲权限没用。
  */
@@ -209,7 +193,6 @@ export interface BrowserPushState {
   /** 推送厂商，见 detectPushChannel。 */
   channel: string;
   iosNeedsPwa: boolean;
-  capacitorNative: boolean;
   /**
    * 最近一次订阅失败的记录，没失败过是 null。
    *
@@ -260,7 +243,6 @@ export async function readBrowserPushState(): Promise<BrowserPushState> {
     endpointDead: isDeadPushEndpoint(endpoint),
     channel: detectPushChannel(endpoint),
     iosNeedsPwa: detectIosNeedsPwa(),
-    capacitorNative: detectCapacitorNative(),
     lastSubscribeFailure: readSubscribeFailure(),
   };
 }

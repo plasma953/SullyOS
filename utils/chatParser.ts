@@ -1,5 +1,4 @@
 import { DB } from './db';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { CharacterProfile, CharPlaylistSong } from '../types';
 import { sanitizeForBubble } from './sanitize';
 import { extractTransferCommands } from './transferFormat';
@@ -545,12 +544,6 @@ export const ChatParser = {
                 continue;
             }
             await DB.saveScheduledMessage({ id: `sched-${Date.now()}-${Math.random()}`, charId, content: msgContent, dueAt: dueTime, createdAt: Date.now() });
-            try {
-                const hasPerm = await LocalNotifications.checkPermissions();
-                if (hasPerm.display === 'granted') {
-                    await LocalNotifications.schedule({ notifications: [{ title: charName, body: msgContent, id: Math.floor(Math.random() * 100000), schedule: { at: new Date(dueTime) }, smallIcon: 'ic_stat_icon_config_sample' }] });
-                }
-            } catch (e) { console.log("Notification schedule skipped (web mode)"); }
             addToast(`${charName} 似乎打算一会儿找你...`, 'info');
         }
         content = content.replace(scheduleRegex, '').trim();

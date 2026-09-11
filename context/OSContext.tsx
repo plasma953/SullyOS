@@ -73,8 +73,6 @@ import { loadMusicPlaybackSnapshot } from './MusicContext';
 import { setCharNameRegistry } from '../utils/charNameRegistry';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import { setElevenLabsModel, setTtsProvider, setVoicePromptOverrides } from '../utils/ttsProvider';
-import { LocalNotifications } from '@capacitor/local-notifications';
-import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import { isBenignApplicationConsoleMessage } from '../utils/applicationConsole';
@@ -1005,26 +1003,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // 聊天「见面」按钮 → 见面：记录目标角色，DateApp 挂载后消费一次并自动进入见面
   const [dateAutoStartCharId, setDateAutoStartCharId] = useState<string | null>(null);
 
-  const sendProactiveNativeNotification = useCallback(async (charId: string, charName: string, body: string) => {
-      if (!Capacitor.isNativePlatform()) return;
-      try {
-          const permStatus = await LocalNotifications.checkPermissions();
-          if (permStatus.display !== 'granted') return;
-          await LocalNotifications.schedule({
-              notifications: [{
-                  title: charName,
-                  body,
-                  id: Math.floor(Math.random() * 1000000),
-                  schedule: { at: new Date(Date.now() + 250) },
-                  smallIcon: 'ic_stat_icon_config_sample',
-                  extra: { charId, source: 'proactive-chat' }
-              }]
-          });
-      } catch {
-          console.log('[Proactive] Native notification skipped');
-      }
-  }, []);
-
   // --- Helper to inject custom font ---
   const applyCustomFont = (fontData: string | undefined) => {
       let style = document.getElementById('custom-font-style');
@@ -1856,7 +1834,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           unreadUpdates[char.id] = dueMessages.length;
 
                           // Web Notification
-                          if (!Capacitor.isNativePlatform() && window.Notification && Notification.permission === 'granted') {
+                          if (window.Notification && Notification.permission === 'granted') {
                               try {
                                   // 通知不是 DOM，icon 只认能直接加载的地址：头像字段可能是 blobref
                                   // 令牌，原样塞进去就是没图标。先解析（非令牌原样返回），解析不出
@@ -1924,12 +1902,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
               setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + 1 }));
               const preview = (body || `${charName} sent a proactive message`).replace(/\s+/g, ' ').trim() || `${charName} sent a proactive message`;
-              void sendProactiveNativeNotification(charId, charName, preview);
 
               // Web Notification —— 走 Service Worker 的 showNotification（和"测试推送"
               // 同一条链路）。页面级 `new Notification(...)` 在标签后台 / PWA / 移动端会
               // 静默失败，必须走 SW registration 才稳定。
-              if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator && window.Notification && Notification.permission === 'granted') {
+              if ('serviceWorker' in navigator && window.Notification && Notification.permission === 'granted') {
                   const char = characters.find(c => c.id === charId);
                   navigator.serviceWorker.ready.then(async reg => {
                       // 同上：令牌是个非空字符串，`char?.avatar || 默认图标` 这种写法会让默认
@@ -1962,7 +1939,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           window.removeEventListener('proactive-message-sent', handler);
           document.removeEventListener('visibilitychange', onVisible);
       };
-  }, [characters, sendProactiveNativeNotification]);
+  }, [characters]);
 
   // ─── Global Proactive Message Handler ───
   // Registered at OS level so it works even when Chat is not open.
@@ -1983,7 +1960,6 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
               setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + 1 }));
               const preview = (body || `${charName} sent an active message`).replace(/\s+/g, ' ').trim() || `${charName} sent an active message`;
-              void sendProactiveNativeNotification(charId, charName, preview);
               // SW push handler 已经 fire 过系统通知（不在前台时露出真实内容、在前台时
               // silent + close 静默），这里不再补一次，避免重复弹窗。
           }
@@ -2165,7 +2141,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           window.removeEventListener('memory-palace-processing', palaceProcessingHandler);
           document.removeEventListener('visibilitychange', onVisible);
       };
-  }, [sendProactiveNativeNotification]);
+  }, []);
 
   const proactiveRunningRef = useRef(false);
   const proactiveQueueRef = useRef<ProactiveQueueEntry[]>([]);

@@ -1,16 +1,12 @@
 /**
  * Unified speech-to-text (STT) — used by the Call app for voice input.
  *
- * Hybrid strategy (A+B):
- *   - Web platform  → native `webkitSpeechRecognition` / `SpeechRecognition`
- *                     (zero dependency, streams interim results).
- *   - Capacitor app → `@capacitor-community/speech-recognition` (on-device capable),
- *                     loaded via dynamic import so it never enters the web bundle.
+ * Uses the browser's native `webkitSpeechRecognition` / `SpeechRecognition`
+ * (zero dependency, streams interim results).
  *
  * The user speaks Chinese to the character by default, so the default recognition
  * language is zh-CN regardless of the character's TTS output language.
  */
-import { Capacitor } from '@capacitor/core';
 
 export interface SttCallbacks {
   /** Fired repeatedly with the best-so-far transcript (interim + final). */
@@ -28,18 +24,11 @@ export interface SttSession {
   stop: () => void;
 }
 
-const isNative = (): boolean => {
-  try { return Capacitor.isNativePlatform(); } catch { return false; }
-};
-
 const getWebCtor = (): any =>
   (typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) || null;
 
 /** Whether voice input is usable in the current environment. */
-export const isSttSupported = (): boolean => {
-  if (isNative()) return true; // plugin present; actual availability resolved at start()
-  return !!getWebCtor();
-};
+export const isSttSupported = (): boolean => !!getWebCtor();
 
 const friendlyError = (raw: string): string => {
   if (/not-allowed|denied|permission/i.test(raw)) return '麦克风权限被拒绝，去系统设置里允许一下';
@@ -106,45 +95,11 @@ const startWeb = (lang: string, cb: SttCallbacks): SttSession => {
   return { stop: () => { clearWatchdog(); try { rec.stop(); } catch { /* ignore */ } } };
 };
 
-const startNative = async (lang: string, cb: SttCallbacks): Promise<SttSession> => {
-  const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-
-  const perm = await SpeechRecognition.checkPermissions().catch(() => ({ speechRecognition: 'prompt' as const }));
-  if (perm.speechRecognition !== 'granted') {
-    const req = await SpeechRecognition.requestPermissions();
-    if (req.speechRecognition !== 'granted') throw new Error('麦克风权限被拒绝');
-  }
-
-  let lastPartial = '';
-  let ended = false;
-  const handle = await SpeechRecognition.addListener('partialResults', (data: any) => {
-    const m = data?.matches?.[0];
-    if (m) { lastPartial = m; cb.onPartial?.(m); }
-  });
-
-  const finish = (finalText: string, errMsg?: string) => {
-    if (ended) return;
-    ended = true;
-    handle.remove();
-    if (errMsg) cb.onError?.(friendlyError(errMsg));
-    else if (finalText) cb.onFinal?.(finalText);
-    cb.onEnd?.();
-  };
-
-  // With partialResults: true, start() resolves once recognition settles.
-  SpeechRecognition.start({ language: lang, partialResults: true, popup: false, maxResults: 1 })
-    .then((res: any) => finish((res?.matches?.[0] || lastPartial || '').trim()))
-    .catch((e: any) => finish('', e?.message || 'native-error'));
-
-  return { stop: () => { SpeechRecognition.stop().catch(() => { /* ignore */ }); } };
-};
-
 /**
  * Start a speech-to-text session. Resolves to a handle you can `stop()`.
  * All transcripts arrive via the callbacks.
  */
 export const startStt = async (lang: string, cb: SttCallbacks): Promise<SttSession> => {
   const language = lang || 'zh-CN';
-  if (isNative()) return startNative(language, cb);
   return startWeb(language, cb);
 };

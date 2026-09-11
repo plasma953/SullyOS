@@ -108,10 +108,6 @@ import { shouldShowBackupReminder, markBackupReminderShown, daysSinceLastBackup 
 import { formatBytes } from '../utils/format';
 import { AppID } from '../types';
 import { shellHandlesSafeArea } from '../utils/safeAreaApps';
-import { App as CapApp } from '@capacitor/app';
-import { StatusBar as CapStatusBar, Style as StatusBarStyle } from '@capacitor/status-bar';
-import { LocalNotifications } from '@capacitor/local-notifications';
-import { Capacitor } from '@capacitor/core';
 import { isIOSStandaloneWebApp, resolveStatusBarMode } from '../utils/iosStandalone';
 import AppErrorBoundary from './os/AppErrorBoundary';
 import GlobalMiniPlayer from './os/GlobalMiniPlayer';
@@ -643,7 +639,7 @@ const PhoneShell: React.FC = () => {
   // views may push their own entries above this one; landing back on our guard must
   // therefore not consume a second in-app layer.
   useEffect(() => {
-    if (typeof window === 'undefined' || Capacitor.isNativePlatform()) return;
+    if (typeof window === 'undefined') return;
 
     const guardIsCurrent = isBrowserBackGuardState(window.history.state);
     if (activeApp === AppID.Launcher) {
@@ -691,51 +687,6 @@ const PhoneShell: React.FC = () => {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [activeApp, handleBack]);
-
-  // Capacitor Native Handling
-  useEffect(() => {
-    const initNative = async () => {
-        if (Capacitor.isNativePlatform()) {
-            try {
-                await CapStatusBar.setOverlaysWebView({ overlay: true });
-                await CapStatusBar.hide();
-                await CapStatusBar.setStyle({ style: StatusBarStyle.Dark });
-
-                const permStatus = await LocalNotifications.checkPermissions();
-                if (permStatus.display !== 'granted') {
-                    await LocalNotifications.requestPermissions();
-                }
-            } catch (e) {
-                console.error("Native init failed", e);
-            }
-        }
-    };
-    initNative();
-
-    // Handle Android Hardware Back Button
-    const setupBackButton = async () => {
-        if (Capacitor.isNativePlatform()) {
-            try {
-                await CapApp.removeAllListeners();
-                CapApp.addListener('backButton', ({ canGoBack }) => {
-                    if (isLocked) {
-                        CapApp.exitApp();
-                    } else {
-                        handleBack(); // Delegate to OSContext logic
-                    }
-                });
-            } catch (e) { console.log('Back button listener setup failed'); }
-        }
-    };
-
-    setupBackButton();
-
-    return () => {
-        if (Capacitor.isNativePlatform()) {
-            CapApp.removeAllListeners().catch(() => {});
-        }
-    };
-  }, [activeApp, isLocked, closeApp, handleBack]);
 
   // Force scroll to top when app changes to prevent "push up" glitches on iOS
   useEffect(() => {

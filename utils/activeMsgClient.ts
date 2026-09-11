@@ -107,14 +107,6 @@ import {
   SUBSCRIBE_SETTLE_MS,
   type SubscribeFailureKind,
 } from './pushSubscribeShared';
-import { isUnifiedPushPlatform } from './unifiedPushPlugin';
-
-export const NATIVE_PUSH_TOKEN_STORAGE_KEY = 'amsg2_fcm_token_v1';
-const nativePushBuildEnabled = () => import.meta.env.VITE_AMSG_NATIVE_PUSH === 'true';
-const readNativePushToken = () => nativePushBuildEnabled() && typeof localStorage !== 'undefined'
-  && !isUnifiedPushPlatform()
-  ? localStorage.getItem(NATIVE_PUSH_TOKEN_STORAGE_KEY)?.trim() || ''
-  : '';
 
 export interface ActiveMsg2PushStatus {
   supported: boolean;
@@ -122,9 +114,6 @@ export interface ActiveMsg2PushStatus {
   hasSubscription: boolean;
   vapidConfigured: boolean;
   detail?: string;
-  transport?: 'web-push' | 'unified-push';
-  distributor?: string | null;
-  needsDistributor?: boolean;
 }
 
 /** worker 上登记的那份订阅（一个用户一行）。读不到时调用方拿 null。 */
@@ -1529,15 +1518,6 @@ const OUTBOX_MAX_PAGES = 20;
 const OUTBOX_ACK_BATCH_SIZE = 200;
 
 export const ActiveMsgClient = {
-  async registerNativePushToken(token: string): Promise<void> {
-    if (!nativePushBuildEnabled()) throw new Error('当前构建未开启 Capacitor 原生推送');
-    const value = token.trim();
-    if (!value) throw new Error('FCM registration token 为空');
-    const config = await ensureWorkerReady();
-    const client = await initializeClient(config);
-    await client.putPushSubscription({ endpoint: `fcm:${value}` });
-  },
-
   async getGlobalConfig() {
     return ensureGlobalReady();
   },
@@ -1565,40 +1545,6 @@ export const ActiveMsgClient = {
   async getPushStatus(): Promise<ActiveMsg2PushStatus> {
     const config = await ensureGlobalReady();
     const workerConfigured = Boolean(config.workerUrl.trim());
-    if (isUnifiedPushPlatform()) {
-      try {
-        const { getUnifiedPushStatus } = await import('./unifiedPushPlugin');
-        const status = await getUnifiedPushStatus();
-        const needsDistributor = !status.distributor && status.distributors.length === 0;
-        return {
-          supported: !needsDistributor,
-          permission: status.permission === 'prompt' ? 'default' : status.permission,
-          hasSubscription: Boolean(status.subscription),
-          vapidConfigured: workerConfigured,
-          transport: 'unified-push',
-          distributor: status.distributor,
-          needsDistributor,
-          detail: needsDistributor
-            ? '尚未检测到 UnifiedPush 服务。请先安装并打开 ntfy 的无 Firebase 版本。'
-            : status.lastError
-              ? `UnifiedPush：${status.lastError}`
-              : !workerConfigured
-                ? '请先填写 Worker 地址。'
-                : status.distributor
-                  ? `UnifiedPush 服务：${status.distributor}`
-                  : undefined,
-        };
-      } catch (error) {
-        return {
-          supported: false,
-          permission: 'unsupported',
-          hasSubscription: false,
-          vapidConfigured: workerConfigured,
-          transport: 'unified-push',
-          detail: `UnifiedPush 原生桥不可用：${(error as Error)?.message || error}`,
-        };
-      }
-    }
     // 能力检测与 instant push / proactive push 共用 describePushCapabilityGap：
     // 它会说清缺的是三件套里的哪一件，「不支持」这三个字用户拿着没法action。
     const capabilityGap = describePushCapabilityGap();
@@ -1622,19 +1568,10 @@ export const ActiveMsgClient = {
       hasSubscription: Boolean(subscription),
       vapidConfigured: workerConfigured,
       detail: !workerConfigured ? '请先填写 Worker 地址。' : undefined,
-      transport: 'web-push',
     };
   },
 
   async ensurePushSubscription() {
-    if (isUnifiedPushPlatform()) {
-      const config = await ensureWorkerReady();
-      const client = createClient(config);
-      const vapidPublicKey = await fetchWorkerVapidKey(client);
-      const { ensureUnifiedPushSubscription } = await import('./unifiedPushPlugin');
-      return ensureUnifiedPushSubscription(vapidPublicKey);
-    }
-
     // 只需要「支不支持」这一个判断，不走 getPushStatus——那会把 KeepAlive.init /
     // serviceWorker.ready / getSubscription 整套先跑一遍，下面又原样跑一次。
     const capabilityGap = describePushCapabilityGap();
@@ -1763,19 +1700,6 @@ export const ActiveMsgClient = {
    * 按钮要治的病，不能自己再犯一遍。
    */
   async resetPushSubscription(): Promise<void> {
-    if (isUnifiedPushPlatform()) {
-      const config = await ensureWorkerReady();
-      const client = await initializeClient(config);
-      try {
-        await client.deletePushSubscription();
-      } catch (error) {
-        console.warn('[ActiveMsg] UnifiedPush 重置：删除 Worker 旧订阅失败，继续覆盖', error);
-      }
-      const subscription = await this.ensurePushSubscription();
-      await client.putPushSubscription(subscription);
-      return;
-    }
-
     const config = await requirePushReady();
     const client = await initializeClient(config);
 
@@ -1804,11 +1728,6 @@ export const ActiveMsgClient = {
    * 的 D1 里、跟 SW 无关，不用像 proactive-push 那样重新推排程回去。
    */
   async deepResetPushSubscription(): Promise<void> {
-    if (isUnifiedPushPlatform()) {
-      await this.resetPushSubscription();
-      return;
-    }
-
     const config = await requirePushReady();
     const client = await initializeClient(config);
 
@@ -1855,21 +1774,6 @@ export const ActiveMsgClient = {
    * 返回值只为单测断言：'registered' 补了 / 'skipped' 条件不满足 / 'failed' 补失败了。
    */
   async reconcilePushSubscription(): Promise<'registered' | 'skipped' | 'failed'> {
-    if (isUnifiedPushPlatform()) {
-      try {
-        const { readUnifiedPushSubscription } = await import('./unifiedPushPlugin');
-        const subscription = await readUnifiedPushSubscription();
-        if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) return 'skipped';
-        const config = await ensureWorkerReady();
-        const client = await initializeClient(config);
-        await client.putPushSubscription({ endpoint: subscription.endpoint, keys: subscription.keys });
-        return 'registered';
-      } catch (error) {
-        console.warn('[ActiveMsg] 连接后补登记 UnifiedPush 订阅失败', error);
-        return 'failed';
-      }
-    }
-
     try {
       if (describePushCapabilityGap()) return 'skipped';
       if (Notification.permission !== 'granted') return 'skipped';
@@ -1928,8 +1832,6 @@ export const ActiveMsgClient = {
     // 排在保存之后：上面那句写的是握手前的配置快照，探测结论放它前面会被原样盖回去。
     await this.probeLlmCredentialsSupport();
     await this.reconcilePushSubscription();
-    const nativeToken = readNativePushToken();
-    if (nativeToken) await this.registerNativePushToken(nativeToken);
     // warnings 是「连上了，但有一块功能是哑的」——比如 VAPID 没配齐，任务能建、到点
     // 却一条都推不出去。连接本身算成功，交给调用方提示，别拦住流程。
     return { ok: true, userId: config.userId, warnings: report?.warnings ?? [] };
@@ -2216,9 +2118,7 @@ export const ActiveMsgClient = {
     const globalConfig = await ensureWorkerReady();
     const client = await initializeClient(globalConfig);
     // 任务体不带订阅，worker 到点读用户级那一份——所以建任务前先把它登记上去。
-    const nativeToken = readNativePushToken();
-    if (nativeToken) await this.registerNativePushToken(nativeToken);
-    else await this.registerPushSubscription();
+    await this.registerPushSubscription();
 
     // 数量封顶：待触发任务（不含被替换的那个）满 5 个就拒绝，让角色/用户先清。
     const pendingOthers = getPendingTasks(config, Date.now())

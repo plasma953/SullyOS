@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
-import { Capacitor } from '@capacitor/core';
 import { extractContent, safeResponseJson } from '../utils/safeApi';
 import { fetchChatModelList, normalizeModelIds } from '../utils/modelList';
 import { shareOrDownloadBlob } from '../utils/shareExport';
@@ -1406,15 +1405,13 @@ const Settings: React.FC = () => {
           const blob = await exportSystem(mode);
           
           const fileName = `Sully_Backup_${mode}_${new Date().toISOString().slice(0, 10)}.zip`;
-          if (!Capacitor.isNativePlatform()) {
-              // 网页额外保留一条手动下载链接，作为浏览器禁用文件分享/自动下载时的最终救援。
-              if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
-              const url = URL.createObjectURL(blob);
-              downloadUrlRef.current = url;
-              setDownloadUrl(url);
-              setDownloadFileName(fileName);
-              setShowExportModal(true);
-          }
+          // 网页保留一条手动下载链接，作为浏览器禁用文件分享/自动下载时的最终救援。
+          if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
+          const url = URL.createObjectURL(blob);
+          downloadUrlRef.current = url;
+          setDownloadUrl(url);
+          setDownloadFileName(fileName);
+          setShowExportModal(true);
           const result = await shareOrDownloadBlob({
               blob,
               fileName,
@@ -1446,14 +1443,12 @@ const Settings: React.FC = () => {
   };
 
   const deliverStandaloneBackup = async (blob: Blob, fileName: string, shareTitle: string) => {
-      if (!Capacitor.isNativePlatform()) {
-          if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
-          const url = URL.createObjectURL(blob);
-          downloadUrlRef.current = url;
-          setDownloadUrl(url);
-          setDownloadFileName(fileName);
-          setShowExportModal(true);
-      }
+      if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
+      const url = URL.createObjectURL(blob);
+      downloadUrlRef.current = url;
+      setDownloadUrl(url);
+      setDownloadFileName(fileName);
+      setShowExportModal(true);
       await shareOrDownloadBlob({ blob, fileName, shareTitle, nativeChunked: true });
   };
 

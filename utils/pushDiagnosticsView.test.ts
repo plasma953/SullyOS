@@ -24,7 +24,6 @@ const baseState = (patch: Partial<BrowserPushState> = {}): BrowserPushState => (
   endpointDead: false,
   channel: '未知',
   iosNeedsPwa: false,
-  capacitorNative: false,
   lastSubscribeFailure: null,
   ...patch,
 });
@@ -69,11 +68,9 @@ describe('「浏览器支持」这一行', () => {
     }
   });
 
-  it('接口本身就缺、或跑在 App 里的老判定不变', () => {
+  it('接口本身缺时判「否」', () => {
     expect(describeSupport(baseState({ supported: false }))).toBe('否（浏览器缺少推送相关接口）');
-    expect(describeSupport(baseState({ capacitorNative: true }))).toBe('否（现在跑在 App 里）');
     expect(isSupportBad(baseState({ supported: false }))).toBe(true);
-    expect(isSupportBad(baseState({ capacitorNative: true }))).toBe(true);
   });
 
   it('什么都没失败过时是「是」，不标红', () => {
