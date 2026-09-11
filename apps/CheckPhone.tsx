@@ -270,6 +270,11 @@ const CheckPhone: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [page, setPage] = useState(0); // 0 = home, 1 = custom apps
     const [selectPage, setSelectPage] = useState(0); // Target Device 选人界面的翻页（每页 6 人）
+    const [selectSlideDir, setSelectSlideDir] = useState<'l' | 'r'>('l');
+    const goSelectPage = (next: number) => {
+        setSelectSlideDir(next >= selectPage ? 'l' : 'r');
+        setSelectPage(next);
+    };
     const [selectGroupId, setSelectGroupId] = useState(GROUP_FILTER_ALL); // 选人界面的分组筛选
     const [showApiSettings, setShowApiSettings] = useState(false);
     const [phoneApiConfig, setPhoneApiConfigState] = useState<APIConfig | null>(() => getCheckPhoneApi());
@@ -2923,7 +2928,7 @@ ${olderText}
                         );
                     })}
                 </div>
-                <div className="flex-1 overflow-y-auto px-4 pt-1 no-scrollbar pb-28 overscroll-contain space-y-2.5">
+                <div key={aiService} className="flex-1 overflow-y-auto px-4 pt-1 no-scrollbar pb-28 overscroll-contain space-y-2.5 animate-fade-soft">
                     <div className="text-[11px] text-white/45 px-1 pb-0.5">{svc.tagline}</div>
                     {/* 酒馆角色卡橱窗（点击看 TA 玩这张 / 长按编辑删除 / ＋自己加一张） */}
                     {aiService === 'tavern' && (
@@ -3809,7 +3814,7 @@ ${olderText}
         };
 
         return (
-            <div className="absolute inset-0 flex flex-col z-0 overflow-hidden bg-[#070809]">
+            <div className="absolute inset-0 flex flex-col z-0 overflow-hidden bg-[#070809] animate-fade-soft">
                 {/* Cinematic background */}
                 <div className="absolute inset-0 pointer-events-none"
                     style={{ background: 'radial-gradient(120% 80% at 50% 0%, #1a1d2b 0%, #0a0c12 55%, #060709 100%)' }} />
@@ -3878,7 +3883,7 @@ ${olderText}
     // ============================================================
     if (view === 'select') {
         return (
-            <div className="absolute inset-0 flex flex-col overflow-hidden text-white"
+            <div className="absolute inset-0 flex flex-col overflow-hidden text-white animate-fade-soft"
                 style={{ background: 'radial-gradient(120% 80% at 50% 0%, #161826 0%, #0a0b10 60%)' }}>
                 <StatusStrip />
                 <div className="h-14 flex items-center justify-between px-4 shrink-0">
@@ -3901,9 +3906,9 @@ ${olderText}
                     return (
                         <div className="flex-1 min-h-0 flex flex-col">
                             <CharacterGroupFilterBar characters={characters} groups={characterGroups} dark
-                                value={selectGroupId} onChange={(id) => { setSelectGroupId(id); setSelectPage(0); }}
+                                value={selectGroupId} onChange={(id) => { setSelectGroupId(id); goSelectPage(0); }}
                                 className="px-5 pt-1 shrink-0" />
-                            <div className="flex-1 min-h-0 px-5 grid grid-cols-4 gap-3 content-center pb-4 pt-2">
+                            <div key={`${selectGroupId}-${cur}`} className={`flex-1 min-h-0 px-5 grid grid-cols-4 gap-3 content-center pb-4 pt-2 ${selectSlideDir === 'l' ? 'animate-page-in-l' : 'animate-page-in-r'}`}>
                                 {pageChars.map(c => (
                                     <div key={c.id} onClick={() => handleSelectChar(c)}
                                         className="min-h-0 rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl p-3 flex flex-col items-center justify-center gap-3 cursor-pointer active:scale-95 transition group hover:border-violet-400/50 hover:shadow-[0_0_24px_rgba(157,124,255,0.25)] relative overflow-hidden">
@@ -3920,17 +3925,17 @@ ${olderText}
                             </div>
                             {pageCount > 1 && (
                                 <div className="shrink-0 flex items-center justify-center gap-4 pb-6 pt-3">
-                                    <button onClick={() => setSelectPage(Math.max(0, cur - 1))} disabled={cur === 0}
+                                    <button onClick={() => goSelectPage(Math.max(0, cur - 1))} disabled={cur === 0}
                                         className="w-9 h-9 rounded-full flex items-center justify-center text-white/80 bg-white/[0.05] border border-white/[0.08] active:scale-90 transition disabled:opacity-30 disabled:active:scale-100">
                                         <CaretLeft size={16} weight="bold" />
                                     </button>
                                     <div className="flex items-center gap-2">
                                         {Array.from({ length: pageCount }, (_, pi) => (
-                                            <button key={pi} onClick={() => setSelectPage(pi)} aria-label={`第 ${pi + 1} 页`}
+                                            <button key={pi} onClick={() => goSelectPage(pi)} aria-label={`第 ${pi + 1} 页`}
                                                 className={`h-2 rounded-full transition-all active:scale-90 ${pi === cur ? 'w-5 bg-violet-400' : 'w-2 bg-white/25'}`} />
                                         ))}
                                     </div>
-                                    <button onClick={() => setSelectPage(Math.min(pageCount - 1, cur + 1))} disabled={cur === pageCount - 1}
+                                    <button onClick={() => goSelectPage(Math.min(pageCount - 1, cur + 1))} disabled={cur === pageCount - 1}
                                         className="w-9 h-9 rounded-full flex items-center justify-center text-white/80 bg-white/[0.05] border border-white/[0.08] active:scale-90 transition disabled:opacity-30 disabled:active:scale-100">
                                         <CaretLeft size={16} weight="bold" className="rotate-180" />
                                     </button>

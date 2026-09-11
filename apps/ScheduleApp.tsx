@@ -519,7 +519,7 @@ const ScheduleApp: React.FC = () => {
                 )}
 
                 {activeTab === 'quest' && (
-                    <div className="space-y-4">
+                    <div className="space-y-4 animate-fade-soft">
                         <div className="flex items-center gap-2 mb-2 px-1">
                             <div className={`w-2 h-2 rounded-full animate-pulse ${currentThemeMode === 'cyber' ? 'bg-cyan-500' : (currentThemeMode === 'soft' ? 'bg-pink-400' : 'bg-slate-400')}`}></div>
                             <h3 className={`text-xs font-bold uppercase tracking-[0.2em] ${theme.accent}`}>进行中任务</h3>
@@ -608,7 +608,7 @@ const ScheduleApp: React.FC = () => {
                     }
                     const dotColors = ['bg-pink-400', 'bg-purple-400', 'bg-rose-400', 'bg-fuchsia-400', 'bg-red-300'];
                     return (
-                    <div className="space-y-4">
+                    <div className="space-y-4 animate-fade-soft">
                         {/* 月份导航 */}
                         <div className={`flex items-center justify-between ${theme.card} px-4 py-2.5`}>
                             <button onClick={() => setCalCursor(c => ({ y: c.m === 0 ? c.y - 1 : c.y, m: c.m === 0 ? 11 : c.m - 1 }))} className={`p-1.5 rounded-full active:scale-90 transition-transform ${theme.accent}`}>‹</button>
@@ -685,7 +685,7 @@ const ScheduleApp: React.FC = () => {
                 })()}
 
                 {activeTab === 'server_events' && (
-                    <div className={`relative pl-6 space-y-8 before:absolute before:left-2 before:top-2 before:bottom-0 before:w-[1px] ${theme.decoLine}`}>
+                    <div className={`relative pl-6 space-y-8 animate-fade-soft before:absolute before:left-2 before:top-2 before:bottom-0 before:w-[1px] ${theme.decoLine}`}>
                         {/* Anniversaries List */}
                         <div>
                              <h3 className={`text-xs font-bold uppercase tracking-widest mb-6 -ml-6 pl-6 ${theme.textSub}`}>时间线事件</h3>

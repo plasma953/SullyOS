@@ -1158,10 +1158,10 @@ ${charPart}
                                 </div>
                             </div>
                         ) : (
-                            <>
+                            <div key={activeTab} className="h-full animate-fade-soft">
                                 {activeTab === 'user' && currentEntry && renderPage(currentEntry.userPage, 'user')}
                                 {activeTab === 'char' && (currentEntry?.charPage ? renderPage(currentEntry.charPage, 'char') : renderEmptyCharPage())}
-                            </>
+                            </div>
                         )}
                     </div>
                 </div>

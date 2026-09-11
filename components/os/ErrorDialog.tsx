@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useExitPresence } from '../../hooks/useExitPresence';
 
 interface ErrorDialogProps {
     isOpen: boolean;
@@ -11,8 +12,9 @@ interface ErrorDialogProps {
 // 手机上没法开 console 时, 用户能直接看清、长按复制原文反馈过来。
 const ErrorDialog: React.FC<ErrorDialogProps> = ({ isOpen, title, details, onClose }) => {
     const [copied, setCopied] = useState(false);
+    const { mounted, phase } = useExitPresence(isOpen, 160);
 
-    if (!isOpen) return null;
+    if (!mounted) return null;
 
     const handleCopy = async () => {
         try {
@@ -37,9 +39,9 @@ const ErrorDialog: React.FC<ErrorDialogProps> = ({ isOpen, title, details, onClo
     };
 
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 10000 }}>
+        <div className={`fixed inset-0 z-[110] flex items-center justify-center p-4 ${phase === 'out' ? 'animate-fade-out-soft' : 'animate-fade-in'}`} style={{ zIndex: 10000 }}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-pop-in">
+            <div className={`relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden ${phase === 'out' ? 'animate-fade-out-soft' : 'animate-pop-in'}`}>
                 <div className="p-5 pb-3">
                     <div className="flex gap-3 items-start">
                         <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center shrink-0">

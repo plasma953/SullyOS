@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useExitPresence } from '../../hooks/useExitPresence';
 
 interface ConfirmDialogProps {
     isOpen: boolean;
@@ -22,7 +23,8 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     onConfirm, 
     onCancel 
 }) => {
-    if (!isOpen) return null;
+    const { mounted, phase } = useExitPresence(isOpen, 160);
+    if (!mounted) return null;
 
     const getBtnColor = () => {
         switch (variant) {
@@ -62,9 +64,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 9999 }}>
+        <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 ${phase === 'out' ? 'animate-fade-out-soft' : 'animate-fade-in'}`} style={{ zIndex: 9999 }}>
             <div className="absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity" onClick={onCancel}></div>
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-pop-in transform transition-all">
+            <div className={`relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all ${phase === 'out' ? 'animate-fade-out-soft' : 'animate-pop-in'}`}>
                 <div className="p-6">
                     <div className="flex gap-4">
                         {getIcon()}

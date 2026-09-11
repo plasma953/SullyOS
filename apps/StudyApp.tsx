@@ -1643,7 +1643,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
     // PRACTICE BOOK VIEW
     if (mode === 'practice_book') {
         return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
+            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative animate-fade-soft">
                 <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="flex items-center px-6 py-3">
                         <div className="flex justify-between items-center w-full">
@@ -1712,7 +1712,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
     if (mode === 'quiz_review' && quizSession) {
         const viewQuiz = reviewingQuiz || quizSession;
         return (
-            <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans">
+            <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans animate-fade-soft">
                 <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
                 {/* Header */}
@@ -1841,7 +1841,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
     // QUIZ ANSWERING VIEW
     if (mode === 'quiz') {
         return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
+            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative animate-fade-soft">
                 {/* Header */}
                 <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="flex items-center px-6 py-3">
@@ -1950,7 +1950,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
     if (mode === 'bookshelf') {
         return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
+            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative animate-fade-soft">
                 <div className="bg-[#fdfbf7]/90 backdrop-blur-md border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="flex items-center px-6 py-3">
                     <div className="flex justify-between items-center w-full">
@@ -2259,7 +2259,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
             setCourses(prev => prev.map(c => c.id === updated.id ? updated : c)); // Sync
         };
         return (
-            <div className="epub-r h-full w-full flex flex-col relative overflow-hidden font-sans" data-theme={readerTheme} style={{ background: 'var(--er-bg)' }}>
+            <div className="epub-r h-full w-full flex flex-col relative overflow-hidden font-sans animate-fade-soft" data-theme={readerTheme} style={{ background: 'var(--er-bg)' }}>
                 {/* Background Texture */}
                 <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'linear-gradient(var(--er-border) 1px, transparent 1px), linear-gradient(90deg, var(--er-border) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
@@ -2436,7 +2436,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
     // CLASSROOM VIEW
     return (
-        <div className="study-classroom h-full w-full flex flex-col relative overflow-hidden font-sans" data-theme={classroomTheme}>
+        <div className="study-classroom h-full w-full flex flex-col relative overflow-hidden font-sans animate-fade-soft" data-theme={classroomTheme}>
             
             {/* Background Texture - Board */}
             <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>

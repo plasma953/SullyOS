@@ -546,10 +546,11 @@ const MusicApp: React.FC = () => {
 
   return (
     <div className="absolute inset-0 overflow-hidden">
-      {view === 'search' && renderSearch()}
-      {view === 'player' && renderPlayer()}
-      {view === 'settings' && renderSettings()}
+      {view === 'search' && <div key="search" className="absolute inset-0 animate-fade-soft">{renderSearch()}</div>}
+      {view === 'player' && <div key="player" className="absolute inset-0 animate-fade-soft">{renderPlayer()}</div>}
+      {view === 'settings' && <div key="settings" className="absolute inset-0 animate-fade-soft">{renderSettings()}</div>}
       {view === 'profile' && (
+        <div key="profile" className="absolute inset-0 animate-fade-soft">
         <NeteaseProfilePage
           onBack={closeApp}
           onOpenPlayer={() => setView('player')}
@@ -557,6 +558,7 @@ const MusicApp: React.FC = () => {
           onOpenSettings={() => setView('settings')}
           onVisitChar={id => { setVisitCharId(id); setView('visit_char');  }}
         />
+        </div>
       )}
       {/* 手动对轴 modal — 全屏覆盖，不开新 view */}
       {showLyricSync && current && current.local && (() => {
@@ -724,11 +726,13 @@ const MusicApp: React.FC = () => {
       })()}
 
       {view === 'visit_char' && visitCharId && (
+        <div key="visit_char" className="absolute inset-0 animate-fade-soft">
         <CharVisitPage
           charId={visitCharId}
           onBack={() => { setView('profile'); setVisitCharId(null); }}
           onOpenPlayer={() => setView('player')}
         />
+        </div>
       )}
     </div>
   );

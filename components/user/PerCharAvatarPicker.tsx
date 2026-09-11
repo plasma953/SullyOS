@@ -102,13 +102,6 @@ const PerCharAvatarPicker: React.FC = () => {
 
     return (
         <div className="bg-white rounded-[1.75rem] shadow-[0_10px_30px_-12px_rgba(80,70,120,0.18)] border border-slate-100 p-5">
-            {/* 翻页滑入动效（组件私有，不进全局 tailwind 配置） */}
-            <style>{`
-                @keyframes pcaSlideL { from { opacity: .35; transform: translateX(26px); } to { opacity: 1; transform: none; } }
-                @keyframes pcaSlideR { from { opacity: .35; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
-                .pca-slide-l { animation: pcaSlideL .28s cubic-bezier(0.25, 1, 0.5, 1); }
-                .pca-slide-r { animation: pcaSlideR .28s cubic-bezier(0.25, 1, 0.5, 1); }
-            `}</style>
 
             <div className="flex items-center gap-2 mb-1">
                 <span className="w-7 h-7 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
@@ -146,7 +139,7 @@ const PerCharAvatarPicker: React.FC = () => {
                         if (Math.abs(dx) > 48) goPage(safePage + (dx < 0 ? 1 : -1));
                     }}
                 >
-                    <div key={`${safePage}-${query}`} className={`grid grid-cols-4 gap-3 ${slideDir === 'l' ? 'pca-slide-l' : 'pca-slide-r'}`}>
+                    <div key={`${safePage}-${query}`} className={`grid grid-cols-4 gap-3 ${slideDir === 'l' ? 'animate-page-in-l' : 'animate-page-in-r'}`}>
                         {pageChars.map(c => {
                             const override = overrides[c.id];
                             return (

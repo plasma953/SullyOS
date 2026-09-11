@@ -453,8 +453,14 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
     // 悬浮面板内左右翻页：一页一个主题，改哪项都能立刻在后面的预览里看到。
     const PAGE_TITLES = ['快速预设', '聊天壳', '头部', '气泡与头像', '细节微调', '表情包与输入栏'];
     const [page, setPage] = useState(0);
+    const [slideDir, setSlideDir] = useState<'l' | 'r'>('l');
     const swipeStartX = useRef<number | null>(null);
-    const goPage = (next: number) => setPage(Math.max(0, Math.min(PAGE_TITLES.length - 1, next)));
+    const goPage = (next: number) => {
+        const clamped = Math.max(0, Math.min(PAGE_TITLES.length - 1, next));
+        if (clamped === page) return;
+        setSlideDir(clamped > page ? 'l' : 'r');
+        setPage(clamped);
+    };
     const onWheelPage = useWheelPager((delta: 1 | -1) => goPage(page + delta));
 
     // 聊天细节微调 → 预览联动（近似演示：字号按比例缩小 3px 以配合迷你预览）
@@ -627,7 +633,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
 
             {panelOpen && (
             <section
-                className="fixed left-1/2 z-[105] w-[94%] max-w-md -translate-x-1/2 overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-4 shadow-[0_12px_40px_rgba(15,23,42,0.22)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="fixed left-1/2 z-[105] w-[94%] max-w-md -translate-x-1/2 animate-fade-soft overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-4 shadow-[0_12px_40px_rgba(15,23,42,0.22)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{ bottom: 'calc(16px + var(--safe-bottom, 0px))', maxHeight: '46vh' }}
             >
                 <div className="mb-4 flex items-center gap-1.5">
@@ -641,7 +647,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                         {PAGE_TITLES.map((title, i) => (
                             <button
                                 key={title}
-                                onClick={() => setPage(i)}
+                                onClick={() => goPage(i)}
                                 className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold transition-all active:scale-95 ${i === page ? 'bg-primary text-white shadow-sm' : 'bg-slate-100 text-slate-500'}`}
                             >{title}</button>
                         ))}
@@ -668,6 +674,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                         if (Math.abs(dx) > 48) goPage(page + (dx < 0 ? 1 : -1));
                     }}
                 >
+                <div key={page} className={slideDir === 'l' ? 'animate-page-in-l' : 'animate-page-in-r'}>
                 {page === 0 && (<>
                     <p className="mb-3 text-[10px] text-slate-400">一键换整套聊天壳（含头像、气泡、间距与细节微调），切预设会先清掉微调残留。</p>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -776,6 +783,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                         <ChoiceGroup title="发送按钮" items={choices.send} value={sendButtonStyle} onPick={(value) => updateTheme({ chatSendButtonStyle: value as OSTheme['chatSendButtonStyle'] })} />
                     </div>
                 </>)}
+                </div>
                 </div>
             </section>
             )}

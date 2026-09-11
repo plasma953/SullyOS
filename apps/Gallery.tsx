@@ -336,8 +336,8 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
                 </div>
             ) : (
                 <div className="grid grid-cols-3 gap-1">
-                    {images.map(img => (
-                        <div key={img.id} onClick={() => handleImageClick(img)} className="aspect-square bg-slate-100 relative cursor-pointer overflow-hidden rounded-sm">
+                    {images.map((img, index) => (
+                        <div key={img.id} onClick={() => handleImageClick(img)} style={{ animationDelay: `${Math.min(index, 9) * 20}ms`, animationFillMode: 'backwards' }} className="aspect-square bg-slate-100 relative cursor-pointer overflow-hidden rounded-sm animate-fade-soft">
                             {/* 相册图存的是 blobref 令牌（见 utils/blobRef.ts），TokenImg 会解析成 objectURL；
                                 旧的 base64 / http 图原样透传，两种都显示得出来 */}
                             <TokenImg value={img.url} className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" loading="lazy" />

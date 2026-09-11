@@ -38,11 +38,16 @@ export const useLauncherLayout = (): LauncherLayoutContextValue => {
 const APP_BY_ID = new Map<string, AppConfig>(INSTALLED_APPS.map(app => [app.id as string, app]));
 
 const DRAG_STYLE = `
+  @keyframes jiggleEdit {
+    0%, 100% { transform: rotate(-0.8deg); }
+    50% { transform: rotate(0.8deg); }
+  }
   .launcher-edit-item {
     touch-action: none;
     cursor: grab;
     transition: transform 180ms cubic-bezier(.2,.75,.25,1), opacity 150ms ease, filter 150ms ease;
     will-change: transform;
+    animation: jiggleEdit 1.2s ease-in-out infinite;
   }
   .launcher-dragging {
     cursor: grabbing;
@@ -59,6 +64,10 @@ const DRAG_STYLE = `
     outline: 1.5px dashed rgba(75,65,54,.36);
     outline-offset: 5px;
     border-radius: 1.35rem;
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .launcher-edit-item { animation: none; }
   }
 `;
 

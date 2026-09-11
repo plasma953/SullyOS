@@ -97,6 +97,11 @@ const Character: React.FC = () => {
   const launchIntent = characterLaunch.peek();
   const [view, setView] = useState<'list' | 'detail'>(() => launchIntent ? 'detail' : 'list');
   const [charPage, setCharPage] = useState(0); // 角色列表分页（每页 6 个，仅未建分组时）
+  const [charSlideDir, setCharSlideDir] = useState<'l' | 'r'>('l');
+  const goCharPage = (next: number) => {
+      setCharSlideDir(next >= charPage ? 'l' : 'r');
+      setCharPage(next);
+  };
   // 分组展开状态：存"已展开"的分组 id（未记录 = 收起）。跨会话记住，key 见下
   const [expandedGroups, setExpandedGroups] = useState<string[]>(() => {
       try {
@@ -1498,39 +1503,40 @@ ${isInitialGeneration ? `
                        const totalPages = Math.max(1, Math.ceil(characters.length / PAGE_SIZE));
                        const page = Math.min(charPage, totalPages - 1);
                        const pageChars = characters.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
-                       return (
-                           <>
-                               {pageChars.map(char => (
-                                   <CharacterCard
-                                       key={char.id}
-                                       char={char}
-                                       active={char.id === activeCharacterId}
-                                       onClick={() => { setEditingId(char.id); setView('detail'); }}
-                                       onDelete={(e) => {
-                                           e.stopPropagation();
-                                           setDeleteConfirmTarget(char.id);
-                                       }}
-                                   />
-                               ))}
+                        return (
+                            <div key={page} className={`flex flex-col gap-3 ${charSlideDir === 'l' ? 'animate-page-in-l' : 'animate-page-in-r'}`}>
+                                {pageChars.map((char, index) => (
+                                    <div key={char.id} className="animate-fade-soft" style={{ animationDelay: `${Math.min(index, 9) * 20}ms`, animationFillMode: 'backwards' }}>
+                                    <CharacterCard
+                                        char={char}
+                                        active={char.id === activeCharacterId}
+                                        onClick={() => { setEditingId(char.id); setView('detail'); }}
+                                        onDelete={(e) => {
+                                            e.stopPropagation();
+                                            setDeleteConfirmTarget(char.id);
+                                        }}
+                                    />
+                                    </div>
+                                ))}
                                <button onClick={handleAddCharacter} className="w-full py-4 rounded-3xl border border-dashed border-violet-300/70 text-violet-400 text-sm bg-white/50 hover:bg-white transition-colors flex items-center justify-center gap-2 shrink-0">
                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>新建链接
                                </button>
                                {totalPages > 1 && (
                                    <div className="flex items-center justify-center gap-3 pt-2 shrink-0">
-                                       <button onClick={() => setCharPage(Math.max(0, page - 1))} disabled={page === 0}
+                                        <button onClick={() => goCharPage(Math.max(0, page - 1))} disabled={page === 0}
                                            className="w-9 h-9 rounded-full bg-white/70 border border-violet-100 shadow-sm flex items-center justify-center text-violet-400 disabled:opacity-30 active:scale-90 transition-all">
                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                                        </button>
                                        <span className="text-sm text-violet-500 font-medium tabular-nums min-w-[40px] text-center">{page + 1}/{totalPages}</span>
-                                       <button onClick={() => setCharPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}
+                                        <button onClick={() => goCharPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}
                                            className="w-9 h-9 rounded-full bg-white/70 border border-violet-100 shadow-sm flex items-center justify-center text-violet-400 disabled:opacity-30 active:scale-90 transition-all">
                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
                                        </button>
                                    </div>
-                               )}
-                           </>
-                       );
-                   })()}
+                                )}
+                            </div>
+                        );
+                    })()}
                </div>
            </div>
        ) : formData && (

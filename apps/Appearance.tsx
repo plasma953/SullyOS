@@ -933,6 +933,7 @@ const Appearance: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
+        <div key={activeTab} className="space-y-6 animate-fade-soft">
         {activeTab === 'theme' ? (
             <>
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
@@ -1882,6 +1883,7 @@ const Appearance: React.FC = () => {
         ) : activeTab === 'chat' ? (
             <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} onOpenApp={openApp} />
         ) : null}
+        </div>
       </div>
     </div>
   );
