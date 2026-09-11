@@ -49,6 +49,7 @@
 - 按下全仓统一 `active:scale-* + transition`：图标 `active:scale-95`，小按钮 `active:scale-90`，卡片轻压 `active:scale-[0.98]`。桌面图标 hover 上浮 `group-hover:-translate-y-0.5`。
 - 聊天单聊新消息一次性 `animate-fade-in`（播完从 `animatingIds` 删除，流式交接不播），群聊行无入场动画，只有 padding / 手势过渡。不要给群聊套单聊那套。
 - App 启动拟真：真 App 用 `animate-app-open`（底部弹起），普通页用 `animate-fade-in`（见 `apps/PersonaSim.tsx:563-564`）。
+- 页面/面板切换统一语言（2026-09-11 起）：有方向的翻页用 `animate-page-in-l/r`（keyed 换新页，280ms `cubic-bezier(.25,1,.5,1)`；`PerCharAvatarPicker` 旧私有 `pcaSlide*` 已并入）；整页 / tab 切换用 `animate-fade-soft`（**纯 opacity** 220ms，重树 App 禁 transform）；弹层退场用 `animate-fade-out-soft`（180ms forwards）+ `hooks/useExitPresence.ts` 保持挂载到动画结束；长按编辑态图标轻摆是拖拽样式里的 `jiggleEdit`（仅 `.launcher-edit-item`）。这些动画全部在 `index.html` 的 `prefers-reduced-motion` 降级名单里。
 
 ## 六、分 App 隔离清单（只在其 App 内延续）
 

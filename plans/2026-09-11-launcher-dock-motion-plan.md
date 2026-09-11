@@ -120,3 +120,15 @@
 - `docs/design-system.md` 五节补新 token 与动效语言；`notes/ethernet-branch-context.md` 追加一行记录；`CLAUDE.md` 文档地图如需加指向。
 - 全量门禁四项 + 字节扫 FFFD（预期 0）；commit `docs: record launcher dock, one-screen home and motion batch`。
 - 按用户确认决定是否 `git push origin ethernet`（push 后 Vercel 测试通道才可见）。
+
+---
+
+## 执行状态（2026-09-11）
+
+- 阶段 A ✅（`d21060ea`）：`utils/launcherLayout.ts` + 13 测试；`LauncherLayoutContext` + `useLauncherDrag`；Launcher 手机分支纯重构接入；`DesktopDock` / `PhoneShell` 跨端互换（Dock 恒 4 格，删 QUICK_EXTRAS）。
+- 阶段 B ✅（`b84e2b3e`）：`utils/fitGrid.ts` + 6 测试；`DesktopAppGrid`；桌面主页改固定一屏（左列 compact 小组件 + 右侧自适应网格，极端小窗仅内部滚动）；桌面网格改用共享顺序。
+- 阶段 C ✅（`13292b03`）：`index.html` 新 token（`page-in-l/r`、`fade-soft`、`fade-out-soft`、reduced-motion 降级）；翻页类（动作面板 translateX track、表情/聊天壳/查手机选人/角色列表分页 keyed 方向滑入）；tab/view 纯淡入（外观/日程/自习室/音乐/群聊/查手机/手账）；弹层（群聊两个 sheet、聊天壳面板入场、Modal/ConfirmDialog/ErrorDialog 退场 + `hooks/useExitPresence.ts`）；微交互（Character/Gallery 首屏 stagger、设置分组卡统一淡入、编辑态 jiggle）。
+- 收尾 ✅：`utils/buildInfo.ts` 升 `v3.13 (Dock & Motion)`；`docs/design-system.md` 与 `notes/ethernet-branch-context.md` 已记录。
+- 门禁：全量 425 文件 / 5031 用例；`storageOptimize`（4 项）与 `networkFailureDiagnosis`（4 项）为已知全量并发抖动，单跑分别 84/46 全过；`tsc --noEmit` 本次触碰文件零命中；`mojibakeGuard` 绿；全仓 FFFD 扫描 0。
+- 与计划的偏差：Settings 分组卡未做逐卡 stagger（10+ 处手写调用，改为共享 `SettingsSection` 根统一淡入，避免散点改动）；`jiggleEdit` keyframes 直接定义在 `LauncherLayoutContext` 的拖拽 `<style>` 里（Tailwind CDN 不会为未使用的 `animate-*` 类生成 keyframes）。
+- 待办：push `origin/ethernet` 后 Vercel 测试通道可见；手动验收清单——手机 393×852 回归；电脑 1024×768 / 1280×800 / 1366×768 / 1440×900 / 1920×1080 主页一屏；三端换 Dock 图标同步（含电脑窗口化手机框）；动作面板/表情/聊天壳/查手机/角色翻页与各 tab 淡入；弹窗开关退场；reduced-motion 下全部即时。
