@@ -269,7 +269,7 @@ const GattCharRow: React.FC<{
                     <button
                         type="button"
                         onClick={() => void handleNotifyToggle()}
-                        className={`text-[11px] font-bold px-2.5 py-1 rounded-lg active:scale-95 transition-transform ${notifying ? 'text-amber-700 bg-amber-100' : 'text-emerald-600 bg-emerald-100'}`}
+                        className={`text-[11px] font-bold px-2.5 py-1 rounded-lg active:scale-95 transition-all duration-200 ${notifying ? 'text-amber-700 bg-amber-100' : 'text-emerald-600 bg-emerald-100'}`}
                     >{notifying ? '取消订阅' : '订阅'}</button>
                     {lastNotify && (
                         <span className="min-w-0 flex-1 truncate text-[10px] font-mono text-emerald-600" title={`${lastNotify.hex}${lastNotify.text ? ` / ${lastNotify.text}` : ''}`}>

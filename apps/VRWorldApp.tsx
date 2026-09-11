@@ -1054,7 +1054,7 @@ const WorldView: React.FC<{
                 const occupants = occupantsByRoom[room.id] || [];
                 return (
                     <button key={room.id} onClick={() => { if (room.implemented) { onEnterRoom(room.id);  } }}
-                        className={`relative rounded-2xl h-36 overflow-hidden text-left active:scale-[0.98] transition-transform ${room.implemented ? '' : 'opacity-65'}`}
+                        className={`relative rounded-2xl h-36 overflow-hidden text-left active:scale-[0.98] transition-all duration-200 ${room.implemented ? '' : 'opacity-65'}`}
                         style={{ boxShadow: '0 8px 28px rgba(0,0,0,.4)', border: room.implemented ? '1px solid rgba(255,255,255,.12)' : '1px solid rgba(255,255,255,.05)' }}>
                         <RoomBackground roomId={room.id} />
                         {/* 顶部渐隐 + 标题 */}

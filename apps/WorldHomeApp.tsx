@@ -1199,12 +1199,12 @@ const ResidentDayCard: React.FC<{
                     {(onReroll || onInject) && (
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             {onReroll && (
-                                <button onClick={onReroll} className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${t.chip} active:scale-95 transition-transform`}>
+                                <button onClick={onReroll} className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${t.chip} active:scale-95 transition-all duration-200`}>
                                     <Sparkle size={11} weight="fill" className="text-violet-500" />重演这一段
                                 </button>
                             )}
                             {onInject && (
-                                <button onClick={onInject} className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${t.chip} active:scale-95 transition-transform`} title="把这段观测补发到和 ta 的聊天里（重 roll 后保底用）">
+                                <button onClick={onInject} className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${t.chip} active:scale-95 transition-all duration-200`} title="把这段观测补发到和 ta 的聊天里（重 roll 后保底用）">
                                     <PaperPlaneTilt size={11} weight="fill" className="text-sky-500" />发到聊天
                                 </button>
                             )}
@@ -1712,7 +1712,7 @@ const WorldView: React.FC<{
                     const recent = group.messages.slice(-3);
                     return (
                         <button onClick={() => members[0] && setPhoneView({ ownerId: members[0].id, tab: 'group' })}
-                            className={`w-full text-left rounded-2xl border p-3.5 ${t.panel} active:scale-[0.99] transition-transform`}>
+                            className={`w-full text-left rounded-2xl border p-3.5 ${t.panel} active:scale-[0.99] transition-all duration-200`}>
                             <div className={`text-[10px] font-black tracking-[0.25em] uppercase flex items-center gap-1.5 mb-2 ${t.textLabel}`}>
                                 <ChatCircleDots size={11} weight="fill" />「{group.name}」
                                 <span className="ml-auto normal-case tracking-normal font-bold text-[9px] opacity-70">{group.messages.length} 条 · 点开看全部</span>

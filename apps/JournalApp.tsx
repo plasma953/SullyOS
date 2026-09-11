@@ -16,6 +16,7 @@ import { Sparkle, Archive } from '@phosphor-icons/react';
 import { CharacterGroupFilterBar, filterCharactersByGroup, GROUP_FILTER_ALL } from '../components/character/CharacterGroupFilter';
 import JournalAppearanceButton, { JournalAppearanceStyle } from '../components/journal/JournalAppearanceEditor';
 import JournalThemeArtwork from '../components/journal/JournalThemeArtwork';
+import { useLayoutMode } from '../utils/layoutMode';
 
 const INTRO_SEEN_KEY = 'journal_app_intro_seen_v4';
 
@@ -68,6 +69,7 @@ const getLocalDateStr = () => {
 
 const JournalApp: React.FC = () => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, memoryPalaceConfig, characterGroups, theme } = useOS();
+    const isDesktop = useLayoutMode(theme.desktopMode) === 'desktop';
     // 预览草稿只活在当前 JournalApp 会话里，不写 theme/localStorage。状态放在
     // App 顶层，才能在选择页、列表页与书写页之间切换时继续预览同一套 CSS。
     const [previewJournalAppearance, setPreviewJournalAppearance] = useState<JournalAppearance | undefined>();
@@ -785,7 +787,7 @@ ${charPart}
     };
 
     const renderEmptyCharPage = () => (
-        <div className="sully-journal-empty w-full h-full bg-[#252525] rounded-3xl border border-white/5 flex flex-col items-center justify-center text-white/40 gap-4 p-8 text-center">
+        <div className={`sully-journal-empty bg-[#252525] rounded-3xl border border-white/5 flex flex-col items-center justify-center text-white/40 gap-4 p-8 text-center ${isDesktop ? 'w-full h-full max-w-sm max-h-[420px] m-auto' : 'w-full h-full'}`}>
             <div className="opacity-20 animate-pulse"><img src={twemojiUrl('1f48c')} alt="letter" className="w-12 h-12" /></div>
             {isThinking ? (
                 <div className="space-y-2">
@@ -968,7 +970,8 @@ ${charPart}
                 {/* 分组筛选（没建分组时不渲染），浅色米黄底 */}
                 <CharacterGroupFilterBar characters={characters} groups={characterGroups}
                     value={journalGroupId} onChange={setJournalGroupId} className="sully-journal-group-filter px-6 pt-4 shrink-0" />
-                <div className="sully-journal-notebook-grid p-6 grid grid-cols-2 gap-5 overflow-y-auto pb-20 no-scrollbar">
+                <div className="sully-journal-notebook-grid p-6 grid grid-cols-2 gap-5 overflow-y-auto pb-20 no-scrollbar"
+                    style={isDesktop ? { maxWidth: 860, marginLeft: 'auto', marginRight: 'auto' } : undefined}>
                     {filterCharactersByGroup(characters, characterGroups, journalGroupId).map(c => (
                         <div key={c.id} onClick={() => handleCharSelect(c)} className="sully-journal-notebook aspect-[3/4] bg-white rounded-r-2xl rounded-l-md border-l-4 border-l-amber-800 shadow-[2px_4px_12px_rgba(0,0,0,0.08)] p-4 flex flex-col items-center justify-center gap-3 cursor-pointer active:scale-95 transition-all relative overflow-hidden group">
                             <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/10 to-transparent"></div>
@@ -1158,7 +1161,7 @@ ${charPart}
                                 </div>
                             </div>
                         ) : (
-                            <div key={activeTab} className="h-full animate-fade-soft">
+                            <div key={activeTab} className="h-full flex flex-col animate-fade-soft">
                                 {activeTab === 'user' && currentEntry && renderPage(currentEntry.userPage, 'user')}
                                 {activeTab === 'char' && (currentEntry?.charPage ? renderPage(currentEntry.charPage, 'char') : renderEmptyCharPage())}
                             </div>
@@ -1191,7 +1194,7 @@ ${charPart}
                             <button 
                                 key={s.id} 
                                 onClick={() => { updatePage({ paperStyle: s.id }, activeTab);  }}
-                                className={`sully-journal-paper-swatch w-8 h-8 rounded-full border border-white/10 transition-transform active:scale-90 ${s.css}`}
+                                className={`sully-journal-paper-swatch w-8 h-8 rounded-full border border-white/10 transition-all duration-200 active:scale-90 ${s.css}`}
                                 title={s.name}
                             />
                         ))}
@@ -1212,7 +1215,7 @@ ${charPart}
                         
                         <button 
                             onClick={() => { setShowStickerPanel(!showStickerPanel);  }}
-                            className={`sully-journal-sticker-button w-11 h-11 rounded-full flex items-center justify-center text-xl shadow-lg active:scale-90 transition-transform ${showStickerPanel ? 'bg-white text-black' : 'bg-gradient-to-br from-amber-400 to-orange-500 text-white'}`}
+                            className={`sully-journal-sticker-button w-11 h-11 rounded-full flex items-center justify-center text-xl shadow-lg active:scale-90 transition-all duration-200 ${showStickerPanel ? 'bg-white text-black' : 'bg-gradient-to-br from-amber-400 to-orange-500 text-white'}`}
                         >
                             <Sparkle size={24} weight="fill" />
                         </button>

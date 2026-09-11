@@ -31,6 +31,7 @@
 - 特殊值只出现在已有点位：节日弹窗 `rounded-[2.5rem]`，聊天气泡 `rounded-[26px]` / `rounded-[22px]`，像素风 `rounded-[4px] border-2`。新功能不发明新弧度。
 - 阴影三档：默认卡 `shadow-sm`，CTA `shadow-md/lg + shadow-primary/30`，浮层 `shadow-2xl`。浅浮层定制只用 `shadow-[0_12px_40px_rgba(15,23,42,0.22)]`，深浮层只用 `shadow-[0_18px_60px_rgba(0,0,0,.58)]`。
 - 页面模板：`flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar` + 头部 `flex items-center px-4 py-3` + 分组 `divide-y divide-slate-100`（见 `apps/Appearance.tsx:947-950`）。
+- 桌面形态信息密度（2026-09-11 起）：手机版式 App 的卡片/清单网格（相册人物、照片墙、书架、商品、日记选本等）在桌面档走 `useLayoutMode` 分支改 `grid-cols-[repeat(auto-fill,minmax(132-176px,1fr))]` 自适应小卡；空占位页限宽限高居中（日记空白角色页 `max-w-sm max-h-[420px] m-auto`）；手机端类名必须零变化。
 
 ## 四、字体 / 图标
 
@@ -47,6 +48,7 @@
 - 加载呼吸秒级循环：三点 dots `dot-pulse 1.2s + 0/0.2/0.4s` 错峰，`shimmer 2.5s`，`glow-pulse 3s`，`float 4s`。spinner 只用 `border-t` 圆环 + `animate-spin`，开机不用 spinner（呼吸等待，见 `BootSequence.tsx:11`）。
 - 弹窗两套固定封装：通用居中 `Modal.tsx`（遮罩淡入 + 卡片上滑），确认错误 `ConfirmDialog.tsx` / `ErrorDialog.tsx`（遮罩淡入 + 卡片弹入）。移动端上滑、桌面端弹入见 `PerCharAvatarPicker.tsx:193`。
 - 按下全仓统一 `active:scale-* + transition`：图标 `active:scale-95`，小按钮 `active:scale-90`，卡片轻压 `active:scale-[0.98]`。桌面图标 hover 上浮 `group-hover:-translate-y-0.5`。
+- 按钮状态过渡统一（2026-09-11 起）：`index.html` 中央兜底 `button, button *` ——颜色/描边/阴影/透明度 200ms、transform/scale 150ms（已声明 `transition-*` 的按钮保留自己的，类选择器优先）；没有 `active:` 档位的按钮统一 `scale: 0.98` 轻压（用 `scale` 属性，不与定位 transform 冲突；整屏遮罩 `inset-0` 跳过）；reduced-motion 在同一块里降为 0.01ms。选中态按钮只声明了 `transition-transform` 的，一律改 `transition-all duration-200`（有显式时长则保留时长）。
 - 聊天单聊新消息一次性 `animate-fade-in`（播完从 `animatingIds` 删除，流式交接不播），群聊行无入场动画，只有 padding / 手势过渡。不要给群聊套单聊那套。
 - App 启动拟真：真 App 用 `animate-app-open`（底部弹起），普通页用 `animate-fade-in`（见 `apps/PersonaSim.tsx:563-564`）。
 - 页面/面板切换统一语言（2026-09-11 起）：有方向的翻页用 `animate-page-in-l/r`（keyed 换新页，280ms `cubic-bezier(.25,1,.5,1)`；`PerCharAvatarPicker` 旧私有 `pcaSlide*` 已并入）；整页 / tab 切换用 `animate-fade-soft`（**纯 opacity** 220ms，重树 App 禁 transform）；弹层退场用 `animate-fade-out-soft`（180ms forwards）+ `hooks/useExitPresence.ts` 保持挂载到动画结束；长按编辑态图标轻摆是拖拽样式里的 `jiggleEdit`（仅 `.launcher-edit-item`）。这些动画全部在 `index.html` 的 `prefers-reduced-motion` 降级名单里。

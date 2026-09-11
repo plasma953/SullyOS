@@ -17,6 +17,7 @@ import { buildShoppingOrderTag } from '../utils/shoppingFormat';
 import { roundMoney, sumMoney, formatMoney } from '../utils/format';
 import { LoaderDots } from '../utils/appLoaderDots';
 import { CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
+import { useLayoutMode } from '../utils/layoutMode';
 
 // ── 视图状态：首页 / 店铺 / 商品详情 / 购物车 / 结算 / 订单 ──
 type View = 'home' | 'shop' | 'good' | 'cart' | 'checkout' | 'orders' | 'orderDetail';
@@ -46,7 +47,8 @@ function computeStatus(o: MallOrder, now = Date.now()): MallOrder['status'] {
 }
 
 export default function ShoppingApp() {
-  const { userProfile, characters, openApp, closeApp, updateCharacter, updateUserProfile } = useOS();
+  const { userProfile, characters, openApp, closeApp, updateCharacter, updateUserProfile, theme } = useOS();
+  const isDesktop = useLayoutMode(theme.desktopMode) === 'desktop';
   const [view, setView] = useState<View>('home');
   const [ds, setDs] = useState<MallDataset | null>(null);
   const [loadErr, setLoadErr] = useState(false);
@@ -485,7 +487,7 @@ export default function ShoppingApp() {
               <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating} · 月销{activeShop.monthlySales} · {activeShop.fanCount}粉丝</div>
             </div>
             {/* 商品两列瀑布流（淘宝式） */}
-            <div className="px-3 pb-24 grid grid-cols-2 gap-2">
+            <div className={`px-3 pb-24 grid gap-2 ${isDesktop ? 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))]' : 'grid-cols-2'}`}>
               {shopGoods.map(g => (
                 <div key={g.id} onClick={() => { setActiveGood(g); setView('good'); }} className="bg-white rounded-xl overflow-hidden shadow-sm active:scale-[0.98] transition-transform cursor-pointer">
                   <GoodsSvg imgKey={g.imgKey} name={g.name} className="w-full aspect-square" />
@@ -499,7 +501,7 @@ export default function ShoppingApp() {
                   </div>
                 </div>
               ))}
-              {shopGoods.length === 0 && <div className="col-span-2 text-center text-[12px] text-slate-400 py-10">店铺上新中…</div>}
+              {shopGoods.length === 0 && <div className="col-span-full text-center text-[12px] text-slate-400 py-10">店铺上新中…</div>}
             </div>
           </div>
           {cart && cart.items.length > 0 && (

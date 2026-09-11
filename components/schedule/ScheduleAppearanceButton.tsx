@@ -204,7 +204,7 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
                                 return (
                                     <button
                                         key={preset.id}
-                                        className={`relative overflow-hidden rounded-2xl p-3 text-left min-h-[82px] transition-transform active:scale-[.98] ${
+                                        className={`relative overflow-hidden rounded-2xl p-3 text-left min-h-[82px] transition-all duration-200 active:scale-[.98] ${
                                             selected ? 'ring-2 ring-violet-400 ring-offset-2' : ''
                                         }`}
                                         style={{ background: palette.background, color: palette.text }}

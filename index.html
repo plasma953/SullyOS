@@ -259,6 +259,25 @@
       input:focus, textarea:focus, select:focus {
         outline: none;
       }
+      /* 按钮状态过渡兜底：选中/取消/悬停时的颜色、描边、阴影、按压不再瞬跳。
+         已自带 transition-* 工具类的按钮优先级更高（类选择器 > 元素选择器），保留各自时长与属性；
+         子元素一并兜底，因为不少按钮的选中样式（分类 chip 的底/圈）挂在按钮内的 span 上。 */
+      button, button * {
+        transition:
+          color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+          background-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+          border-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+          box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1),
+          opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+          filter 200ms cubic-bezier(0.4, 0, 0.2, 1),
+          transform 150ms cubic-bezier(0.4, 0, 0.2, 1),
+          scale 150ms cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      /* 没有 active: 档位的按钮补统一轻压反馈。用 scale 属性而非 transform，避免盖掉按钮
+         自身用于定位的 transform（如 -translate-x-1/2）；:not([class*="inset-0"]) 跳过整屏遮罩按钮。 */
+      button:not(:disabled):not([class*="active:"]):not([class*="inset-0"]):active {
+        scale: 0.98;
+      }
       /* Utility for Safe Area —— 统一引用单一来源变量 */
       .pb-safe {
         padding-bottom: var(--safe-bottom);
@@ -290,7 +309,7 @@
         overflow: hidden;
         pointer-events: none;
       }
-      /* 统一页面切换动效的降低动态效果降级（page-in-l/r、fade-soft、jiggle-edit） */
+      /* 统一页面切换动效的降低动态效果降级（page-in-l/r、fade-soft、jiggle-edit）+ 按钮状态过渡 */
       @media (prefers-reduced-motion: reduce) {
         .animate-page-in-l, .animate-page-in-r, .animate-fade-soft, .animate-fade-out-soft, .animate-jiggle-edit {
           animation-duration: 0.01ms !important;
@@ -298,6 +317,9 @@
         }
         .launcher-edit-item {
           animation: none !important;
+        }
+        button, button * {
+          transition-duration: 0.01ms !important;
         }
       }
     </style>

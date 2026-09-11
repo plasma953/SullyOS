@@ -544,7 +544,7 @@ const ActiveMsgGlobalSettingsModal: React.FC<ActiveMsgGlobalSettingsModalProps> 
             type="button"
             onClick={() => void handleToggleInstantChat()}
             disabled={loading || (!config.instantChatEnabled && !!instantChatBlockedReason)}
-            className={`w-full py-3 font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-40 ${
+            className={`w-full py-3 font-bold rounded-2xl active:scale-95 transition-all duration-200 disabled:opacity-40 ${
               config.instantChatEnabled ? 'bg-slate-200 text-slate-600' : 'bg-slate-900 text-white'
             }`}
           >

@@ -1082,7 +1082,7 @@ const ModeBtn: React.FC<{ label: string; active: boolean; onClick: () => void }>
 );
 
 const ToolBtn: React.FC<{ label: string; color: string; onClick: () => void }> = ({ label, color, onClick }) => (
-  <button onClick={onClick} className={`px-2 py-1.5 rounded-lg text-[10px] font-bold text-white active:scale-95 transition-transform ${color}`}>{label}</button>
+  <button onClick={onClick} className={`px-2 py-1.5 rounded-lg text-[10px] font-bold text-white active:scale-95 transition-all duration-200 ${color}`}>{label}</button>
 );
 
 const ZOrderBtn: React.FC<{ label: string; active: boolean; onClick: () => void }> = ({ label, active, onClick }) => (

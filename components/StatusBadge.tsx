@@ -90,7 +90,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ badgeKey, probe }) => {
             type="button"
             onClick={(e) => { e.stopPropagation(); runProbe(true); }}
             title={`${label}：${detail ?? '未探测'}（点击重新探测）`}
-            className={`inline-flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${st.bg} ${st.text} active:scale-95 transition-transform`}
+            className={`inline-flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${st.bg} ${st.text} active:scale-95 transition-all duration-200`}
         >
             <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
             <span className="max-w-[9rem] truncate">{detail ?? label}</span>

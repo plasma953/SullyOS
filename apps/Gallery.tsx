@@ -14,9 +14,11 @@ import {
     removeContentFavoriteById,
     saveGalleryImageContentFavorite,
 } from '../utils/contentFavorites';
+import { useLayoutMode } from '../utils/layoutMode';
 
 const Gallery: React.FC = () => {
-    const { closeApp, characters, apiConfig, addToast } = useOS();
+    const { closeApp, characters, apiConfig, addToast, theme } = useOS();
+    const isDesktop = useLayoutMode(theme.desktopMode) === 'desktop';
     const [view, setView] = useState<'albums' | 'grid' | 'detail'>('albums');
     const [activeCharId, setActiveCharId] = useState<string | null>(null);
     const [images, setImages] = useState<GalleryImage[]>([]);
@@ -280,7 +282,7 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
     };
 
     const renderAlbums = () => (
-        <div className="grid grid-cols-2 gap-5 p-5 animate-fade-in">
+        <div className={`grid gap-5 p-5 animate-fade-in ${isDesktop ? 'grid-cols-[repeat(auto-fill,minmax(176px,1fr))]' : 'grid-cols-2'}`}>
             {characters.map(char => {
                 const count = albumCounts[char.id] || 0;
                 const status = imgStatus[char.id] || 'loading';
@@ -323,7 +325,7 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
                     </button>
                 );
             })}
-            {characters.length === 0 && <div className="col-span-2 text-center text-slate-400 py-16 text-xs">暂无角色相册</div>}
+            {characters.length === 0 && <div className="col-span-full text-center text-slate-400 py-16 text-xs">暂无角色相册</div>}
         </div>
     );
 
@@ -335,7 +337,7 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
                     <span className="text-sm">还没有照片</span>
                 </div>
             ) : (
-                <div className="grid grid-cols-3 gap-1">
+                <div className={`grid gap-1 ${isDesktop ? 'grid-cols-[repeat(auto-fill,minmax(132px,1fr))]' : 'grid-cols-3'}`}>
                     {images.map((img, index) => (
                         <div key={img.id} onClick={() => handleImageClick(img)} style={{ animationDelay: `${Math.min(index, 9) * 20}ms`, animationFillMode: 'backwards' }} className="aspect-square bg-slate-100 relative cursor-pointer overflow-hidden rounded-sm animate-fade-soft">
                             {/* 相册图存的是 blobref 令牌（见 utils/blobRef.ts），TokenImg 会解析成 objectURL；
@@ -358,7 +360,7 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                 </button>
                 <div className="flex items-center gap-2 pointer-events-auto">
-                    <button onClick={() => void handleToggleImageFavorite()} className={`text-white backdrop-blur-md p-2 rounded-full active:scale-95 transition-transform border border-white/10 ${imageFavorited ? 'bg-amber-500/80' : 'bg-black/40 hover:bg-black/60'}`} aria-label={imageFavorited ? '取消收藏图片' : '收藏图片'}>
+                    <button onClick={() => void handleToggleImageFavorite()} className={`text-white backdrop-blur-md p-2 rounded-full active:scale-95 transition-all duration-200 border border-white/10 ${imageFavorited ? 'bg-amber-500/80' : 'bg-black/40 hover:bg-black/60'}`} aria-label={imageFavorited ? '取消收藏图片' : '收藏图片'}>
                         <Star size={20} weight={imageFavorited ? 'fill' : 'regular'} />
                     </button>
                     <button onClick={handleDeleteImage} className="text-white bg-black/40 backdrop-blur-md p-2 rounded-full active:scale-95 transition-transform hover:bg-red-600/60 border border-white/10">

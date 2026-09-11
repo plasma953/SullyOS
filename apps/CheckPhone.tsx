@@ -241,7 +241,7 @@ const HomeCard: React.FC<{
     badge?: number; onClick: () => void; spanFull?: boolean;
 }> = ({ icon, label, sub, accent, badge, onClick, spanFull }) => (
     <button onClick={onClick}
-        className={`relative ${spanFull ? 'col-span-2' : ''} rounded-[24px] p-4 text-left overflow-hidden border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl active:scale-[0.98] transition-transform duration-300 min-h-[96px] flex flex-col justify-between group`}>
+        className={`relative ${spanFull ? 'col-span-2' : ''} rounded-[24px] p-4 text-left overflow-hidden border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl active:scale-[0.98] transition-all duration-300 min-h-[96px] flex flex-col justify-between group`}>
         <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full blur-2xl pointer-events-none opacity-50"
             style={{ background: `radial-gradient(circle, ${accent}, transparent 70%)` }} />
         <div className="flex items-start justify-between relative z-10">
@@ -4372,7 +4372,7 @@ ${olderText}
                         <button onClick={() => setConfirmState(null)}
                             className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">取消</button>
                         <button onClick={() => { const cb = confirmState?.onConfirm; setConfirmState(null); cb?.(); }}
-                            className={`flex-1 py-3 font-bold rounded-2xl text-white active:scale-95 transition-transform ${confirmState?.danger ? 'bg-rose-500' : 'bg-pink-500'}`}>
+                            className={`flex-1 py-3 font-bold rounded-2xl text-white active:scale-95 transition-all duration-200 ${confirmState?.danger ? 'bg-rose-500' : 'bg-pink-500'}`}>
                             {confirmState?.confirmLabel || '确定'}
                         </button>
                     </div>

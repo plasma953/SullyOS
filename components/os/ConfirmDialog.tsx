@@ -85,7 +85,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                     </button>
                     <button 
                         onClick={onConfirm}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-transform active:scale-95 ${getBtnColor()}`}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all duration-200 active:scale-95 ${getBtnColor()}`}
                     >
                         {confirmText}
                     </button>

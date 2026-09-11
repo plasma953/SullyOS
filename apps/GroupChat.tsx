@@ -1931,7 +1931,7 @@ ${memberTimeline || '(暂无互动记录)'}
                         <button
                             onClick={() => { if (canReroll) { setShowPanel('none'); handleReroll(); } }}
                             disabled={!canReroll}
-                            className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${canReroll ? 'text-slate-600' : 'text-slate-300 opacity-50'}`}
+                            className={`flex flex-col items-center gap-2 active:scale-95 transition-all duration-200 ${canReroll ? 'text-slate-600' : 'text-slate-300 opacity-50'}`}
                         >
                             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${canReroll ? 'bg-emerald-50 text-emerald-400 border-emerald-100' : 'bg-slate-50 text-slate-300 border-slate-100'}`}>
                                 <ArrowsClockwise className="w-6 h-6" weight="bold" />

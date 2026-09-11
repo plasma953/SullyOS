@@ -23,6 +23,7 @@ import { splitChapterText, buildMergeInput, lectureSourceForChapter, topKChunksF
 import { CLASSROOM_THEMES, loadClassroomTheme, saveClassroomTheme, type ClassroomThemeId } from '../utils/studyClassroomTheme';
 import { loadEpubImageConfig, saveEpubImageConfig, findDuplicateImages, cleanLegacyHiddenRefs, type EpubImageConfig, type DuplicateImageInfo } from '../utils/studyEpubImageConfig';
 import { loadStudyMemoryDefault, saveStudyMemoryDefault, loadStudyVectorEnabled, saveStudyVectorEnabled, isChapterMemoryEnabled } from '../utils/studyMemory';
+import { useLayoutMode } from '../utils/layoutMode';
 
 type KatexLike = {
     renderToString: (latex: string, options: any) => string;
@@ -342,7 +343,8 @@ const StudyTocTree: React.FC<{ nodes: StudyTocNode[]; currentIdx?: number; colla
 };
 
 const StudyApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, characterGroups } = useOS();
+    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, characterGroups, theme } = useOS();
+    const isDesktop = useLayoutMode(theme.desktopMode) === 'desktop';
     const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'reader' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
     const [courses, setCourses] = useState<StudyCourse[]>([]);
     const [activeCourse, setActiveCourse] = useState<StudyCourse | null>(null);
@@ -1991,7 +1993,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">我的课程</h3>
                     
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className={`grid gap-4 ${isDesktop ? 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))]' : 'grid-cols-2'}`}>
                         <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-r-xl rounded-l-sm border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-emerald-400 hover:text-emerald-500 transition-colors bg-white">
                             {isProcessing ? (
                                 <div className="text-center px-2">

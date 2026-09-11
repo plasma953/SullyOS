@@ -2009,7 +2009,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
             )}
 
             {/* Sidebar Toggle Button */}
-            <button onClick={() => setShowSidebar(true)} className={`absolute right-0 top-1/2 -translate-y-1/2 bg-white/90 p-3 rounded-l-2xl shadow-lg border border-r-0 border-slate-200 transition-transform duration-300 z-[300] ${showSidebar ? 'translate-x-full' : 'translate-x-0'}`}>
+            <button onClick={() => setShowSidebar(true)} className={`absolute right-0 top-1/2 -translate-y-1/2 bg-white/90 p-3 rounded-l-2xl shadow-lg border border-r-0 border-slate-200 transition-all duration-300 z-[300] ${showSidebar ? 'translate-x-full' : 'translate-x-0'}`}>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
             </button>
             {showSidebar && <div className="absolute inset-0 z-[290] bg-black/20" onClick={() => setShowSidebar(false)}></div>}

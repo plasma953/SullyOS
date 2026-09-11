@@ -1063,7 +1063,7 @@ const TamagotchiHome: React.FC = () => {
                         {/* 内描边细框 + 卡内星芒 */}
                         <div className="absolute inset-[4px] rounded-[1.15rem] pointer-events-none" style={{ border: '1px solid var(--tg-frame-a22)' }} />
                         <Sparkles items={[[62, 16, 8, PAL.frame, 0.75, true], [50, 82, 7, PAL.frame, 0.5], [74, 60, 7, PAL.frame, 0.45, true]]} />
-                        <button onClick={switchChar} className={`relative w-[46px] h-[46px] rounded-full p-[2px] shrink-0 ${characters.length > 1 ? 'active:scale-90 transition-transform' : ''}`}
+                        <button onClick={switchChar} className={`relative w-[46px] h-[46px] rounded-full p-[2px] shrink-0 ${characters.length > 1 ? 'active:scale-90 transition-all duration-200' : ''}`}
                             style={{ border: `1.5px solid ${PAL.frame}`, boxShadow: '0 0 10px var(--tg-frame-a30)' }}>
                             <div className="w-full h-full rounded-full overflow-hidden" style={{ background: PAL.cardHi }}>
                                 <TokenImg value={char.avatar} className="w-full h-full object-cover" alt="" loading="lazy" draggable={false} />

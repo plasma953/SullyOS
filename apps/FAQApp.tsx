@@ -363,7 +363,7 @@ const FAQApp: React.FC = () => {
                             <button
                                 key={entry.id}
                                 onClick={() => setActiveChangelog(entry)}
-                                className={`w-full text-left bg-gradient-to-br ${entry.accent} border rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-transform`}
+                                className={`w-full text-left bg-gradient-to-br ${entry.accent} border rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all duration-200`}
                             >
                                 <div className="flex items-start gap-3">
                                     <div className="w-12 h-12 rounded-2xl bg-white/70 flex items-center justify-center shrink-0 shadow-sm">
