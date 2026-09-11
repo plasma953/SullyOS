@@ -100,7 +100,7 @@ const CallSetupGuide: React.FC<CallSetupGuideProps> = ({
         : modelFormat === 'vrm' ? 'VRM · 测试支持' : '支持 Live2D ZIP / 文件夹与 VRM';
 
   return (
-    <div className="absolute inset-0 z-[80] flex items-end bg-[#08050f]/72 backdrop-blur-sm" data-testid="call-setup-guide">
+    <div className="absolute inset-0 z-[80] flex items-end bg-[#08050f]/72 backdrop-blur-sm animate-fade-in" data-testid="call-setup-guide">
       <button type="button" aria-label="关闭通话准备引导" className="absolute inset-0" onClick={onClose} />
       <div
         ref={panelRef}
@@ -108,7 +108,7 @@ const CallSetupGuide: React.FC<CallSetupGuideProps> = ({
         aria-modal="true"
         aria-labelledby="call-setup-guide-title"
         tabIndex={-1}
-        className="relative max-h-[88%] w-full overflow-hidden rounded-t-[2.25rem] border-t outline-none"
+        className="relative max-h-[88%] w-full overflow-hidden rounded-t-[2.25rem] border-t outline-none animate-slide-up"
         style={{ color: ink, background: panel, borderColor: line, paddingBottom: 'max(1rem, var(--safe-bottom))' }}
         onClick={event => event.stopPropagation()}
       >

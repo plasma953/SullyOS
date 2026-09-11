@@ -368,7 +368,7 @@ const ChibiStudio: React.FC<{ charId: string; onClose: () => void }> = ({ charId
         const slotMeta = SLOTS.find(s => s.id === editing)!;
         const slotView = views.find(v => v.meta.id === editing);
         return (
-            <div className="fixed inset-0 z-[70] flex flex-col bg-black">
+            <div className="fixed inset-0 z-[70] flex flex-col bg-black animate-fade-soft">
                 <div className="flex items-center gap-2 px-4 pb-2 shrink-0 text-white"
                     style={{ background: 'linear-gradient(180deg,#241b3f 0%,#120d24 100%)', paddingTop: STUDIO_TOP }}>
                     <button onClick={() => setEditing(null)} className="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><CaretLeft size={20} weight="bold" /></button>
@@ -440,8 +440,8 @@ const ChibiStudio: React.FC<{ charId: string; onClose: () => void }> = ({ charId
             {syncConfirm && (() => {
                 const meta = SLOTS.find(s => s.id === syncConfirm)!;
                 return (
-                    <div className="absolute inset-0 z-10 flex items-end justify-center bg-black/60" onClick={() => !syncing && setSyncConfirm(null)}>
-                        <div className="w-full max-w-md rounded-t-2xl p-5 border-t border-white/10"
+                    <div className="absolute inset-0 z-10 flex items-end justify-center bg-black/60 animate-fade-in" onClick={() => !syncing && setSyncConfirm(null)}>
+                        <div className="w-full max-w-md rounded-t-2xl p-5 border-t border-white/10 animate-slide-up"
                             style={{ background: 'linear-gradient(180deg,#2b2150 0%,#171130 100%)', paddingBottom: STUDIO_SHEET_BOTTOM }}
                             onClick={e => e.stopPropagation()}>
                             <div className="flex items-center mb-2">

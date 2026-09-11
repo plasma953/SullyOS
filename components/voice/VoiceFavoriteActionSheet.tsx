@@ -24,7 +24,7 @@ const VoiceFavoriteActionSheet: React.FC<VoiceFavoriteActionSheetProps> = ({
 }) => {
     if (!open) return null;
     return createPortal(
-        <div className="fixed inset-0 z-[1800] flex items-end justify-center bg-black/45 px-3 pb-[max(12px,env(safe-area-inset-bottom))]" onClick={onClose}>
+        <div className="fixed inset-0 z-[1800] flex items-end justify-center bg-black/45 px-3 pb-[max(12px,env(safe-area-inset-bottom))] animate-fade-in" onClick={onClose}>
             <div className="w-full max-w-md rounded-[26px] border border-white/60 bg-[#f8f6f1] p-3 text-slate-800 shadow-2xl animate-slide-up" onClick={event => event.stopPropagation()}>
                 <div className="flex items-start gap-3 px-2 pt-1 pb-3">
                     <div className="min-w-0 flex-1">

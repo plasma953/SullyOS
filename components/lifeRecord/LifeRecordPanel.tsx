@@ -1045,7 +1045,7 @@ const LifeRecordPanel: React.FC = () => {
             {daySheet && (
                 <div className="fixed inset-0 z-[100] bg-black/35 backdrop-blur-sm flex items-center justify-center p-8 animate-fade-in"
                     onClick={() => setDaySheet(null)}>
-                    <div onClick={e => e.stopPropagation()}>
+                    <div onClick={e => e.stopPropagation()} className="animate-pop-in">
                         <SoftCard theme={THEMES.period} className="w-[270px] !p-6 text-center">
                             <h3 className="text-[14px] font-bold mb-1" style={{ fontFamily: SERIF, color: INK }}>{fmtCN(daySheet)}</h3>
                             <p className="text-[10px] mb-4" style={{ color: FADE, fontFamily: SERIF }}>
@@ -1083,7 +1083,7 @@ const LifeRecordPanel: React.FC = () => {
             {hideCandidate && (
                 <div className="fixed inset-0 z-[100] bg-black/35 backdrop-blur-sm flex items-center justify-center p-8 animate-fade-in"
                     onClick={() => setHideCandidate(null)}>
-                    <div onClick={e => e.stopPropagation()}>
+                    <div onClick={e => e.stopPropagation()} className="animate-pop-in">
                         <SoftCard theme={THEMES[hideCandidate]} className="w-[280px] !p-6 text-center">
                             <div className="flex justify-center mb-2 opacity-80">{THEMES[hideCandidate].icon}</div>
                             <h3 className="text-[15px] font-bold mb-2" style={{ fontFamily: SERIF, color: INK }}>
@@ -1119,7 +1119,7 @@ const LifeRecordPanel: React.FC = () => {
             {showRestore && (
                 <div className="fixed inset-0 z-[100] bg-black/35 backdrop-blur-sm flex items-center justify-center p-8 animate-fade-in"
                     onClick={() => setShowRestore(false)}>
-                    <div onClick={e => e.stopPropagation()}>
+                    <div onClick={e => e.stopPropagation()} className="animate-pop-in">
                         <LedgerCard theme={THEMES.expense} className="w-[280px] !p-6">
                             <h3 className="text-[14px] font-bold mb-4 text-center" style={{ fontFamily: SERIF, color: INK }}>
                                 已隐藏的功能

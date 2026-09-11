@@ -50,7 +50,7 @@ const UserCameraModePicker: React.FC<UserCameraModePickerProps> = ({
   }, [busy, onClose]);
 
   return (
-    <div className="absolute inset-0 z-[180] flex items-end bg-black/66 backdrop-blur-sm" data-testid="user-camera-mode-picker">
+    <div className="absolute inset-0 z-[180] flex items-end bg-black/66 backdrop-blur-sm animate-fade-in" data-testid="user-camera-mode-picker">
       <button type="button" aria-label="关闭用户摄像头方式" className="absolute inset-0" disabled={busy} onClick={onClose} />
       <div
         ref={dialogRef}
@@ -58,7 +58,7 @@ const UserCameraModePicker: React.FC<UserCameraModePickerProps> = ({
         aria-modal="true"
         aria-labelledby="user-camera-mode-title"
         tabIndex={-1}
-        className={`relative w-full overflow-hidden rounded-t-[2rem] border-t outline-none ${lightTheme ? 'border-[#4d4760]/12 bg-[#f7f4fc] text-[#2d2838]' : 'border-white/12 bg-[#100b1c] text-white'}`}
+        className={`relative w-full overflow-hidden rounded-t-[2rem] border-t outline-none animate-slide-up ${lightTheme ? 'border-[#4d4760]/12 bg-[#f7f4fc] text-[#2d2838]' : 'border-white/12 bg-[#100b1c] text-white'}`}
         style={{ paddingBottom: 'max(1rem, var(--safe-bottom))' }}
         onClick={event => event.stopPropagation()}
       >

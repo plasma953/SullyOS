@@ -317,13 +317,13 @@ const JournalAppearanceButton: React.FC<JournalAppearanceButtonProps> = ({
         `}</style>
         <div
             id="sully-journal-appearance-editor"
-            className="fixed inset-0 z-[1950] flex items-end justify-center bg-black/45 backdrop-blur-sm"
+            className="fixed inset-0 z-[1950] flex items-end justify-center bg-black/45 backdrop-blur-sm animate-fade-in"
             onMouseDown={event => {
                 if (event.target === event.currentTarget) closePanel();
             }}
         >
             <div
-                className="w-full max-w-[640px] max-h-[90vh] overflow-y-auto rounded-t-[30px] bg-[#fbfaf8] text-slate-800 shadow-2xl"
+                className="w-full max-w-[640px] max-h-[90vh] overflow-y-auto rounded-t-[30px] bg-[#fbfaf8] text-slate-800 shadow-2xl animate-slide-up"
                 style={{ paddingBottom: 'max(22px, env(safe-area-inset-bottom))' }}
                 onMouseDown={event => event.stopPropagation()}
             >

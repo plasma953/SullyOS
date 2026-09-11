@@ -72,12 +72,12 @@ const HandbookCharPicker: React.FC<PickerProps> = ({
 
     return (
         <div
-            className="absolute inset-0 z-50 flex items-end justify-center"
+            className="absolute inset-0 z-50 flex items-end justify-center animate-fade-in"
             style={{ background: 'rgba(122,90,114,0.4)', backdropFilter: 'blur(6px)' }}
             onClick={onCancel}
         >
             <div
-                className="w-full max-h-[85%] overflow-y-auto rounded-t-3xl relative"
+                className="w-full max-h-[85%] overflow-y-auto rounded-t-3xl relative animate-slide-up"
                 style={{
                     background: PAPER_TONES.paper,
                     boxShadow: '0 -8px 28px rgba(122,90,114,0.25)',

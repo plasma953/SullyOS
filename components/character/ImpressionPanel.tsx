@@ -222,8 +222,8 @@ const ImpressionPanel: React.FC<ImpressionPanelProps> = ({ impression, isGenerat
             )}
 
             {showDeleteConfirm && (
-                <div className="fixed inset-0 z-[999] bg-black/40 backdrop-blur-sm flex items-center justify-center px-6">
-                    <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
+                <div className="fixed inset-0 z-[999] bg-black/40 backdrop-blur-sm flex items-center justify-center px-6 animate-fade-in">
+                    <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl animate-pop-in">
                         <div className="text-base font-bold text-slate-700">删除印象档案？</div>
                         <p className="mt-2 text-sm text-slate-500 leading-relaxed">这份深度分析报告将被彻底删除，删除后可以重新生成。</p>
                         <div className="mt-5 flex gap-3">

@@ -1128,9 +1128,9 @@ const BankDollhouse: React.FC<Props> = ({
 
             {/* Decor Panel */}
             {showDecorPanel && (
-                <div className="absolute inset-0 z-[80] bg-black/30 flex items-end" onClick={() => setShowDecorPanel(false)}>
+                <div className="absolute inset-0 z-[80] bg-black/30 flex items-end animate-fade-in" onClick={() => setShowDecorPanel(false)}>
                     <div
-                        className="w-full rounded-t-3xl bg-gradient-to-b from-white to-[#FFFCF7] max-h-[65vh] overflow-hidden flex flex-col"
+                        className="w-full rounded-t-3xl bg-gradient-to-b from-white to-[#FFFCF7] max-h-[65vh] overflow-hidden flex flex-col animate-slide-up"
                         onClick={(e) => e.stopPropagation()}
                         style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom, 0px))' }}
                     >

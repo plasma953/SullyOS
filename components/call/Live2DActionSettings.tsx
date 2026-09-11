@@ -526,7 +526,7 @@ const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
 
       {customDraft && (
         <div
-          className="absolute inset-x-0 bottom-0 z-[95] flex flex-col overflow-hidden rounded-t-[2rem] border-t border-white/10 bg-[#0b0a11]/[0.98] shadow-[0_-24px_70px_rgba(0,0,0,0.6)] backdrop-blur-xl"
+          className="absolute inset-x-0 bottom-0 z-[95] flex flex-col overflow-hidden rounded-t-[2rem] border-t border-white/10 bg-[#0b0a11]/[0.98] shadow-[0_-24px_70px_rgba(0,0,0,0.6)] backdrop-blur-xl animate-slide-up"
           style={{ top: 'min(46vh, calc(max(1.25rem, var(--safe-top)) + max(min(31vh, 250px), 180px) + 4.25rem))' }}
         >
           <div className="shrink-0 border-b border-white/10 px-4 pb-3 pt-3">

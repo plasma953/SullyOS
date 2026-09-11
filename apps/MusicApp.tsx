@@ -596,7 +596,7 @@ const MusicApp: React.FC = () => {
         };
 
         return (
-          <div className="absolute inset-0 z-50 flex flex-col"
+          <div className="absolute inset-0 z-50 flex flex-col animate-fade-soft"
             style={{ background: `linear-gradient(180deg, #ffffff 0%, ${C.bg} 60%, ${C.bgDeep} 100%)` }}>
             <BokehBg />
             {/* Header */}

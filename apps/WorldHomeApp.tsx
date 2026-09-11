@@ -75,8 +75,8 @@ const WorldApiSettings: React.FC<{
     const follow = !current?.baseUrl;
     const sameAs = (c: APIConfig) => !follow && current!.baseUrl === c.baseUrl && current!.model === c.model && current!.apiKey === c.apiKey;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="w-full max-w-md bg-[#f7f3ea] rounded-3xl p-4 max-h-[80%] overflow-y-auto no-scrollbar shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
+            <div className="w-full max-w-md bg-[#f7f3ea] rounded-3xl p-4 max-h-[80%] overflow-y-auto no-scrollbar shadow-2xl animate-pop-in" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-1">
                     <h3 className="text-[15px] font-black text-stone-800 font-serif">家园 · API</h3>
                     <button onClick={onClose} className="p-1.5 rounded-full hover:bg-black/5"><X size={16} weight="bold" className="text-stone-500" /></button>
@@ -537,8 +537,8 @@ const PhoneModal: React.FC<{
 
                         {/* 编辑/删除生成内容的底部弹层 */}
                         {editing && (
-                            <div className="absolute inset-0 z-30 flex items-end bg-black/40 backdrop-blur-[2px]" onClick={() => setEditing(null)}>
-                                <div className="w-full rounded-t-3xl bg-[#f7f3ea] p-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <div className="absolute inset-0 z-30 flex items-end bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={() => setEditing(null)}>
+                                <div className="w-full rounded-t-3xl bg-[#f7f3ea] p-4 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
                                     <div className="flex items-center justify-between mb-2">
                                         <h4 className="text-[13px] font-black text-stone-800">{editing.title}</h4>
                                         <button onClick={() => setEditing(null)} className="p-1 rounded-full hover:bg-black/5"><X size={15} weight="bold" className="text-stone-400" /></button>
@@ -1476,8 +1476,8 @@ const WorldView: React.FC<{
         >
             {/* 伏笔删除确认（自定义弹窗，非原生） */}
             {pendingSeed && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm p-6" onClick={() => setPendingSeed(null)}>
-                    <div className="w-full max-w-[300px] rounded-2xl bg-[#f7f3ea] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm p-6 animate-fade-in" onClick={() => setPendingSeed(null)}>
+                    <div className="w-full max-w-[300px] rounded-2xl bg-[#f7f3ea] shadow-2xl overflow-hidden animate-pop-in" onClick={e => e.stopPropagation()}>
                         <div className="px-4 pt-4 pb-3">
                             <div className="text-[14px] font-black text-stone-800 flex items-center gap-1.5"><EyeSlash size={15} weight="fill" className="text-rose-400" />删除这个伏笔？</div>
                             <p className="text-[11.5px] text-stone-500 leading-relaxed mt-2">
@@ -1493,8 +1493,8 @@ const WorldView: React.FC<{
                 </div>
             )}
             {rerollTarget && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm p-6" onClick={() => { setRerollTarget(null); setRerollDir(''); }}>
-                    <div className="w-full max-w-[320px] rounded-2xl bg-[#f7f3ea] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm p-6 animate-fade-in" onClick={() => { setRerollTarget(null); setRerollDir(''); }}>
+                    <div className="w-full max-w-[320px] rounded-2xl bg-[#f7f3ea] shadow-2xl overflow-hidden animate-pop-in" onClick={e => e.stopPropagation()}>
                         <div className="px-4 pt-4 pb-3">
                             <div className="text-[14px] font-black text-stone-800 flex items-center gap-1.5"><Sparkle size={15} weight="fill" className="text-violet-500" />重演 {rerollTarget.charName} 这一段</div>
                             <p className="text-[10.5px] text-stone-400 mt-1.5 leading-relaxed">会重新生成 ta 这一轮的演绎。可以给个大致方向（选填），留空就完全重写。</p>

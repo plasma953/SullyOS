@@ -219,13 +219,13 @@ export const StoryAppearanceButton: React.FC<{ className?: string }> = ({ classN
             <Palette size={18} weight={appearance.decor === 'cinema' ? 'fill' : 'regular'} />
         </button>
         {open && createPortal(<div
-            className={`story-theme story-theme-${appearance.color} story-decor-${appearance.decor} fixed inset-0 z-[90] flex items-end sm:items-center justify-center overflow-y-auto overscroll-contain`}
+            className={`story-theme story-theme-${appearance.color} story-decor-${appearance.decor} fixed inset-0 z-[90] flex items-end sm:items-center justify-center overflow-y-auto overscroll-contain animate-fade-in`}
             style={{ position: 'fixed', paddingTop: 'max(12px, var(--safe-top))', paddingBottom: 'max(0px, var(--safe-bottom))', backgroundColor: 'rgba(2, 6, 23, .35)' }}
             onClick={closePanel}
             role='presentation'
         >
             <div
-                className='story-safe-sheet relative flex w-full max-h-full flex-col overflow-hidden sm:max-w-sm rounded-t-[28px] sm:rounded-[28px] bg-stone-100 px-5 pt-5 shadow-2xl'
+                className='story-safe-sheet relative flex w-full max-h-full flex-col overflow-hidden sm:max-w-sm rounded-t-[28px] sm:rounded-[28px] bg-stone-100 px-5 pt-5 shadow-2xl animate-slide-up'
                 onClick={event => event.stopPropagation()}
                 role='dialog'
                 aria-modal='true'

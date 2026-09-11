@@ -985,7 +985,7 @@ const TransferCard: React.FC<{
             {open && (
                 <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in" onClick={(e) => { e.stopPropagation(); setOpen(false); }}>
                     <div
-                        className="w-full max-w-[320px] bg-white rounded-3xl overflow-hidden shadow-2xl"
+                        className="w-full max-w-[320px] bg-white rounded-3xl overflow-hidden shadow-2xl animate-pop-in"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* 顶部金额区 */}

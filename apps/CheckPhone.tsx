@@ -3070,9 +3070,9 @@ ${olderText}
                 </div>
                 {/* 酒馆阅读皮肤选择 */}
                 {showTavernStyle && (
-                    <div className="absolute inset-0 z-[80] flex items-end justify-center" onClick={() => setShowTavernStyle(false)}>
+                    <div className="absolute inset-0 z-[80] flex items-end justify-center animate-fade-in" onClick={() => setShowTavernStyle(false)}>
                         <div className="absolute inset-0 bg-black/40" />
-                        <div className="relative w-full max-w-sm m-3 mb-6 rounded-2xl overflow-hidden bg-[#1c1d22] border border-white/10" onClick={e => e.stopPropagation()}>
+                        <div className="relative w-full max-w-sm m-3 mb-6 rounded-2xl overflow-hidden bg-[#1c1d22] border border-white/10 animate-slide-up" onClick={e => e.stopPropagation()}>
                             <div className="px-4 py-2.5 text-[12px] text-white/50 border-b border-white/10">阅读皮肤</div>
                             <div className="grid grid-cols-2 gap-2 p-3">
                                 {TAVERN_STYLES.map(st => (

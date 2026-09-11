@@ -141,8 +141,8 @@ const FilesTab: React.FC<{
             </div>
             {viewPath && (
                 <div className="absolute inset-0 z-30">
-                    <div className="absolute inset-0 bg-slate-900/40" onClick={() => setViewPath(null)} />
-                    <div className="absolute bottom-0 left-0 right-0 flex max-h-[80%] flex-col rounded-t-3xl bg-slate-900 shadow-2xl">
+                    <div className="absolute inset-0 bg-slate-900/40 animate-fade-in" onClick={() => setViewPath(null)} />
+                    <div className="absolute bottom-0 left-0 right-0 flex max-h-[80%] flex-col rounded-t-3xl bg-slate-900 shadow-2xl animate-slide-up">
                         <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
                             <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-bold text-slate-200">{viewPath}</span>
                             <button type="button" onClick={() => setViewPath(null)} className="ml-2 shrink-0 rounded-lg bg-slate-700 px-3 py-1.5 text-[10px] font-bold text-slate-200 active:scale-95">关闭</button>

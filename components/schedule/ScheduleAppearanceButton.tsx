@@ -162,14 +162,14 @@ const ScheduleAppearanceButton: React.FC<{ compact?: boolean }> = ({ compact = f
 
     const panel = open ? createPortal(
         <div
-            className="fixed inset-0 z-[1900] flex items-end justify-center bg-black/45 backdrop-blur-sm"
+            className="fixed inset-0 z-[1900] flex items-end justify-center bg-black/45 backdrop-blur-sm animate-fade-in"
             onMouseDown={event => {
                 if (event.target === event.currentTarget) setOpen(false);
             }}
             onClick={event => event.stopPropagation()}
         >
             <div
-                className="w-full max-w-[620px] max-h-[88vh] overflow-y-auto rounded-t-[28px] bg-[#fbfafc] text-slate-800 shadow-2xl"
+                className="w-full max-w-[620px] max-h-[88vh] overflow-y-auto rounded-t-[28px] bg-[#fbfafc] text-slate-800 shadow-2xl animate-slide-up"
                 style={{ paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}
                 onMouseDown={event => event.stopPropagation()}
             >
