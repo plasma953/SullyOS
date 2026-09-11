@@ -52,8 +52,8 @@ const LuckinLocationModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-gradient-to-b from-[#FAF7F0] to-[#F3EFE6] w-full sm:max-w-sm rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ maxHeight: 'calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 2rem)' }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+            <div className="bg-gradient-to-b from-[#FAF7F0] to-[#F3EFE6] w-full sm:max-w-sm rounded-2xl overflow-hidden shadow-2xl flex flex-col animate-slide-up" style={{ maxHeight: 'calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 2rem)' }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-[#0B1F3A] to-[#1E4D8C] rounded-t-2xl">
                     <div className="flex items-center gap-2">
                         <span className="text-xl">🦌</span>

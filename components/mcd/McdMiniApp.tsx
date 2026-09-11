@@ -1285,8 +1285,8 @@ const McdMiniApp: React.FC<McdMiniAppProps> = ({ open, onClose, char, userProfil
     if (!open) return null;
     if (!isMcdConfigured()) {
         return (
-            <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-                <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e: any) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+                <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center animate-slide-up" onClick={(e: any) => e.stopPropagation()}>
                     <div className="text-3xl mb-2">🍔</div>
                     <div className="font-bold text-slate-800 mb-2">麦当劳还没开启</div>
                     <div className="text-[12px] text-slate-500 mb-4 leading-relaxed">请到设置 → 麦当劳填入 MCP token 并开启功能</div>
@@ -1297,7 +1297,7 @@ const McdMiniApp: React.FC<McdMiniAppProps> = ({ open, onClose, char, userProfil
     }
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" style={{ paddingBottom: 'var(--safe-bottom)' }} onClick={onClose}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center animate-fade-in" style={{ paddingBottom: 'var(--safe-bottom)' }} onClick={onClose}>
             <style>{`
                 .mcd-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
                 .mcd-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -1306,7 +1306,7 @@ const McdMiniApp: React.FC<McdMiniAppProps> = ({ open, onClose, char, userProfil
                 .mcd-scroll { scrollbar-width: thin; scrollbar-color: rgba(202, 138, 4, 0.25) transparent; }
             `}</style>
             <div
-                className="bg-gradient-to-b from-yellow-50 to-amber-50 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
+                className="bg-gradient-to-b from-yellow-50 to-amber-50 w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col animate-slide-up"
                 style={{ height: '85vh', maxHeight: '85vh' }}
                 onClick={(e: any) => e.stopPropagation()}
             >

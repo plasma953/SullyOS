@@ -840,7 +840,7 @@ const LifeSimApp: React.FC = () => {
 
     if (isLoading) {
         return (
-            <div className="h-full flex items-center justify-center" style={{ background: '#c4c0d4' }}>
+            <div className="h-full flex items-center justify-center animate-fade-in" style={{ background: '#c4c0d4' }}>
                 <div className="text-center">
                     <div className="retro-window mx-auto" style={{ width: 200, padding: 0 }}>
                         <div className="retro-titlebar"><span>loading...</span><span className="retro-dots">···</span></div>
@@ -1199,7 +1199,7 @@ const LifeSimApp: React.FC = () => {
                     ))}
                     <div className="flex-1" />
                 </div>
-                <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar" style={{ background: pal.windowBg, minWidth: 0 }}>
+                <div key={activeTab} className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar animate-fade-soft" style={{ background: pal.windowBg, minWidth: 0 }}>
                     {activeTab === 'npcs' && <NPCGrid gameState={gameState} onLongPressNpc={setEditingNpc} />}
                     {activeTab === 'drama' && <DramaFeed gameState={gameState} />}
                     {activeTab === 'relations' && <RelationsTab gameState={gameState} />}

@@ -1601,7 +1601,7 @@ const SongwritingApp: React.FC = () => {
 
         return (
             <div
-                className="h-full w-full flex flex-col font-sans relative overflow-hidden"
+                className="h-full w-full flex flex-col font-sans relative overflow-hidden animate-fade-soft"
                 style={{ background: `linear-gradient(180deg, ${MusicC.bg} 0%, ${MusicC.bgDeep} 60%, ${MusicC.bgTint} 100%)` }}
             >
                 {/* 装饰星星 */}
@@ -1790,7 +1790,7 @@ const SongwritingApp: React.FC = () => {
     if (view === 'create') {
         return (
             <div
-                className="h-full w-full flex flex-col font-sans relative overflow-hidden"
+                className="h-full w-full flex flex-col font-sans relative overflow-hidden animate-page-in-l"
                 style={{ background: `linear-gradient(180deg, ${MusicC.bg} 0%, ${MusicC.bgDeep} 55%, ${MusicC.bgTint} 100%)` }}
             >
                 {/* Floating background sparkles — purely decorative */}
@@ -2176,7 +2176,7 @@ const SongwritingApp: React.FC = () => {
         const partnerChars = filterCharactersByGroup(characters, characterGroups, partnerGroupId);
         return (
             <div
-                className="h-full w-full flex flex-col font-sans relative overflow-hidden"
+                className="h-full w-full flex flex-col font-sans relative overflow-hidden animate-page-in-l"
                 style={{ background: `linear-gradient(180deg, ${MusicC.bg} 0%, ${MusicC.bgDeep} 55%, ${MusicC.bgTint} 100%)` }}
             >
                 {/* 装饰 */}
@@ -2384,7 +2384,7 @@ const SongwritingApp: React.FC = () => {
 
         let currentSec = '';
         return (
-            <div className="h-full w-full flex flex-col font-sans relative overflow-hidden" style={{ background: paper.background, color: paper.ink }}>
+            <div className="h-full w-full flex flex-col font-sans relative overflow-hidden animate-page-in-l" style={{ background: paper.background, color: paper.ink }}>
                 {/* Cover / Title Page */}
                 <div className={`${style.className} ${style.textClass} relative shrink-0`} style={{ ...style.style, minHeight: 'calc(220px + var(--safe-top))', paddingTop: 'var(--safe-top)' }}>
                     <button onClick={() => { setView('shelf'); setActiveSong(null); }} className="absolute left-4 p-2 rounded-full bg-black/10 hover:bg-black/20 transition-colors z-10" style={{ top: 'calc(var(--safe-top) + 1rem)' }}>
@@ -3214,7 +3214,7 @@ const SongwritingApp: React.FC = () => {
 
         return (
             <div
-                className="h-full w-full flex flex-col font-sans relative overflow-hidden transition-colors duration-500"
+                className="h-full w-full flex flex-col font-sans relative overflow-hidden transition-colors duration-500 animate-page-in-l"
                 style={{ background: paperBackground, color: paper.ink }}
             >
                 <ConfirmDialog

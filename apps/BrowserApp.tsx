@@ -14,7 +14,7 @@ const WebRenderer: React.FC<{ content: string }> = ({ content }) => {
     // Basic cleaning and rendering logic
     const lines = content.split('\n');
     return (
-        <div className="space-y-4 text-slate-800 leading-relaxed font-sans text-sm">
+        <div className="space-y-4 text-slate-800 leading-relaxed font-sans text-sm animate-page-in-l">
             {lines.map((line, i) => {
                 const trimmed = line.trim();
                 if (!trimmed) return <div key={i} className="h-2" />;

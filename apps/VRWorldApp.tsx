@@ -342,7 +342,7 @@ const VRWorldApp: React.FC = () => {
     };
 
     return (
-        <div className="h-full w-full flex flex-col text-white relative overflow-hidden"
+        <div className="h-full w-full flex flex-col text-white relative overflow-hidden animate-fade-soft"
             style={{ background: 'radial-gradient(130% 90% at 50% -15%, #20283f 0%, #141a2c 38%, #0a0d18 72%, #05060d 100%)' }}>
             <VRStyleTag />
             {/* 极光辉光 */}
@@ -389,7 +389,7 @@ const VRWorldApp: React.FC = () => {
             </div>
 
             {/* 滚动容器不同于浮动 dock：滚到底时最后一条内容贴 viewport bottom = 屏幕底，必须 + safe-bottom 让位 home 条，否则翻页按钮被压（即原 #158 报的问题）。 */}
-            <div className="relative flex-1 overflow-y-auto vr-reader-scroll px-4 z-10" style={{ paddingTop: '1rem', paddingBottom: `calc(1rem + ${VR_SAFE_BOTTOM})` }}>
+            <div key={tab} className="relative flex-1 overflow-y-auto vr-reader-scroll px-4 z-10 animate-fade-soft" style={{ paddingTop: '1rem', paddingBottom: `calc(1rem + ${VR_SAFE_BOTTOM})` }}>
                 {loading ? (
                     <div className="text-center text-white/40 text-[13px] tracking-[0.2em] py-12" style={{ fontFamily: `'Noto Serif SC',serif` }}>载入彼方…</div>
                 ) : tab === 'world' ? (
@@ -662,7 +662,7 @@ const ConfirmDialog: React.FC<{
 }> = ({ open, title, message, confirmText = '删除', cancelText = '取消', onConfirm, onCancel }) => {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-8 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-8 bg-black/55 backdrop-blur-sm animate-fade-in" onClick={onCancel}>
             <div className="w-full max-w-[300px] rounded-2xl p-4 text-center" onClick={e => e.stopPropagation()}
                 style={{ background: 'linear-gradient(180deg,#1b1830 0%,#100d20 100%)', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
                 <div className="text-[14px] font-semibold text-white tracking-wide" style={{ fontFamily: `'Noto Serif SC',serif` }}>{title}</div>
@@ -684,8 +684,8 @@ const ActionSheet: React.FC<{
 }> = ({ open, title, actions, onClose }) => {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-md p-3" style={{ paddingBottom: vrBottomPad('0.75rem') }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[300] flex items-end justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <div className="w-full max-w-md p-3 animate-slide-up" style={{ paddingBottom: vrBottomPad('0.75rem') }} onClick={e => e.stopPropagation()}>
                 <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(180deg,#1b1830,#120f22)', border: '1px solid rgba(255,255,255,.12)' }}>
                     {title && <div className="px-4 py-2.5 text-[11px] text-white/45 text-center border-b border-white/8 whitespace-pre-wrap leading-snug">{title}</div>}
                     {actions.map((a, i) => (
@@ -740,7 +740,7 @@ const LetterEditModal: React.FC<{ letter: VRLetter; onSave: (pen: string, conten
     const [pen, setPen] = useState(letter.pen);
     const [content, setContent] = useState(letter.content);
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm animate-fade-in" onClick={onCancel}>
             <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
                 <div className="text-[13px] font-semibold text-amber-100 mb-2.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>{title}</div>
                 <label className="text-[10px] text-amber-200/60">笔名</label>
@@ -766,7 +766,7 @@ const IdentityModal: React.FC<{ onImport: (code: string) => void; onClose: () =>
         try { await navigator.clipboard?.writeText(code); setCopied(true);  setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
     };
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
                 <div className="text-[13px] font-semibold text-amber-100 mb-1" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局身份</div>
                 <p className="text-[10px] text-white/45 leading-snug mb-2.5">这串「身份码」代表你在邮局的匿名身份。复制保存，换设备或清数据后导入，就能找回「我寄出的信」和它们的归属。</p>
@@ -805,7 +805,7 @@ const AdminModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         catch (e: any) { setErr('删除失败：' + (e?.message || '检查网络')); }
     };
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div className="w-full max-w-[400px] max-h-[82vh] flex flex-col rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
                 <div className="text-[13px] font-semibold text-amber-100 mb-1 shrink-0" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局后台</div>
                 <p className="text-[10px] text-white/45 leading-snug mb-2.5 shrink-0">用 worker 的 <b className="text-amber-200/70">ADMIN_TOKEN</b> 查看后端全部信件（按踩数、时间倒序，最多 200 条），可逐条删除。token 只存在本机。</p>
@@ -858,7 +858,7 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
     );
     return (
-        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)' }}>
+        <div className="fixed inset-0 z-[80] flex flex-col animate-fade-soft" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)' }}>
             <div className="flex items-center gap-2.5 px-5 pb-3 shrink-0 border-b border-white/8" style={{ paddingTop: VR_TOP }}>
                 <span className="text-[15px] tracking-[0.2em] text-white/95" style={{ fontFamily: `'Noto Serif SC',serif` }}>彼方 · 玩法说明</span>
                 <button onClick={onClose} className="ml-auto p-1.5 rounded-full text-white/60 active:bg-white/10"><X size={19} /></button>
@@ -937,7 +937,7 @@ const ReplyComposeModal: React.FC<{ letter: VRLetter; defaultPen: string; initia
     const [pen, setPen] = useState(defaultPen);
     const [content, setContent] = useState(initialContent);
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm animate-fade-in" onClick={onCancel}>
             <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
                 <div className="text-[13px] font-semibold text-amber-100 mb-2" style={{ fontFamily: `'Noto Serif SC',serif` }}>{title}</div>
                 <div className="rounded-lg bg-black/25 px-3 py-2 mb-3 text-[10.5px] text-white/55 leading-snug max-h-24 overflow-y-auto vr-reader-scroll" style={{ border: '1px solid rgba(255,255,255,.08)' }}>
@@ -2458,7 +2458,7 @@ const RoomScene: React.FC<{
     }, []);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#05060d' }}>
+        <div className="fixed inset-0 z-50 flex flex-col animate-page-in-l" style={{ background: '#05060d' }}>
             <VRStyleTag />
             <div className="relative flex-1 overflow-hidden">
                 <RoomBackground roomId={roomId} />
@@ -2652,8 +2652,8 @@ const RoomScene: React.FC<{
 
             {/* 角色活动详情 —— 盖在 chibi 之上（zIndex 高于任何 chibi） */}
             {detail && (
-                <div className="absolute inset-0 flex items-end bg-black/45" style={{ zIndex: 200 }} onClick={() => setDetail(null)}>
-                    <div className="w-full rounded-t-2xl p-4 text-white" style={{ background: 'linear-gradient(180deg,#1a2236 0%,#0d1119 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 flex items-end bg-black/45 animate-fade-in" style={{ zIndex: 200 }} onClick={() => setDetail(null)}>
+                    <div className="w-full rounded-t-2xl p-4 text-white animate-slide-up" style={{ background: 'linear-gradient(180deg,#1a2236 0%,#0d1119 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2 mb-2">
                             {detail.avatar ? <TokenImg value={detail.avatar} className="h-9 w-9 rounded-full object-cover" alt="" /> : <div className="h-9 w-9 rounded-full bg-indigo-400/40" />}
                             <span className="font-bold">{detail.name}</span>
@@ -2868,7 +2868,7 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
         : novel.segments.slice(winStart, winEnd);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: theme.bg }}>
+        <div className="fixed inset-0 z-50 flex flex-col animate-page-in-l" style={{ background: theme.bg }}>
             {/* 顶栏 */}
             <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ borderBottom: `1px solid ${theme.accent}22`, paddingTop: VR_TOP }}>
                 <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full active:bg-black/5" style={{ color: theme.text }}><X size={20} weight="bold" /></button>
@@ -3094,8 +3094,8 @@ const UploadModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={busy ? undefined : onClose}>
-            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 animate-fade-in" onClick={busy ? undefined : onClose}>
+            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll animate-slide-up" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-3">
                     <span className="text-[15px] font-bold text-white">上传小说</span>
                     {!busy && <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>}
@@ -3201,7 +3201,7 @@ const ChibiEditor: React.FC<{
 
     if (creating) {
         return (
-            <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+            <div className="fixed inset-0 z-[60] flex flex-col bg-black animate-fade-soft">
                 <div className="flex items-center gap-2 px-4 pb-2 shrink-0 text-white" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingTop: VR_TOP }}>
                     <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><CaretLeft size={20} weight="bold" /></button>
                     <span className="text-[14px] font-bold">捏 {char.name} 的小人</span>
@@ -3217,9 +3217,9 @@ const ChibiEditor: React.FC<{
     }
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55" onClick={onClose}>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55 animate-fade-in" onClick={onClose}>
             <VRStyleTag />
-            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-t-2xl p-4 animate-slide-up" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-1">
                     <span className="text-[15px] font-bold text-white">{char.name} 的彼方形象</span>
                     <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>
@@ -3277,7 +3277,7 @@ const UserChibiEditor: React.FC<{
 
     if (creating) {
         return (
-            <div className="fixed inset-0 z-[60] flex flex-col bg-black" style={{ paddingTop: VR_TOP }}>
+            <div className="fixed inset-0 z-[60] flex flex-col bg-black animate-fade-soft" style={{ paddingTop: VR_TOP }}>
                 <CreatorIframe mode="user" charName={userName} presets={presets}
                     savedState={existing?.state}
                     draftKey="vr_user" title={`捏一个你自己 · ${userName}`} subtitle="彼方 · 你的 CHIBI"
@@ -3287,8 +3287,8 @@ const UserChibiEditor: React.FC<{
     }
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55" onClick={onClose}>
-            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55 animate-fade-in" onClick={onClose}>
+            <div className="w-full max-w-md rounded-t-2xl p-4 animate-slide-up" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-2 mb-2">
                     <span className="text-[15px] font-bold text-white">你的彼方形象</span>
                     <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>
@@ -3442,9 +3442,9 @@ const NovelPreferenceModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-[340] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[340] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
             <div
-                className="flex h-[min(86dvh,760px)] w-full max-w-md flex-col overflow-hidden rounded-t-[28px]"
+                className="flex h-[min(86dvh,760px)] w-full max-w-md flex-col overflow-hidden rounded-t-[28px] animate-slide-up"
                 style={{ background: 'linear-gradient(180deg,#1d1a31,#0f0d1c)', border: '1px solid rgba(255,255,255,.12)', paddingBottom: vrBottomPad('0px') }}
                 onClick={event => event.stopPropagation()}
             >

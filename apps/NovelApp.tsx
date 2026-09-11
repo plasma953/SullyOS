@@ -220,7 +220,7 @@ const NovelApp: React.FC = () => {
     // 4. Character Library View
     if (view === 'library') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-sans">
+            <div className="h-full w-full bg-slate-50 flex flex-col font-sans animate-fade-soft">
                 <div className="bg-white/80 backdrop-blur-md border-b border-slate-200 shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--chrome-top)' }}>
                     <div className="flex items-center px-6 py-3">
                     <div className="flex justify-between items-center w-full">
@@ -282,7 +282,7 @@ const NovelApp: React.FC = () => {
     // 1. Shelf View
     if (view === 'shelf') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-sans relative">
+            <div className="h-full w-full bg-slate-50 flex flex-col font-sans relative animate-fade-soft">
                 <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText || (confirmDialog?.onConfirm ? '确认' : 'OK')} onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
                 <div className="bg-white/80 backdrop-blur-md z-20 shrink-0 border-b border-slate-100" style={{ paddingTop: 'var(--chrome-top)' }}>
                     <div className="flex items-center justify-between px-6 py-3">
@@ -322,7 +322,7 @@ const NovelApp: React.FC = () => {
     // 2. Create / Settings View
     if (view === 'create' || view === 'settings') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-sans relative">
+            <div className="h-full w-full bg-slate-50 flex flex-col font-sans relative animate-page-in-l">
                 <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText || (confirmDialog?.onConfirm ? '确认' : 'OK')} onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
                 <div className="bg-white border-b border-slate-200 shrink-0 sticky top-0 z-20" style={{ paddingTop: 'var(--chrome-top)' }}>
                     <div className="h-16 flex items-center justify-between px-4">
@@ -385,6 +385,7 @@ const NovelApp: React.FC = () => {
                 targetCharId={targetCharId}
                 setTargetCharId={setTargetCharId}
                 onOpenSettings={handleEditBookSettings}
+                className="animate-page-in-l"
             />
         );
     }

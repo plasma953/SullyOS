@@ -1064,7 +1064,7 @@ const GuidebookApp: React.FC = () => {
     // ============ RENDER: LOBBY ============
     if (view === 'lobby') {
         return (
-            <GameFrame>
+            <GameFrame className="animate-fade-soft">
                 {/* Cinematic header - no standard GameHeader */}
                 <div className="shrink-0 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(30,20,40,0.85) 0%, rgba(60,30,50,0.7) 50%, rgba(40,20,50,0.85) 100%)', paddingTop: 'var(--safe-top)' }}>
                     <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,0.03) 3px, rgba(255,255,255,0.03) 4px)' }} />
@@ -1242,7 +1242,7 @@ const GuidebookApp: React.FC = () => {
 
                 {/* Tutorial Modal */}
                 {showTutorial && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-5 animate-fade-in">
                         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowTutorial(false)} />
                         <div className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl" style={{ background: 'linear-gradient(160deg, #2a1a2e 0%, #1a1228 60%, #221530 100%)', border: '1px solid rgba(244,143,177,0.15)' }}>
                             {/* Header */}
@@ -1281,7 +1281,7 @@ const GuidebookApp: React.FC = () => {
 
                 {/* Delete Confirm */}
                 {deleteSessionId && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fade-in">
                         <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setDeleteSessionId(null)} />
                         <Card className="relative p-5 max-w-xs w-full space-y-3">
                             <div className="font-bold text-sm text-center" style={{ color: '#5a4a50' }}>删除这条记录？</div>
@@ -1300,7 +1300,7 @@ const GuidebookApp: React.FC = () => {
     if (view === 'setup') {
         const setupChar = characters.find(c => c.id === selectedCharId);
         return (
-            <GameFrame>
+            <GameFrame className="animate-page-in-l">
                 {/* Cinematic header matching lobby style */}
                 <div className="shrink-0 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(30,20,40,0.85) 0%, rgba(60,30,50,0.7) 50%, rgba(40,20,50,0.85) 100%)', paddingTop: 'var(--safe-top)' }}>
                     <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,0.03) 3px, rgba(255,255,255,0.03) 4px)' }} />
@@ -1512,7 +1512,7 @@ const GuidebookApp: React.FC = () => {
     // ============ RENDER: OPENING ============
     if (view === 'opening' && openingSegments.length > 0 && !openingDone) {
         return (
-            <GameFrame>
+            <GameFrame className="animate-page-in-l">
                 <GameHeader
                     title="攻略本 · 开场"
                     subtitle={`${selectedChar?.name} 的攻略之旅`}
@@ -1537,7 +1537,7 @@ const GuidebookApp: React.FC = () => {
     const isReplay = view === 'replay';
 
     return (
-        <GameFrame>
+        <GameFrame className="animate-page-in-l">
             {/* Header */}
             <GameHeader
                 title={isReplay ? '攻略本 · 回放' : `攻略本 · ${session?.currentRound || 0}/${session?.maxRounds || 0}`}
@@ -1720,7 +1720,7 @@ const GuidebookApp: React.FC = () => {
 
             {/* Exceed Warning */}
             {showExceedWarning && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
+                <div className="fixed inset-0 z-40 flex items-center justify-center p-6 animate-fade-in">
                     <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowExceedWarning(false)} />
                     <Card className="relative p-5 max-w-xs w-full space-y-3">
                         <div className="font-bold text-sm text-center" style={{ color: '#5a4a50' }}>已达到预设回合数 ({session?.maxRounds})</div>
@@ -1742,8 +1742,8 @@ const GuidebookApp: React.FC = () => {
             {/* Option Edit Overlay */}
             {editingOptIdx !== null && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center p-3 pb-4" style={{ paddingBottom: `calc(1rem + var(--safe-bottom))` }}>
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditingOptIdx(null)} />
-                    <div className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] overflow-y-auto" style={{ background: 'linear-gradient(160deg, #f5f0ee 0%, #ece6e9 100%)', border: '1px solid rgba(200,185,190,0.3)' }}>
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setEditingOptIdx(null)} />
+                    <div className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] overflow-y-auto animate-slide-up" style={{ background: 'linear-gradient(160deg, #f5f0ee 0%, #ece6e9 100%)', border: '1px solid rgba(200,185,190,0.3)' }}>
                         <div className="px-5 pt-5 pb-3" style={{ borderBottom: '1px solid rgba(200,185,190,0.15)' }}>
                             <div className="flex items-center gap-2">
                                 <span className="w-7 h-7 rounded-xl flex items-center justify-center text-sm text-white font-bold shadow-sm" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
@@ -1803,8 +1803,8 @@ const GuidebookApp: React.FC = () => {
             {/* Scenario Edit Overlay */}
             {editingScenario && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center p-3 pb-4" style={{ paddingBottom: `calc(1rem + var(--safe-bottom))` }}>
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditingScenario(false)} />
-                    <div className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] overflow-y-auto" style={{ background: 'linear-gradient(160deg, #f5f0ee 0%, #ece6e9 100%)', border: '1px solid rgba(200,185,190,0.3)' }}>
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setEditingScenario(false)} />
+                    <div className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] overflow-y-auto animate-slide-up" style={{ background: 'linear-gradient(160deg, #f5f0ee 0%, #ece6e9 100%)', border: '1px solid rgba(200,185,190,0.3)' }}>
                         <div className="px-5 pt-5 pb-3" style={{ borderBottom: '1px solid rgba(200,185,190,0.15)' }}>
                             <div className="flex items-center gap-2">
                                 <span className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] shrink-0" style={{ background: 'rgba(200,185,190,0.2)', color: '#9b8a8e' }}><FlowerLotus size={12} /></span>
@@ -1839,7 +1839,7 @@ const GuidebookApp: React.FC = () => {
 
             {/* Exit Confirm */}
             {showExitConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fade-in">
                     <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowExitConfirm(false)} />
                     <Card className="relative p-5 max-w-xs w-full space-y-3">
                         <div className="font-bold text-sm text-center" style={{ color: '#5a4a50' }}>退出游戏？</div>
@@ -1861,8 +1861,8 @@ const GuidebookApp: React.FC = () => {
             {/* Round Context Menu */}
             {contextMenuRound !== null && (
                 <div className="fixed inset-0 z-40 flex items-end justify-center p-4 pb-8" style={{ paddingBottom: `calc(2rem + var(--safe-bottom))` }}>
-                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setContextMenuRound(null)} />
-                    <Card className="relative w-full max-w-sm overflow-hidden">
+                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm animate-fade-in" onClick={() => setContextMenuRound(null)} />
+                    <Card className="relative w-full max-w-sm overflow-hidden animate-slide-up">
                         <div className="text-center text-xs py-2" style={{ color: '#9b8a8e', borderBottom: '1px solid rgba(200,185,190,0.2)' }}>
                             第 {(session?.rounds[contextMenuRound]?.roundNumber) || '?'} 回合
                         </div>

@@ -307,7 +307,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
                         <ClockCounterClockwise size={15} /> 生活记录
                     </button>
                 } />
-                <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-2 pb-10">
+                <div className="flex-1 overflow-y-auto no-scrollbar px-6 pt-2 pb-10 animate-fade-soft">
                     <div className="mb-5">
                         <div className="text-[10px] tracking-[0.35em] uppercase" style={{ color: ACCENT }}>Persona Simulation</div>
                         <h1 className="text-[26px] font-light text-white mt-2 leading-tight" style={{ fontFamily: "'Shippori Mincho','Noto Sans SC',serif" }}>
@@ -434,7 +434,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
         return (
             <Shell wallpaper={wallpaper}>
                 <TopBar onBack={onExit} />
-                <div className="flex-1 flex flex-col items-center justify-center gap-5 px-10 text-center">
+                <div className="flex-1 flex flex-col items-center justify-center gap-5 px-10 text-center animate-fade-in">
                     <div className="relative">
                         <HourglassMedium size={40} weight="light" style={{ color: ACCENT }} className="animate-pulse" />
                         <div className="absolute inset-0 blur-2xl rounded-full" style={{ background: `${ACCENT}55` }} />
@@ -455,7 +455,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
     if (phase === 'end') {
         return (
             <Shell wallpaper={wallpaper}>
-                <div className="flex-1 flex flex-col items-center justify-center px-8 text-center animate-fade-in">
+                <div className="flex-1 flex flex-col items-center justify-center px-8 text-center animate-fade-soft">
                     <Lock size={26} weight="light" className="text-white/30 mb-5" />
                     <div className="text-[10px] tracking-[0.3em] uppercase text-white/35 mb-3">演出结束</div>
                     <h2 className="text-[20px] font-light text-white mb-2" style={{ fontFamily: "'Shippori Mincho','Noto Sans SC',serif" }}>{script?.title}</h2>
@@ -516,7 +516,7 @@ const PersonaSim: React.FC<Props> = ({ targetChar, onExit, openLifeLog, sim, onS
 
             {/* beat stage + tap to advance */}
             <div
-                className="flex-1 relative z-10 overflow-hidden select-none"
+                className="flex-1 relative z-10 overflow-hidden select-none animate-fade-soft"
                 onClick={advance}
                 onPointerDown={e => { (e.target as HTMLElement).setPointerCapture?.(e.pointerId); const t = setTimeout(startFF, 420); (e.currentTarget as any)._ff = t; }}
                 onPointerUp={e => { clearTimeout((e.currentTarget as any)._ff); stopFF(); }}

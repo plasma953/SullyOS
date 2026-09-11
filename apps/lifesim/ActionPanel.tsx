@@ -77,10 +77,10 @@ const ActionPanel: React.FC<{
     };
 
     return (
-        <div className="absolute inset-0 z-40 flex items-end justify-center"
+        <div className="absolute inset-0 z-40 flex items-end justify-center animate-fade-in"
             style={{ background: 'rgba(0,0,0,0.3)' }}
             onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className="retro-window w-full mx-2 mb-2" style={{
+            <div className="retro-window w-full mx-2 mb-2 animate-slide-up" style={{
                 maxHeight: '70vh', display: 'flex', flexDirection: 'column',
                 boxShadow: '4px 4px 0px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.5)',
             }}>

@@ -716,7 +716,7 @@ const DateApp: React.FC = () => {
     // --- Render ---
 
     if (meetSurface === 'story' && mode === 'select' && !cameFromChat) {
-        return <StoryTheater onSwitchCompanion={() => setMeetSurface('companion')} onClose={closeApp} />;
+        return <div className="h-full w-full animate-page-in-l"><StoryTheater onSwitchCompanion={() => setMeetSurface('companion')} onClose={closeApp} /></div>;
     }
 
     if (mode === 'select' || !char) {
@@ -745,7 +745,7 @@ const DateApp: React.FC = () => {
             'linear-gradient(180deg,rgba(234,231,242,.88),rgba(242,240,247,.82))',
         ];
         return (
-            <div className="h-full w-full relative overflow-hidden flex flex-col font-light" style={{ background: th.pageBg }}>
+            <div className="h-full w-full relative overflow-hidden flex flex-col font-light animate-fade-soft" style={{ background: th.pageBg }}>
                 {/* 柔星点氛围 */}
                 <div className="absolute inset-0 pointer-events-none opacity-70" style={{ backgroundImage: th.stars }} />
 
@@ -871,7 +871,7 @@ const DateApp: React.FC = () => {
 
     if (mode === 'history') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-light" onClick={() => historyMenuMsg && setHistoryMenuMsg(null)}>
+            <div className="h-full w-full bg-slate-50 flex flex-col font-light animate-page-in-l" onClick={() => historyMenuMsg && setHistoryMenuMsg(null)}>
                 <div className="border-b border-slate-200 bg-white sticky top-0 z-10" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="h-16 flex items-center justify-between px-4">
                         <button onClick={handleBack} className="p-2 -ml-2 rounded-full hover:bg-slate-100"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg></button>
@@ -1011,7 +1011,7 @@ const DateApp: React.FC = () => {
 
     if (mode === 'peek') {
         return (
-            <div className="h-full w-full bg-black relative flex flex-col font-sans overflow-hidden">
+            <div className="h-full w-full bg-black relative flex flex-col font-sans overflow-hidden animate-page-in-l">
                 <div className="pt-24 flex flex-col items-center z-10 shrink-0">
                      <div className="text-xs font-mono text-neutral-500 mb-2 tracking-[0.2em] font-medium">{virtualTime.day.toUpperCase()} {formatTime()}</div>
                      <h2 className="text-4xl font-light text-white tracking-[0.3em] uppercase">{char.name}</h2>
@@ -1046,7 +1046,7 @@ const DateApp: React.FC = () => {
     }
 
     if (mode === 'settings') {
-        return <DateSettings char={char} onBack={() => setMode(previousMode)} />;
+        return <div className="h-full w-full animate-page-in-l"><DateSettings char={char} onBack={() => setMode(previousMode)} /></div>;
     }
 
     if (mode === 'session') {

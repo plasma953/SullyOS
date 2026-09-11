@@ -445,7 +445,7 @@ export default function TakeoutApp() {
             ))}
           </div>
           {/* 店铺列表 */}
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 animate-fade-soft">
             {q && dishHits.length > 0 && (
               <div className="bg-white rounded-2xl p-3">
                 <div className="text-[12px] font-bold text-slate-700 mb-2">🛒 找到 {dishHits.length} 件商品（含全城其它店）</div>
@@ -508,7 +508,7 @@ export default function TakeoutApp() {
 
       {view === 'shop' && activeShop && (
         <>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto animate-page-in-l">
             <div className="px-4 pt-3 pb-3 bg-gradient-to-br from-amber-50 to-orange-50">
               <div className="text-[16px] font-bold">{activeShop.name}</div>
               <div className="text-[11px] text-slate-400 mt-0.5">★ {activeShop.rating?.toFixed(1)} · 月售{activeShop.monthlySales} · {activeShop.deliveryTime}</div>
@@ -552,7 +552,7 @@ export default function TakeoutApp() {
       )}
 
       {view === 'checkout' && cart && (
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 animate-page-in-l">
           <div className="bg-white rounded-2xl p-4">
             <div className="text-[13px] font-bold mb-1">收货信息</div>
             <div className="text-[12px] text-slate-500">{target.type === 'user' ? '送给我自己' : `送给 ${target.name}`}</div>
@@ -580,7 +580,7 @@ export default function TakeoutApp() {
       )}
 
       {view === 'orders' && (
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 animate-page-in-l">
           {visibleOrders.map(o => (
             <div key={o.id} onClick={() => { setDetailOrderId(o.id); setView('orderDetail'); }} className="bg-white rounded-2xl p-3 cursor-pointer">
               <div className="flex justify-between items-center">
@@ -608,7 +608,7 @@ export default function TakeoutApp() {
         const o = orders.find(x => x.id === detailOrderId) || lastOrder;
         if (!o) return <div className="flex-1" />;
         return (
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 animate-page-in-l">
             <div className="bg-white rounded-2xl p-4">
               <div className="flex justify-between items-center">
                 <span className="text-[15px] font-bold">{ORDER_STATUS_LABEL[o.status]}</span>
@@ -643,8 +643,8 @@ export default function TakeoutApp() {
 
       {/* 地点切换弹层（我的地址 / char 的地址）*/}
       {targetSel && (
-        <div className="absolute inset-0 z-50 bg-black/40 flex items-end" onClick={() => setTargetSel(false)}>
-          <div className="w-full bg-white rounded-t-3xl p-4 space-y-2" onClick={e => e.stopPropagation()}>
+        <div className="absolute inset-0 z-50 bg-black/40 flex items-end animate-fade-in" onClick={() => setTargetSel(false)}>
+          <div className="w-full bg-white rounded-t-3xl p-4 space-y-2 animate-slide-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-2">
               <div className="text-[14px] font-bold">选择收货地址</div>
               <button onClick={() => { setAddrDraft(target?.addressText || ''); setEditAddr(true); }} className="text-[11px] text-amber-500 font-bold">编辑当前地址</button>

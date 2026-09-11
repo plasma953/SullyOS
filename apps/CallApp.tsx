@@ -2913,7 +2913,7 @@ ${sentencePlan}`;
   };
 
   const avatarImportOverlay = avatarImportStatus ? (
-    <div className="sully-stage-dark absolute inset-0 z-[120] flex items-center justify-center bg-[#07050c]/88 px-8 text-center backdrop-blur-xl">
+    <div className="sully-stage-dark absolute inset-0 z-[120] flex items-center justify-center bg-[#07050c]/88 px-8 text-center backdrop-blur-xl animate-fade-soft">
       <div className="max-w-[20rem]">
         <span className="mx-auto mb-4 block h-9 w-9 animate-spin rounded-full border-2 border-white/15 border-t-violet-300" />
         <div className="text-sm leading-relaxed text-white/85">{avatarImportStatus}</div>
@@ -2936,7 +2936,7 @@ ${sentencePlan}`;
     const page = Math.min(rolePage, totalPages - 1);
     const pagedChars = groupChars.slice(page * ROLES_PER_PAGE, page * ROLES_PER_PAGE + ROLES_PER_PAGE);
     return (
-      <div className={`relative h-full w-full bg-gradient-to-b text-white flex flex-col overflow-hidden ${lightTheme ? 'sully-call-light from-[#f5f2fd] via-[#eef0f8] to-[#e9ecf5]' : 'from-[#140d28] via-[#0a0613] to-[#05030c]'}`}>
+      <div className={`relative h-full w-full bg-gradient-to-b text-white flex flex-col overflow-hidden animate-fade-soft ${lightTheme ? 'sully-call-light from-[#f5f2fd] via-[#eef0f8] to-[#e9ecf5]' : 'from-[#140d28] via-[#0a0613] to-[#05030c]'}`}>
         {lightTheme && <style>{CALL_LIGHT_THEME_CSS}</style>}
         {avatarImportOverlay}
         {vroidBetaOverlay}
@@ -3268,7 +3268,7 @@ ${sentencePlan}`;
   }
   if (viewMode === 'history') {
     return (
-      <div className={`h-full w-full bg-gradient-to-b text-white px-5 pb-6 flex flex-col ${lightTheme ? 'sully-call-light from-[#f5f2fd] via-[#eef0f8] to-[#eef0f8]' : 'from-[#140d28] via-[#0a0613] to-[#0a0613]'}`} style={{ paddingTop: 'max(2.5rem, var(--safe-top))' }}>
+      <div className={`h-full w-full bg-gradient-to-b text-white px-5 pb-6 flex flex-col animate-fade-soft ${lightTheme ? 'sully-call-light from-[#f5f2fd] via-[#eef0f8] to-[#eef0f8]' : 'from-[#140d28] via-[#0a0613] to-[#0a0613]'}`} style={{ paddingTop: 'max(2.5rem, var(--safe-top))' }}>
         {lightTheme && <style>{CALL_LIGHT_THEME_CSS}</style>}
         <div className="flex items-center justify-between">
           <button onClick={() => setViewMode('role-select')} className="text-sm text-white/45">← 返回</button>
@@ -3303,7 +3303,7 @@ ${sentencePlan}`;
 
         {/* Delete confirm overlay */}
         {deleteConfirmRecord && (
-          <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-6">
+          <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-6 animate-fade-in">
             <div className={`w-full max-w-sm rounded-3xl border border-white/15 bg-gradient-to-b p-5 shadow-2xl ${lightTheme ? 'from-white to-[#f0edf9]' : 'from-[#1a1130] to-[#0a0613]'}`}>
               <div className="text-base font-semibold text-white">删除通话记录？</div>
               <p className="mt-2 text-sm text-white/55 leading-relaxed">和 {deleteConfirmRecord.characterName} 的这通通话将被永久删除。</p>
@@ -3319,7 +3319,7 @@ ${sentencePlan}`;
   }
   if (viewMode === 'record-detail' && recordDetail) {
     return (
-      <div className={`h-full w-full bg-gradient-to-b text-white px-5 pb-6 flex flex-col ${lightTheme ? 'sully-call-light from-[#f5f2fd] via-[#eef0f8] to-[#eef0f8]' : 'from-[#140d28] via-[#0a0613] to-[#0a0613]'}`} style={{ paddingTop: 'max(2.5rem, var(--safe-top))' }}>
+      <div className={`h-full w-full bg-gradient-to-b text-white px-5 pb-6 flex flex-col animate-page-in-l ${lightTheme ? 'sully-call-light from-[#f5f2fd] via-[#eef0f8] to-[#eef0f8]' : 'from-[#140d28] via-[#0a0613] to-[#0a0613]'}`} style={{ paddingTop: 'max(2.5rem, var(--safe-top))' }}>
         {lightTheme && <style>{CALL_LIGHT_THEME_CSS}</style>}
         <div className="flex items-center justify-between">
           <button onClick={() => setViewMode('history')} className="text-sm text-white/45">← 返回</button>
@@ -3428,7 +3428,7 @@ ${sentencePlan}`;
   const callControlSize = callMode === 'video' ? 'h-10 w-10' : 'h-14 w-14';
   return (
     <div
-      className={`h-full w-full relative text-white flex flex-col overflow-hidden ${lightTheme ? 'sully-call-light bg-[#eef0f7]' : 'bg-[#0a0613]'}`}
+      className={`h-full w-full relative text-white flex flex-col overflow-hidden animate-fade-soft ${lightTheme ? 'sully-call-light bg-[#eef0f7]' : 'bg-[#0a0613]'}`}
       data-avatar-touch-pending={pendingAvatarTouchCount}
       data-call-video-layout={callMode === 'video' ? videoCallLayout : undefined}
     >
@@ -3894,8 +3894,8 @@ ${sentencePlan}`;
         />
       )}
       {showBgPicker && (
-        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end" onClick={() => setShowBgPicker(false)}>
-          <div className={`w-full border-t border-white/10 rounded-t-3xl p-5 space-y-3 ${lightTheme ? 'bg-[#f6f4fc]' : 'bg-[#120c22]'}`} onClick={e => e.stopPropagation()}>
+        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end animate-fade-in" onClick={() => setShowBgPicker(false)}>
+          <div className={`w-full border-t border-white/10 rounded-t-3xl p-5 space-y-3 animate-slide-up ${lightTheme ? 'bg-[#f6f4fc]' : 'bg-[#120c22]'}`} onClick={e => e.stopPropagation()}>
             <div className="text-sm text-white/80 font-medium">视频背景</div>
             <p className="text-xs text-white/40">本地图片保存在你自己的设备里（IndexedDB，随备份导出）；图床直链则每次在线加载。</p>
             <button onClick={chooseStageBackgroundFile} className="w-full py-2.5 rounded-2xl border border-white/15 bg-white/[0.06] text-sm text-white/85 transition active:scale-[0.98]">
@@ -3919,8 +3919,8 @@ ${sentencePlan}`;
         </div>
       )}
       {showLangPicker && (
-        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end" onClick={() => setShowLangPicker(false)}>
-          <div className={`w-full border-t border-white/10 rounded-t-3xl p-5 space-y-3 ${lightTheme ? 'bg-[#f6f4fc]' : 'bg-[#120c22]'}`} onClick={e => e.stopPropagation()}>
+        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end animate-fade-in" onClick={() => setShowLangPicker(false)}>
+          <div className={`w-full border-t border-white/10 rounded-t-3xl p-5 space-y-3 animate-slide-up ${lightTheme ? 'bg-[#f6f4fc]' : 'bg-[#120c22]'}`} onClick={e => e.stopPropagation()}>
             <div className="text-sm text-white/80 font-medium">语音语种</div>
             <p className="text-xs text-white/40">选择后，角色会用中文回复，语音则用对应语种朗读</p>
             <div className="flex flex-wrap gap-2 pt-1">
@@ -3937,7 +3937,7 @@ ${sentencePlan}`;
         </div>
       )}
       {showHangupConfirm && (
-        <div className="absolute inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center px-6">
+        <div className="absolute inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center px-6 animate-fade-in">
           <div className={`w-full max-w-sm rounded-3xl border border-white/15 bg-gradient-to-b p-5 shadow-2xl ${lightTheme ? 'from-white to-[#f0edf9]' : 'from-[#1a1130] to-[#0a0613]'}`}>
             <div className="text-lg font-semibold text-white">要挂了吗？</div>
             <p className="mt-2 text-sm text-white/65 leading-relaxed">和{selectedChar?.name || '对方'}聊了 {formatDuration(elapsedSeconds)}，这通电话会好好保存下来。</p>
@@ -3970,8 +3970,8 @@ ${sentencePlan}`;
         </div>
       )}
       {editingBubble && (
-        <div className="absolute inset-0 bg-black/60 flex items-end z-50">
-          <div className={`w-full border-t border-white/10 p-5 space-y-3 ${lightTheme ? 'bg-[#f6f4fc]' : 'bg-[#120c22]'}`}>
+        <div className="absolute inset-0 bg-black/60 flex items-end z-50 animate-fade-in">
+          <div className={`w-full border-t border-white/10 p-5 space-y-3 animate-slide-up ${lightTheme ? 'bg-[#f6f4fc]' : 'bg-[#120c22]'}`}>
             <div className="text-sm text-white/70">改一下刚才说的话</div>
             <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} className="w-full h-24 bg-black/30 rounded-xl p-3 text-sm outline-none resize-none placeholder:text-white/30" placeholder="重新措辞……" autoFocus />
             <div className="flex gap-2">

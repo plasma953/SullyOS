@@ -58,7 +58,7 @@ const HandbookDayView: React.FC<DayViewProps> = ({
 
     return (
         <div
-            className="flex-1 flex flex-col overflow-hidden relative"
+            className="flex-1 flex flex-col overflow-hidden relative animate-page-in-l"
             style={{
                 background: `${PAPER_TONES.paperWarm} radial-gradient(circle at 15% 8%, rgba(251,184,200,0.16) 0%, transparent 35%), radial-gradient(circle at 85% 70%, rgba(185,211,224,0.16) 0%, transparent 35%)`,
             }}

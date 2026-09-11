@@ -221,7 +221,7 @@ const StoryTheaterContent: React.FC<Props> = ({ onSwitchCompanion, onClose }) =>
         return <StoryTheaterSession entry={activeEntry} preset={preset} masks={masks} onBack={() => { setActiveEntry(null); setView('list'); }} onEdit={() => void openEntryEditor(activeEntry)} onOpenVectorMemory={hasVectorArchive ? () => setView('vectors') : undefined} onEntryChange={persistEntryInSession} />;
     }
 
-    return <div className='h-full w-full flex flex-col bg-stone-100 text-slate-800'>
+    return <div className='h-full w-full flex flex-col bg-stone-100 text-slate-800 animate-fade-soft'>
         <header className='story-safe-header shrink-0 border-b border-slate-200'>
             <div className='h-16 px-4 flex items-center gap-3'>
                 <button onClick={onClose} className='w-9 h-9 rounded-full grid place-items-center'><ArrowLeft size={20} /></button>
@@ -269,7 +269,7 @@ const StoryTheaterContent: React.FC<Props> = ({ onSwitchCompanion, onClose }) =>
                 </section>
             </div>
         </main>
-        {deletingEntry && <div className='fixed inset-0 z-[95] flex items-end justify-center overflow-y-auto overscroll-contain bg-slate-950/35' onClick={() => !deletingStory && setDeletingEntry(null)} role='presentation'>
+        {deletingEntry && <div className='fixed inset-0 z-[95] flex items-end justify-center overflow-y-auto overscroll-contain bg-slate-950/35 animate-fade-in' onClick={() => !deletingStory && setDeletingEntry(null)} role='presentation'>
             <div className='story-safe-sheet w-full sm:max-w-sm rounded-t-[28px] bg-stone-100 px-5 pt-5 shadow-2xl' onClick={event => event.stopPropagation()} role='dialog' aria-modal='true' aria-labelledby='delete-story-title'>
                 <div className='flex items-start gap-4'><div className='min-w-0 flex-1'><div className='text-[9px] uppercase tracking-[.2em] font-bold text-rose-500'>Delete theater</div><h2 id='delete-story-title' className='mt-1 text-lg font-semibold'>删除整个剧情？</h2></div><button disabled={deletingStory} onClick={() => setDeletingEntry(null)} className='w-9 h-9 shrink-0 rounded-full bg-white border border-slate-200 grid place-items-center text-slate-400 disabled:opacity-30' aria-label='关闭删除确认'><X size={16} /></button></div>
                 <p className='mt-4 text-[11px] leading-6 text-slate-600'>「{deletingEntry.title}」的楼层、事件盒、关系备注和本剧情独立向量会一起删除。</p>

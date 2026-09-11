@@ -283,7 +283,7 @@ const WorldbookApp: React.FC = () => {
     // EDIT MODAL (Full Screen Overlay Style)
     if (isEditing) {
         return (
-            <div className="h-full w-full bg-[#f5f6fa] flex flex-col font-sans animate-fade-in">
+            <div className="h-full w-full bg-[#f5f6fa] flex flex-col font-sans animate-page-in-l">
                 <div className="bg-white/90 backdrop-blur-xl border-b border-slate-200/70 shrink-0 z-20" style={{ paddingTop: 'var(--safe-top)' }}>
                     <div className="h-16 max-w-2xl mx-auto w-full flex items-center justify-between px-5">
                         <button onClick={() => setIsEditing(false)} className="px-3 py-2 -ml-3 rounded-xl text-slate-500 font-semibold text-sm hover:bg-slate-100 active:scale-95 transition-all">取消</button>
@@ -552,7 +552,7 @@ const WorldbookApp: React.FC = () => {
 
     // LIST VIEW
     return (
-        <div className="h-full w-full relative overflow-hidden font-sans bg-slate-100 flex flex-col">
+        <div className="h-full w-full relative overflow-hidden font-sans bg-slate-100 flex flex-col animate-fade-soft">
             {/* Background Atmosphere */}
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-50 pointer-events-none"></div>
             <div className="absolute -top-20 -right-20 w-64 h-64 bg-indigo-200/20 rounded-full blur-3xl pointer-events-none"></div>
@@ -599,7 +599,7 @@ const WorldbookApp: React.FC = () => {
             </div>
 
             {isSelecting && (
-                <div className="relative z-10 shrink-0 bg-white/90 backdrop-blur-xl border-b border-indigo-100 px-5 py-2.5 flex items-center gap-3 shadow-sm">
+                <div className="relative z-10 shrink-0 bg-white/90 backdrop-blur-xl border-b border-indigo-100 px-5 py-2.5 flex items-center gap-3 shadow-sm animate-fade-soft">
                     <button
                         onClick={toggleSelectAll}
                         className="flex items-center gap-2 text-xs font-bold text-indigo-600 active:scale-95 transition-transform"

@@ -252,7 +252,7 @@ const HistoryView: React.FC<{
               </div>
             </button>
             {open && (
-              <div className="border-t border-[#8b7355]/25 p-3">
+              <div className="border-t border-[#8b7355]/25 p-3 animate-fade-soft">
                 <ReadingView
                   record={r}
                   reader={reader}
@@ -323,7 +323,7 @@ export const TarotApp: React.FC = () => {
         </div>
       </div>
 
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div key={tab} className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 animate-fade-soft">
         {tab === 'daily' && <DailyView records={records} recordsLoaded={recordsLoaded} refresh={refresh} />}
         {tab === 'ritual' && (
           <RitualView

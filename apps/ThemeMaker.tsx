@@ -1263,7 +1263,7 @@ const ThemeMaker: React.FC = () => {
             </section>
 
             {/* Preview Area (Realistic Chat Row) */}
-            <div className={`${isPreviewFullscreen ? 'fixed inset-0 z-[120]' : 'flex-1 min-h-0'} relative overflow-y-auto flex flex-col p-4 pb-20 justify-start sm:justify-center items-center gap-4 no-scrollbar ${isPreviewDark ? 'bg-slate-900' : 'bg-slate-100'}`}>
+            <div className={`${isPreviewFullscreen ? 'fixed inset-0 z-[120] animate-fade-soft' : 'flex-1 min-h-0'} relative overflow-y-auto flex flex-col p-4 pb-20 justify-start sm:justify-center items-center gap-4 no-scrollbar ${isPreviewDark ? 'bg-slate-900' : 'bg-slate-100'}`}>
                 <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
                 {currentScene.wallpaper && (
                     <div className="absolute inset-0" style={{ background: currentScene.wallpaper, opacity: isPreviewDark ? 0.9 : 0.45 }} />
@@ -1377,7 +1377,7 @@ const ThemeMaker: React.FC = () => {
             {/* Editor Controls：悬浮在完整预览上方，不再挤占一半预览高度。 */}
             {!isPreviewFullscreen && editorPanelOpen && (
             <div
-                className="fixed left-1/2 z-[135] flex w-[94%] max-w-md -translate-x-1/2 flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white/95 shadow-[0_14px_50px_rgba(15,23,42,0.24)] ring-1 ring-slate-100 backdrop-blur-xl"
+                className="fixed left-1/2 z-[135] flex w-[94%] max-w-md -translate-x-1/2 flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white/95 shadow-[0_14px_50px_rgba(15,23,42,0.24)] ring-1 ring-slate-100 backdrop-blur-xl animate-fade-soft"
                 style={{
                     bottom: 'calc(14px + var(--safe-bottom, 0px))',
                     height: 'min(62vh, 620px)',
@@ -1419,7 +1419,7 @@ const ThemeMaker: React.FC = () => {
                     
                     {/* --- CSS EDITOR --- */}
                     {activeTab === 'css' && (
-                        <div className="space-y-6 animate-fade-in h-full flex flex-col">
+                        <div className="space-y-6 animate-fade-soft h-full flex flex-col">
                             <div className="text-[10px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed space-y-2">
                                 <span className="font-bold block mb-1 text-slate-500">CSS 增强模式</span>
                                 可使用 <code className="bg-slate-200 px-1 rounded">.sully-bubble-user</code>、<code className="bg-slate-200 px-1 rounded">.sully-bubble-ai</code> 定制气泡，使用 <code className="bg-slate-200 px-1 rounded">.sully-voice-bar</code>、<code className="bg-slate-200 px-1 rounded">.sully-voice-bar-button</code>、<code className="bg-slate-200 px-1 rounded">.sully-voice-bar-wave-segment</code> 单独定制语音条。
@@ -1503,7 +1503,7 @@ const ThemeMaker: React.FC = () => {
 
                     {/* --- BASE STYLE TOOLS --- */}
                     {activeTab !== 'css' && toolSection === 'base' && (
-                        <div className="space-y-6 animate-fade-in"> 
+                        <div className="space-y-6 animate-fade-soft"> 
                             {/* Name Input (Only on Base) */}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">主题名称 (Theme Name)</label>
@@ -1791,7 +1791,7 @@ const ThemeMaker: React.FC = () => {
 
                     {/* --- STICKER TOOLS --- */}
                     {activeTab !== 'css' && toolSection === 'sticker' && (
-                        <div className="space-y-6 animate-fade-in">
+                        <div className="space-y-6 animate-fade-soft">
                             <div onClick={() => decorationInputRef.current?.click()} className="cursor-pointer group relative h-20 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-400 hover:border-primary/50 hover:text-primary transition-all">
                                  {activeStyle.decoration ? <TokenImg value={activeStyle.decoration} className="h-10 w-10 object-contain" /> : <span className="text-xs font-bold">+ 上传气泡角标/贴纸</span>}
                                  <input type="file" ref={decorationInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'deco')} />
@@ -1834,7 +1834,7 @@ const ThemeMaker: React.FC = () => {
 
                     {/* --- AVATAR TOOLS --- */}
                     {activeTab !== 'css' && toolSection === 'avatar' && (
-                        <div className="space-y-6 animate-fade-in">
+                        <div className="space-y-6 animate-fade-soft">
                             <div onClick={() => avatarDecoInputRef.current?.click()} className="cursor-pointer group relative h-20 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-400 hover:border-primary/50 hover:text-primary transition-all">
                                  {activeStyle.avatarDecoration ? <TokenImg value={activeStyle.avatarDecoration} className="h-10 w-10 object-contain" /> : <span className="text-xs font-bold">+ 上传头像框/挂件</span>}
                                  <input type="file" ref={avatarDecoInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'avatarDeco')} />

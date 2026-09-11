@@ -110,7 +110,7 @@ const TheaterPlayer: React.FC<TheaterPlayerProps> = ({
 
     return (
         <div
-            className="fixed inset-0 z-[120] flex flex-col overflow-hidden text-white"
+            className="fixed inset-0 z-[120] flex flex-col overflow-hidden text-white animate-fade-soft"
             style={{ background: `radial-gradient(130% 90% at 50% -5%, hsl(${HUE},42%,15%), hsl(${HUE},48%,7%) 62%, #050409)` }}
         >
             {/* 背景：角色看板图做底，重压暗 + 紫，营造「赛博后台」氛围 */}

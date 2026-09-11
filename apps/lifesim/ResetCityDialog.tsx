@@ -11,12 +11,12 @@ const ResetCityDialog: React.FC<{
 }> = ({ participantCount, mainPlotCount, processing, onCancel, onArchiveAndReset, onDirectReset }) => {
     return (
         <div
-            className="absolute inset-0 z-50 flex items-center justify-center px-4"
+            className="absolute inset-0 z-50 flex items-center justify-center px-4 animate-fade-in"
             style={{ background: 'rgba(0,0,0,0.35)' }}
             onClick={event => { if (event.target === event.currentTarget && !processing) onCancel(); }}
         >
             <div
-                className="retro-window w-full"
+                className="retro-window w-full animate-slide-up"
                 style={{
                     maxWidth: 340,
                     boxShadow: '4px 4px 0 rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.5)',

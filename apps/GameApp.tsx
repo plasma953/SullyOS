@@ -1176,7 +1176,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
     // 1. Lobby View (Redesigned)
     if (view === 'lobby') {
         return (
-            <div className="h-full w-full bg-[#0a0a0a] flex flex-col font-sans relative overflow-hidden">
+            <div className="h-full w-full bg-[#0a0a0a] flex flex-col font-sans relative overflow-hidden animate-fade-soft">
                 {/* Ambient Background */}
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-900/50 to-black z-0"></div>
                 <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
@@ -1309,7 +1309,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
         const canStart = newTitle.trim() && newWorld.trim() && selectedPlayers.size > 0;
         const playerChars = filterCharactersByGroup(characters, characterGroups, playerGroupId); // 邀请队友：按分组筛选后的候选
         return (
-            <div className="h-full w-full bg-[#0a0a0a] text-white flex flex-col font-sans relative overflow-hidden">
+            <div className="h-full w-full bg-[#0a0a0a] text-white flex flex-col font-sans relative overflow-hidden animate-page-in-l">
                 {/* Ambient Background */}
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/30 via-slate-900/40 to-black z-0"></div>
                 <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
@@ -1497,7 +1497,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
     // [FIX] Changed from absolute inset-0 to h-full relative to fix overscroll and height layout issues
     return (
-        <div className={`h-full w-full relative flex flex-col ${theme.bg} ${theme.text} ${theme.font} transition-colors duration-500 overflow-hidden`}>
+        <div className={`h-full w-full relative flex flex-col animate-page-in-l ${theme.bg} ${theme.text} ${theme.font} transition-colors duration-500 overflow-hidden`}>
             
             {/* Header */}
             <div className={`border-b ${theme.border} shrink-0 bg-opacity-90 backdrop-blur z-20 relative`} style={{ paddingTop: 'var(--safe-top)' }}>

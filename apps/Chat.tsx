@@ -4533,7 +4533,7 @@ const Chat: React.FC = () => {
                         {/* 悬浮圆气泡：挂在右侧中部，点击 = 收起/展开小面板 */}
                         <button
                             onClick={() => setFineTunePanelOpen(v => !v)}
-                            className={`fixed right-3 z-[106] flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all active:scale-90 ${fineTunePanelOpen ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-white/95 text-primary ring-1 ring-primary/30 backdrop-blur'}`}
+                            className={`fixed right-3 z-[106] flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-all active:scale-90 animate-fade-soft ${fineTunePanelOpen ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-white/95 text-primary ring-1 ring-primary/30 backdrop-blur'}`}
                             style={{ top: 'calc(var(--safe-top) + 35%)' }}
                             aria-label={fineTunePanelOpen ? '收起聊天装扮面板' : '展开聊天装扮面板'}
                         >
@@ -4542,7 +4542,7 @@ const Chat: React.FC = () => {
                         {/* 小面板：贴在下方但不遮全屏，上半屏聊天照常可见可滚动 */}
                         {fineTunePanelOpen && (
                             <div
-                                className="fixed left-1/2 z-[105] w-[94%] max-w-md -translate-x-1/2 overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-4 shadow-[0_12px_40px_rgba(15,23,42,0.22)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                                className="fixed left-1/2 z-[105] w-[94%] max-w-md -translate-x-1/2 overflow-y-auto rounded-3xl border border-white/60 bg-white/95 p-4 shadow-[0_12px_40px_rgba(15,23,42,0.22)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden animate-fade-soft"
                                 style={{ bottom: 'calc(84px + var(--safe-bottom))', maxHeight: '46vh' }}
                             >
                                 <div className="mb-3 flex items-start justify-between gap-2">
@@ -4597,9 +4597,9 @@ const Chat: React.FC = () => {
 
             {/* 角色专属「白框自定义」Modal —— 从加号面板「白框」进入；写到 char.chromeCustomCss，叠加在全局之上 */}
             {char && modalType === 'chrome-css' && (
-                <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/5" onClick={() => setModalType('none')}>
+                <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/5 animate-fade-in" onClick={() => setModalType('none')}>
                     <div
-                        className="w-full max-h-[68vh] overflow-y-auto rounded-t-3xl border-t border-white/60 bg-white/95 p-5 shadow-[0_-12px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                        className="w-full max-h-[68vh] overflow-y-auto rounded-t-3xl border-t border-white/60 bg-white/95 p-5 shadow-[0_-12px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden animate-slide-up"
                         style={{ paddingBottom: 'calc(1.25rem + var(--safe-bottom))' }}
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -4658,9 +4658,9 @@ const Chat: React.FC = () => {
                     }
                 };
                 return (
-                    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/5" onClick={() => setModalType('none')}>
+                    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/5 animate-fade-in" onClick={() => setModalType('none')}>
                         <div
-                            className="w-full max-h-[68vh] overflow-y-auto rounded-t-3xl border-t border-white/60 bg-white/95 p-5 shadow-[0_-12px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                            className="w-full max-h-[68vh] overflow-y-auto rounded-t-3xl border-t border-white/60 bg-white/95 p-5 shadow-[0_-12px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden animate-slide-up"
                             style={{ paddingBottom: 'calc(1.25rem + var(--safe-bottom))' }}
                             onClick={(e) => e.stopPropagation()}
                         >

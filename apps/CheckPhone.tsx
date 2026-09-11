@@ -215,7 +215,7 @@ const RefreshFab: React.FC<{ onClick: () => void; label: string; accent: string;
     );
 
 const SubAppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="absolute inset-0 w-full h-full flex flex-col z-[60] overflow-hidden text-white"
+    <div className="absolute inset-0 w-full h-full flex flex-col z-[60] overflow-hidden text-white animate-page-in-l"
         style={{ background: 'radial-gradient(140% 90% at 50% 0%, #15171d 0%, #0a0b0f 70%)' }}>
         {children}
     </div>
@@ -2318,7 +2318,7 @@ ${olderText}
         const accent = '#8b9cff';
         const list = records.filter(r => r.type === 'chat').sort((a, b) => b.timestamp - a.timestamp);
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title="Messages" sub="已归档 · 只读" accent={accent} onBack={() => setActiveAppId('home')}
                     right={list.length > 0 ? (
                         <button onClick={() => askConfirm({
@@ -2383,7 +2383,7 @@ ${olderText}
         const linkedReal = contact && contact.kind === 'real' && !!contact.linkedCharId;
 
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title={selectedChatRecord.title} sub="归档 · 只读" accent={accent} onBack={() => setActiveAppId('chat')} />
                 <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 no-scrollbar overscroll-contain min-h-0">
                     {hiddenCount > 0 && (
@@ -2462,7 +2462,7 @@ ${olderText}
                         : <ImagesSquare size={20} weight="fill" />;
 
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title={title} sub="record detail" accent={accent}
                     onBack={() => { setSelectedEvidenceRecord(null); setActiveAppId(evidenceBackAppId); }}
                     right={<span style={{ color: accent }}>{detailIcon}</span>} />
@@ -2552,7 +2552,7 @@ ${olderText}
         const accent = '#4ade80';
         const list = records.filter(r => r.type === 'call').sort((a, b) => b.timestamp - a.timestamp);
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title="Recents" sub="call log" accent={accent} onBack={() => setActiveAppId('home')} />
                 <div className="flex-1 overflow-y-auto px-4 pt-2 no-scrollbar pb-28 overscroll-contain space-y-2">
                     {list.length === 0 && <EmptyState text="暂无通话记录" />}
@@ -2590,7 +2590,7 @@ ${olderText}
         const accent = '#ff7a45';
         const list = records.filter(r => r.type === 'order').sort((a, b) => b.timestamp - a.timestamp);
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title="淘宝" sub="my orders" accent={accent} onBack={() => setActiveAppId('home')}
                     right={<ShoppingBag size={20} weight="fill" style={{ color: accent }} />} />
                 {/* banner */}
@@ -2634,7 +2634,7 @@ ${olderText}
         const accent = '#fbbf24';
         const list = records.filter(r => r.type === 'delivery').sort((a, b) => b.timestamp - a.timestamp);
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title="外卖" sub="recent orders" accent={accent} onBack={() => setActiveAppId('home')}
                     right={<Hamburger size={20} weight="fill" style={{ color: accent }} />} />
                 <div className="flex-1 overflow-y-auto px-4 pt-2 no-scrollbar pb-28 overscroll-contain space-y-3">
@@ -2670,7 +2670,7 @@ ${olderText}
         const accent = '#5C6BC0';
         const def = bankCards.find(c => c.isDefault) || bankCards[0];
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title="银行卡" sub="ledger · read-only" accent={accent} onBack={() => setActiveAppId('home')}
                     right={<Wallet size={20} weight="fill" style={{ color: accent }} />} />
                 <div className="flex-1 overflow-y-auto px-4 pt-2 no-scrollbar pb-28 overscroll-contain space-y-3">
@@ -2714,7 +2714,7 @@ ${olderText}
         const accent = '#c084fc';
         const list = records.filter(r => r.type === 'social').sort((a, b) => b.timestamp - a.timestamp);
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title="Moments" sub="朋友圈" accent={accent} onBack={() => setActiveAppId('home')}
                     right={<ImagesSquare size={20} weight="fill" style={{ color: accent }} />} />
                 <div className="flex-1 overflow-y-auto px-4 pt-2 no-scrollbar pb-28 overscroll-contain space-y-3">
@@ -2760,7 +2760,7 @@ ${olderText}
         // 人际关系里不出现用户自己
         const list = contacts.filter(c => !isUserName(c.name)).sort((a, b) => (b.lastInteraction || b.createdAt) - (a.lastInteraction || a.createdAt));
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title={contactSelectMode ? `已选 ${selectedContactIds.length}` : '联系人'} sub={contactSelectMode ? '长按进入了多选' : `${list.length} contacts`} accent={accent}
                     onBack={() => { if (contactSelectMode) exitContactSelect(); else setActiveAppId('home'); }}
                     right={contactSelectMode
@@ -2910,7 +2910,7 @@ ${olderText}
         const svc = AI_SERVICES.find(s => s.id === aiService)!;
         const list = aiSessions.filter(s => s.service === aiService).sort((a, b) => b.updatedAt - a.updatedAt);
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title="智能体" sub="TA 的小手机" accent={svc.accent} onBack={() => setActiveAppId('home')}
                     right={<Robot size={20} weight="fill" style={{ color: svc.accent }} />} />
                 {/* 服务 tab */}
@@ -3242,7 +3242,7 @@ ${olderText}
             ? <TokenImg value={av} alt="" className={`${size} rounded-2xl object-cover shrink-0`} />
             : <div className={`${size} rounded-2xl flex items-center justify-center shrink-0 text-white font-semibold ${txt}`} style={{ background: `linear-gradient(135deg, ${accent}40, ${accent}10)` }}>{c.name[0]}</div>;
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 {/* 聊天式顶栏：返回 + 可点的头像/名字（进资料） */}
                 <div className="shrink-0 z-20">
                     <StatusStrip />
@@ -3594,7 +3594,7 @@ ${olderText}
         const layoutMeta = APP_LAYOUTS.find(l => l.id === layout);
         const list = records.filter(r => r.type === app.id).sort((a, b) => b.timestamp - a.timestamp);
         return (
-            <SubAppShell>
+            <SubAppShell key={activeAppId}>
                 <TermHeader title={app.name} sub={layoutMeta?.name || 'custom app'} accent={accent} onBack={() => setActiveAppId('home')}
                     right={<span className="text-lg">{app.icon}</span>} />
                 <div className="flex-1 overflow-y-auto px-4 pt-2 no-scrollbar pb-28 overscroll-contain space-y-3">

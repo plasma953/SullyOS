@@ -884,7 +884,7 @@ ${previousGuestbook}
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 overflow-hidden relative z-10 flex flex-col">
+            <div key={activeTab} className="flex-1 overflow-hidden relative z-10 flex flex-col animate-fade-soft">
                 
                 {/* 1. Game View (Dollhouse) */}
                 {activeTab === 'game' && (

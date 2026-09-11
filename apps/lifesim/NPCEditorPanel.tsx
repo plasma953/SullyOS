@@ -42,12 +42,12 @@ const NPCEditorPanel: React.FC<{
 
     return (
         <div
-            className="absolute inset-0 z-50 flex items-end justify-center"
+            className="absolute inset-0 z-50 flex items-end justify-center animate-fade-in"
             style={{ background: 'rgba(0,0,0,0.34)' }}
             onClick={event => { if (event.target === event.currentTarget) onClose(); }}
         >
             <div
-                className="retro-window w-full mx-2 mb-2"
+                className="retro-window w-full mx-2 mb-2 animate-slide-up"
                 style={{
                     maxHeight: '78vh',
                     display: 'flex',

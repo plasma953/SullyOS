@@ -74,7 +74,7 @@ const HandbookCover: React.FC<CoverProps> = ({
 
     return (
         <div
-            className="flex-1 overflow-y-auto pb-12 relative"
+            className="flex-1 overflow-y-auto pb-12 relative animate-fade-soft"
             style={{
                 background: `${PAPER_TONES.paperWarm} radial-gradient(circle at 20% 10%, rgba(251,184,200,0.18) 0%, transparent 40%), radial-gradient(circle at 80% 60%, rgba(185,211,224,0.18) 0%, transparent 40%)`,
             }}

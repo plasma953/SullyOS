@@ -1029,8 +1029,8 @@ const LuckinMiniApp: React.FC<LuckinMiniAppProps> = ({ open, onClose, char, mess
     if (!open) return null;
     if (!isLuckinConfigured()) {
         return (
-            <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-                <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e: any) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+                <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center animate-slide-up" onClick={(e: any) => e.stopPropagation()}>
                     <div className="text-3xl mb-2">☕</div>
                     <div className="font-bold text-slate-800 mb-2">瑞幸还没开启</div>
                     <div className="text-[12px] text-slate-500 mb-4 leading-relaxed">请到设置 → 瑞幸填入 MCP token 并开启功能</div>
@@ -1041,7 +1041,7 @@ const LuckinMiniApp: React.FC<LuckinMiniAppProps> = ({ open, onClose, char, mess
     }
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center animate-fade-in" onClick={onClose}>
             <style>{`
                 .luckin-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
                 .luckin-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -1050,7 +1050,7 @@ const LuckinMiniApp: React.FC<LuckinMiniAppProps> = ({ open, onClose, char, mess
                 .luckin-scroll { scrollbar-width: thin; scrollbar-color: rgba(37, 99, 235, 0.25) transparent; }
             `}</style>
             <div
-                className="bg-gradient-to-b from-[#FAF7F0] to-[#F2EEE3] w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col"
+                className="bg-gradient-to-b from-[#FAF7F0] to-[#F2EEE3] w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl overflow-hidden flex flex-col animate-slide-up"
                 style={{ height: '85vh', maxHeight: '85vh' }}
                 onClick={(e: any) => e.stopPropagation()}
             >

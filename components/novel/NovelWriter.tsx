@@ -27,6 +27,7 @@ interface NovelWriterProps {
     setTargetCharId: (id: string) => void;
     targetCharId: string | null;
     onOpenSettings: () => void;
+    className?: string;
 }
 
 // Extracted Component: PersonaPanel
@@ -123,7 +124,7 @@ const PersonaPanel: React.FC<PersonaPanelProps> = ({
 const NovelWriter: React.FC<NovelWriterProps> = ({ 
     activeBook, updateNovel, characters, userProfile, 
     apiConfig, onBack, updateCharacter, collaborators,
-    targetCharId, setTargetCharId, onOpenSettings
+    targetCharId, setTargetCharId, onOpenSettings, className = ''
 }) => {
     const { addToast, characterGroups } = useOS();
     const activeTheme = useMemo(() => NOVEL_THEMES.find(t => t.id === activeBook.coverStyle) || NOVEL_THEMES[0], [activeBook.coverStyle]);
@@ -487,7 +488,7 @@ ${chapterText.substring(0, 200000)}
     };
 
     return (
-        <div className={`h-full w-full flex flex-col font-serif ${activeTheme.bg} transition-colors duration-500 relative`}>
+        <div className={`h-full w-full flex flex-col font-serif ${activeTheme.bg} transition-colors duration-500 relative ${className}`}>
             <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText || (confirmDialog?.onConfirm ? '确认' : 'OK')} onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
 
             {/* Header */}

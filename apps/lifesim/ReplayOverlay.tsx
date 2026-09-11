@@ -49,9 +49,9 @@ const NarrativeReplayOverlay: React.FC<{
             : toneStyle?.accent || '#8b7bb8';
 
     return (
-        <div className="absolute inset-0 flex items-center justify-center z-50 px-4"
+        <div className="absolute inset-0 flex items-center justify-center z-50 px-4 animate-fade-in"
             style={{ background: 'rgba(0,0,0,0.35)' }}>
-            <div className="retro-window w-full" style={{
+            <div className="retro-window w-full animate-slide-up" style={{
                 maxWidth: 320,
                 maxHeight: 'calc(var(--app-height, 100lvh) - 32px)',
                 boxShadow: '4px 4px 0px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.5)',

@@ -85,12 +85,12 @@ const LifeSimSettingsPanel: React.FC<{
 
     return (
         <div
-            className="absolute inset-0 z-40 flex items-end justify-center"
+            className="absolute inset-0 z-40 flex items-end justify-center animate-fade-in"
             style={{ background: 'rgba(0,0,0,0.3)' }}
             onClick={event => { if (event.target === event.currentTarget) void handleSaveAndClose(); }}
         >
             <div
-                className="retro-window w-full mx-2 mb-2"
+                className="retro-window w-full mx-2 mb-2 animate-slide-up"
                 style={{
                     maxHeight: '82vh',
                     display: 'flex',

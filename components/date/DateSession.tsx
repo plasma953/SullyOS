@@ -962,7 +962,7 @@ const DateSession: React.FC<DateSessionProps> = ({
     const canReroll = messages.length > 0 && messages[messages.length - 1].role === 'assistant';
 
     return (
-        <div className="h-full w-full relative bg-black overflow-hidden font-sans select-none" onClick={handleScreenClick}>
+        <div className="h-full w-full relative bg-black overflow-hidden font-sans select-none animate-page-in-l" onClick={handleScreenClick}>
             
             {/* Background Layer */}
             <div 
@@ -1096,7 +1096,7 @@ const DateSession: React.FC<DateSessionProps> = ({
 
             {/* Novel Mode View */}
             {isNovelMode && (
-                <div ref={novelScrollRef} className={`absolute inset-0 z-20 overflow-y-auto no-scrollbar pt-24 pb-32 px-8 mask-image-gradient overscroll-contain ${char.dateLightReading ? 'bg-[#faf8f5]' : 'bg-black/90 backdrop-blur-sm'}`} onClick={(e) => { e.stopPropagation(); if (showMenu) { setShowMenu(false); setShowVoiceLangPicker(false); return; } setShowInputBox(true); }}>
+                <div ref={novelScrollRef} className={`absolute inset-0 z-20 overflow-y-auto no-scrollbar pt-24 pb-32 px-8 mask-image-gradient overscroll-contain animate-fade-soft ${char.dateLightReading ? 'bg-[#faf8f5]' : 'bg-black/90 backdrop-blur-sm'}`} onClick={(e) => { e.stopPropagation(); if (showMenu) { setShowMenu(false); setShowVoiceLangPicker(false); return; } setShowInputBox(true); }}>
                     <div className="min-h-full flex flex-col justify-end">
                         <div className="max-w-2xl mx-auto animate-fade-in space-y-6">
                             {isBatchSelectMode && (
@@ -1276,7 +1276,7 @@ const DateSession: React.FC<DateSessionProps> = ({
             {/* Visual Mode View */}
             {!isNovelMode && (
                 <>
-                    <div className="absolute inset-x-0 bottom-0 h-[90%] flex items-end justify-center pointer-events-none z-10 overflow-hidden">
+                    <div className="absolute inset-x-0 bottom-0 h-[90%] flex items-end justify-center pointer-events-none z-10 overflow-hidden animate-fade-soft">
                         {currentSprite && <TokenImg value={currentSprite} className="max-h-full max-w-full object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition-all duration-300 origin-bottom" style={{ filter: showInputBox ? 'brightness(1)' : (isTextAnimating ? 'brightness(1.05)' : 'brightness(1)'), transform: `translate(${spriteConfig.x}%, ${spriteConfig.y}%) scale(${isTextAnimating ? spriteConfig.scale * 1.02 : spriteConfig.scale})` }} />}
                     </div>
                     {!isTyping && (

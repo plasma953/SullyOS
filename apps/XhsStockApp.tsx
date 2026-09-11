@@ -73,7 +73,7 @@ const XhsStockApp: React.FC = () => {
     };
 
     const renderAddForm = () => (
-        <div className="p-5 space-y-5 animate-fade-in">
+        <div className="p-5 space-y-5 animate-page-in-l">
             {/* URL Input */}
             <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 block">图片URL</label>
@@ -136,7 +136,7 @@ const XhsStockApp: React.FC = () => {
     );
 
     const renderList = () => (
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0 animate-fade-soft">
             {/* Tag filter */}
             {allTags.length > 0 && (
                 <div className="flex gap-1.5 px-4 py-3 overflow-x-auto no-scrollbar border-b border-slate-100">

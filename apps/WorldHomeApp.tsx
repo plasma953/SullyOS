@@ -320,8 +320,8 @@ const PhoneModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-            <div className="relative" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+            <div className="relative animate-pop-in" onClick={e => e.stopPropagation()}>
                 {/* 手机壳 */}
                 <div className="w-[min(360px,92vw)] h-[min(760px,86vh)] rounded-[2.6rem] bg-gradient-to-b from-zinc-800 to-zinc-950 p-[7px] shadow-[0_24px_60px_rgba(0,0,0,.6),inset_0_1px_1px_rgba(255,255,255,.18)]">
                     <div className="relative w-full h-full rounded-[2.15rem] overflow-hidden flex flex-col" style={{ background: 'linear-gradient(170deg,#101426 0%,#1b2138 60%,#232a47 100%)' }}>
@@ -354,7 +354,7 @@ const PhoneModal: React.FC<{
                             ))}
                         </div>
                         {/* 内容 */}
-                        <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-3.5 py-3 space-y-2">
+                        <div key={tab} ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-3.5 py-3 space-y-2 animate-fade-soft">
                             {tab === 'feed' && (
                                 feed.length === 0
                                     ? <div className="text-center text-[11px] text-white/40 pt-16">还没发过动态{archivedDays > 0 ? `（更早 ${archivedDays} 天已归档进编年史）` : ''}</div>
@@ -707,7 +707,7 @@ const WorldEditor: React.FC<{
 
     return (
         <div
-            className="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 space-y-3"
+            className="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 space-y-3 animate-page-in-l"
             style={{ paddingBottom: 'calc(7rem + var(--safe-bottom, 0px))', boxSizing: 'border-box' }}
         >
             <div className={sectionCls}>
@@ -1466,7 +1466,7 @@ const WorldView: React.FC<{
 
     return (
         <div
-            className="flex-1 overflow-y-auto no-scrollbar"
+            className="flex-1 overflow-y-auto no-scrollbar animate-page-in-l"
             style={{
                 background: t.pageBg,
                 paddingTop: topSafe ? 'max(3rem, var(--safe-top, 0px))' : undefined,
@@ -2049,7 +2049,7 @@ const WorldHomeApp: React.FC<{ embedded?: boolean; onFullscreen?: (full: boolean
 
             {view === 'list' && (
                 <div
-                    className="flex-1 overflow-y-auto no-scrollbar px-4 pt-1 space-y-3"
+                    className="flex-1 overflow-y-auto no-scrollbar px-4 pt-1 space-y-3 animate-fade-soft"
                     style={{ paddingBottom: 'calc(6rem + var(--safe-bottom, 0px))', boxSizing: 'border-box' }}
                 >
                     {/* 游戏封面横幅（淡紫梦幻：月亮 + 云霭 + 星点） */}

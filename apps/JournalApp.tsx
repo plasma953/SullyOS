@@ -950,7 +950,7 @@ ${charPart}
 
     if (mode === 'select') {
         return (
-            <div className={`sully-journal-root sully-journal-select h-full w-full bg-amber-50 flex flex-col font-light${journalLayoutClass}`}>
+            <div className={`sully-journal-root sully-journal-select h-full w-full bg-amber-50 flex flex-col font-light${journalLayoutClass} animate-fade-soft`}>
                 <JournalAppearanceStyle appearance={effectiveJournalAppearance} />
                 {introModal}
                 {archiveResultModal}
@@ -986,7 +986,7 @@ ${charPart}
 
     if (mode === 'calendar' && selectedChar) {
         return (
-            <div className={`sully-journal-root sully-journal-calendar h-full w-full bg-white flex flex-col font-light relative${journalLayoutClass}`}>
+            <div className={`sully-journal-root sully-journal-calendar h-full w-full bg-white flex flex-col font-light relative${journalLayoutClass} animate-page-in-l`}>
                 <JournalAppearanceStyle appearance={effectiveJournalAppearance} />
                 {introModal}
                 {archiveResultModal}
@@ -1068,7 +1068,7 @@ ${charPart}
 
     // --- WRITE MODE ---
     return (
-        <div className={`sully-journal-root sully-journal-write h-full w-full bg-[#1a1a1a] flex flex-col relative overflow-hidden${journalLayoutClass}`}>
+        <div className={`sully-journal-root sully-journal-write h-full w-full bg-[#1a1a1a] flex flex-col relative overflow-hidden${journalLayoutClass} animate-page-in-l`}>
             <JournalAppearanceStyle appearance={effectiveJournalAppearance} />
             {introModal}
             {archiveResultModal}

@@ -481,6 +481,7 @@ const VoiceDesignerApp: React.FC = () => {
         </div>
 
         {/* ── TAB: 混合音色 ── */}
+        <div key={tab} className="animate-fade-soft">
         {tab === 'mix' && (
           <>
             <div className="space-y-2">
@@ -592,6 +593,7 @@ const VoiceDesignerApp: React.FC = () => {
             </div>
           </>
         )}
+        </div>
 
         {/* ── Preview Section (always visible) ── */}
         <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl p-4 border border-violet-100 space-y-3">

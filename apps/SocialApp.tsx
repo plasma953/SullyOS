@@ -1334,7 +1334,7 @@ ${identityMap}
                 <div className="flex-1 overflow-y-auto no-scrollbar">
                     
                     {activeTab === 'home' && (
-                        <div className="p-2 min-h-full">
+                        <div className="p-2 min-h-full animate-fade-soft">
                             {/* Refresh Button - Above Posts */}
                             <div className="flex items-center justify-center py-3 gap-2">
                                 {isRefreshing ? (
@@ -1442,7 +1442,7 @@ ${identityMap}
                                 <button onClick={() => { setProfileTab('collects');  }} className={`flex-1 py-3 text-sm font-bold transition-colors ${profileTab === 'collects' ? 'text-slate-900 border-b-2 border-[#ff2442]' : 'text-slate-400'}`}>收藏</button>
                             </div>
 
-                            <div className="p-2 min-h-[300px] bg-slate-50/50 pb-24">
+                            <div key={profileTab} className="p-2 min-h-[300px] bg-slate-50/50 pb-24 animate-fade-soft">
                                 <div className="columns-2 gap-2 space-y-2">
                                     {feed.filter(p => profileTab === 'notes' ? (p.authorType === 'user' || (!p.authorType && p.authorName === socialProfile.name)) : p.isCollected).map(post => (
                                         <div key={post.id} onClick={() => handleOpenPost(post)} className="break-inside-avoid bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 cursor-pointer">

@@ -784,7 +784,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
                         </button>
                     </div>
                 } />
-                <div className="flex-1 flex flex-col items-center justify-center px-9 text-center">
+                <div className="flex-1 flex flex-col items-center justify-center px-9 text-center animate-fade-soft">
                     <div className="relative mb-7">
                         <MoonStars size={52} weight="light" style={{ color: '#cdd6ff' }} />
                         <div className="absolute inset-0 blur-2xl rounded-full" style={{ background: '#cdd6ff44' }} />
@@ -889,7 +889,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
                     <h2 className="text-[18px] font-light text-white" style={{ fontFamily: SERIF }}>梦的残页</h2>
                     <p className="text-[11px] text-white/40 mt-1 leading-relaxed">那些你偷看到、而 ta 早已忘记的梦。<span className="text-white/30">长按一页可撕掉。</span></p>
                 </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-10 space-y-3">
+                <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-10 space-y-3 animate-fade-soft">
                     {dreamLogs.map(log => {
                         const lt = THEMES[log.archetype] || THEMES.starry;
                         return (
@@ -956,7 +956,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
                         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${(collectedCount / total) * 100}%`, background: '#cdd6ff' }} />
                     </div>
                 </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10">
+                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10 animate-fade-soft">
                     <div className="grid grid-cols-3 gap-3">
                         {ALL_ARCHETYPES.map(a => {
                             const owned = collection[a];
@@ -1023,7 +1023,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
             <Shell bg={THEMES.starry.bg}>
                 <Ambient kind="stars" accent="#cdd6ff" />
                 <TopBar onBack={onExit} />
-                <div className="flex-1 flex flex-col items-center justify-center gap-6 px-10 text-center">
+                <div className="flex-1 flex flex-col items-center justify-center gap-6 px-10 text-center animate-fade-in">
                     <div className="relative">
                         <MoonStars size={42} weight="light" style={{ color: '#cdd6ff' }} className="animate-pulse" />
                         <div className="absolute inset-0 blur-2xl rounded-full" style={{ background: '#cdd6ff55' }} />
@@ -1048,7 +1048,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
         return (
             <Shell bg={theme.bg}>
                 <Ambient kind={theme.ambient} accent={theme.accent} />
-                <div className="flex-1 flex flex-col items-center justify-center px-9 text-center animate-fade-in">
+                <div className="flex-1 flex flex-col items-center justify-center px-9 text-center animate-fade-soft">
                     <MoonStars size={isDeepSleep ? 28 : 26} weight="light" className="text-white/30 mb-5" />
                     <div className="text-[10px] tracking-[0.3em] uppercase text-white/35 mb-3">{isDeepSleep ? '一夜无梦' : '梦醒了'}</div>
                     <h2 className="text-[21px] font-light text-white mb-3" style={{ fontFamily: SERIF }}>{script?.title || (isDeepSleep ? '深眠' : '无题的梦')}</h2>
@@ -1114,7 +1114,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
     if (isDeepSleep) {
         return (
             <Shell bg={theme.bg}>
-                <div className="flex-1 flex flex-col items-center justify-center px-12 text-center select-none" onClick={finishDream}>
+                <div className="flex-1 flex flex-col items-center justify-center px-12 text-center select-none animate-fade-soft" onClick={finishDream}>
                     <div className="w-3 h-3 rounded-full bg-white/40 animate-dot-pulse" style={{ boxShadow: '0 0 30px rgba(255,255,255,0.3)' }} />
                     <p className="text-[12px] text-white/20 mt-12 tracking-[0.3em]" style={{ fontFamily: SERIF }}>……</p>
                     <p className="absolute bottom-12 text-[10px] text-white/20">轻触，醒来</p>
@@ -1138,7 +1138,7 @@ const DreamTheater: React.FC<{ char: CharacterProfile; onExit: () => void }> = (
 
             {/* 拼贴画布：轻触让下一片浮现；可上下滚动回看 */}
             <div ref={scrollRef} onClick={revealNextOrFinish}
-                className="flex-1 relative z-10 overflow-y-auto no-scrollbar select-none">
+                className="flex-1 relative z-10 overflow-y-auto no-scrollbar select-none animate-fade-soft">
                 <div className="min-h-full flex flex-col px-7 pt-20 pb-44">
                     {frags.slice(0, revealed).map((f, i) => (
                         <CollageItem key={i} frag={f} theme={theme} index={i} />

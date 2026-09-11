@@ -294,7 +294,7 @@ const FAQApp: React.FC = () => {
 
             {/* Content area */}
             {activeChangelog ? (
-                <div className="flex-1 bg-[#faf7f2] overflow-hidden">
+                <div key="changelog-detail" className="flex-1 bg-[#faf7f2] overflow-hidden animate-page-in-l">
                     <iframe
                         key={activeChangelog.id}
                         src={activeChangelog.src}
@@ -303,7 +303,7 @@ const FAQApp: React.FC = () => {
                     />
                 </div>
             ) : tab === 'faq' ? (
-                <div className="flex-1 overflow-y-auto p-5 pb-20 no-scrollbar">
+                <div key="faq" className="flex-1 overflow-y-auto p-5 pb-20 no-scrollbar animate-fade-soft">
                     {/* Intro Banner */}
                     <div className="bg-gradient-to-r from-pink-100 to-indigo-100 p-5 rounded-3xl mb-6 shadow-sm">
                         <h2 className="text-lg font-bold text-slate-700 mb-2 flex items-center gap-2">
@@ -348,7 +348,7 @@ const FAQApp: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="flex-1 overflow-y-auto p-5 pb-20 no-scrollbar">
+                <div key="changelog" className="flex-1 overflow-y-auto p-5 pb-20 no-scrollbar animate-fade-soft">
                     <div className="bg-gradient-to-r from-indigo-100 to-purple-100 p-5 rounded-3xl mb-6 shadow-sm">
                         <h2 className="text-lg font-bold text-slate-700 mb-2 flex items-center gap-2">
                             <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2728.png" className="w-5 h-5 inline" alt="" /> 版本更新记录

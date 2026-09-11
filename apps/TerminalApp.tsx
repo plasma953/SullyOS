@@ -106,7 +106,7 @@ const SessionDrawer: React.FC<{
 }> = ({ open, sessions, activeId, statusMap, projects, selectedDir, onSelectProject, onSelect, onNew, onRename, onDelete, onClose }) => {
     if (!open) return null;
     return (
-        <div className="absolute inset-0 z-30">
+        <div className="absolute inset-0 z-30 animate-fade-in">
             <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
             <div className="absolute bottom-0 left-0 top-0 flex w-[78%] max-w-[300px] flex-col bg-white shadow-2xl">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -171,8 +171,8 @@ const RenameModal: React.FC<{
     if (!session) return null;
     return (
         <div className="absolute inset-0 z-30">
-            <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-            <div className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white p-4 shadow-2xl">
+            <div className="absolute inset-0 bg-slate-900/40 animate-fade-in" onClick={onClose} />
+            <div className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white p-4 shadow-2xl animate-slide-up">
                 <p className="text-xs font-bold text-slate-700">会话改名</p>
                 <input
                     value={draft}
@@ -209,8 +209,8 @@ const DiffPanel: React.FC<{
     if (!open) return null;
     return (
         <div className="absolute inset-0 z-30">
-            <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-            <div className="absolute bottom-0 left-0 right-0 flex max-h-[75%] flex-col rounded-t-3xl bg-white shadow-2xl">
+            <div className="absolute inset-0 bg-slate-900/40 animate-fade-in" onClick={onClose} />
+            <div className="absolute bottom-0 left-0 right-0 flex max-h-[75%] flex-col rounded-t-3xl bg-white shadow-2xl animate-slide-up">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                     <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700"><GitDiff size={14} /> 本会话改动（{diffs.length} 个文件）</span>
                     <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 active:scale-95" aria-label="关闭"><X size={15} /></button>
@@ -635,6 +635,7 @@ const TerminalApp: React.FC = () => {
                 ))}
             </nav>
 
+            <div key={tab} className="flex min-h-0 flex-1 flex-col animate-fade-soft">
             {tab === 'session' ? (
             <>
             {/* 消息流 */}
@@ -730,6 +731,7 @@ const TerminalApp: React.FC = () => {
             ) : (
                 <TuiTab conn={conn} notify={addToast} />
             )}
+            </div>
 
             <SessionDrawer
                 open={drawerOpen}

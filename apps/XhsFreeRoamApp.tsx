@@ -501,7 +501,7 @@ const XhsFreeRoamApp: React.FC = () => {
 
     // Live activity panel (during run)
     const renderLivePanel = () => (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
+        <div ref={scrollRef} key="live" className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0 animate-fade-soft">
             {/* Status */}
             <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -554,7 +554,7 @@ const XhsFreeRoamApp: React.FC = () => {
         ).length;
 
         return (
-            <div className="flex-1 overflow-y-auto min-h-0 bg-white">
+            <div key="profile" className="flex-1 overflow-y-auto min-h-0 bg-white animate-fade-soft">
                 <section className="px-5 pt-6 pb-5">
                     <div className="flex items-center gap-4">
                         {char?.avatar ? (
@@ -625,7 +625,7 @@ const XhsFreeRoamApp: React.FC = () => {
 
     // History list
     const renderHistory = () => (
-        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 min-h-0">
+        <div key="history" className="flex-1 overflow-y-auto px-4 py-2 space-y-2 min-h-0 animate-fade-soft">
             {activities.length === 0 ? (
                 <div className="flex flex-col items-center px-2 py-8 space-y-4">
                     <div className="text-center opacity-60">

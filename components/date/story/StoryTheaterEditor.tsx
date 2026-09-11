@@ -72,7 +72,7 @@ const StoryTheaterEditor: React.FC<Props> = ({ initial, characters, user, masks,
         finally { setSaving(false); }
     };
 
-    return <div className='h-full w-full flex flex-col bg-stone-100 text-slate-800'>
+    return <div className='h-full w-full flex flex-col bg-stone-100 text-slate-800 animate-page-in-l'>
         <header className='story-safe-header shrink-0 border-b border-slate-200'>
             <div className='h-16 px-4 flex items-center gap-3'>
                 <button onClick={onCancel} className='w-9 h-9 rounded-full grid place-items-center'><ArrowLeft size={20} /></button>
