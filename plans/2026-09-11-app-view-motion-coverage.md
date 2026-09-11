@@ -21,8 +21,8 @@
 - [x] **D4 列表工具类**（已完成）：Novel、Songwriting、GameApp、Guidebook、Handbook（组件根承载动画）、FAQ、Takeout、Shopping、XhsStock、Tarot、Bank、Social、VoiceDesigner、XhsFreeRoam、Worldbook；Gallery 原本各 view 已有 fade-in，未重复加。
 - [ ] **D5 覆盖层入场批**：剩余盘点表中未覆盖的组件型覆盖层（ChibiStudio、CreatorPartsUploader、handbook 选择/录入/编辑、BankDollhouse、CallSetupGuide/UserCameraModePicker/VRoidBetaWarning/Live2DActionSettings、FilesTab、ScheduleAppearance、JournalAppearance、MessageItem 上下文、ObserveHUD、LifeRecordPanel、PerCharAvatarPicker、CompanionHome/Tamagotchi/MobileGame 抽屉、节日事件弹层等）。
 - [ ] **D6 覆盖层退场批**：`useExitPresence` 接入高频覆盖层（Chat 小剧场/装扮/McD/Luckin、Terminal 抽屉、Call sheets、StoryTheater、XhsFreeRoam、Social 详情/发帖、Bank 情报志等）。
-- [ ] **D5 覆盖层入场批**：按盘点表逐条补（Mcd/Luckin 6、Guidebook 8、StoryTheater 系列 8、Chat 4、Call 7、Terminal 3、CheckPhone 1、Music 1、Shopping/Takeout 2、ScheduleAppearance、JournalAppearance、TheaterPlayer、ChibiStudio、CreatorPartsUploader、handbook 4、bank/call 组件 8 等）。
-- [ ] **D6 覆盖层退场批**：`useExitPresence` 接入高频覆盖层（Chat 小剧场/装扮/McD/Luckin、Terminal 抽屉、Call sheets、StoryTheater、XhsFreeRoam、Social 详情/发帖、Bank 情报志等）。
+- [x] **D5 覆盖层入场批**（已完成）：Call/Chat/Handbook/Bank/Date story/ChibiStudio/CreatorPartsUploader/ImpressionPanel/LifeRecordPanel/ScheduleAppearance/JournalAppearance/FilesTab/MessageItem/VoiceFavoriteActionSheet/WorldHome 弹层、MusicApp 歌词对轴、CheckPhone 酒馆皮肤等 40+ 处补「遮罩 fade-in + 面板 slide-up/pop-in」；皮肤主屏与 VRWorld 此前多数已有动画，跳过。
+- [ ] **D6 覆盖层退场批**（下一步）：`useExitPresence` 接入高频覆盖层——Chat 小剧场/装扮/chrome 两 sheet/McD/Luckin、Terminal 三抽屉、Call sheets、StoryTheater 系列、XhsFreeRoam、Social 详情/发帖、Bank 情报志等。页面级「退出」已由返回目标的入场动画覆盖；本批只处理浮层关闭时的淡出。
 - [ ] **D7 门禁**：全量 vitest + mojibake + tsc 触碰零新增 + FFFD 扫描 + 构建；文档与版本记录。
 
 ## 验收口径
