@@ -5,10 +5,9 @@ import { setPortalHost } from '../../utils/portalHost';
  * 仿真手机外框。屏幕区即 sully-viewport：
  * 自带 translateZ(0) 让内部 fixed 浮层以框为包含块（与 App.tsx 现有手法一致），
  * portal 宿主 div 只做挂载点（零尺寸、不定位），portal 自身定位。
- * variant="pip" 用于投屏悬浮窗：尺寸随 PiP 窗口（100vw/100vh）撑满。
  * ResizeObserver 把屏幕区尺寸写进 --vp-width/--vp-height，供 dock 等按框宽缩放。
  */
-export const DesktopFrame: React.FC<{ children: React.ReactNode; variant?: 'default' | 'pip' }> = ({ children, variant = 'default' }) => {
+export const DesktopFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const portalHostRef = useRef<HTMLDivElement | null>(null);
     const frameRef = useRef<HTMLDivElement | null>(null);
     const screenRef = useRef<HTMLDivElement | null>(null);
@@ -30,9 +29,7 @@ export const DesktopFrame: React.FC<{ children: React.ReactNode; variant?: 'defa
         ro.observe(screen);
         return () => ro.disconnect();
     }, []);
-    const sizeStyle: React.CSSProperties = variant === 'pip'
-        ? { width: 'min(100vw, calc(100vh * 393 / 852))', aspectRatio: '393 / 852' }
-        : { width: 'min(460px, 94vw, calc(min(92vh, 940px) * 393 / 852))', aspectRatio: '393 / 852' };
+    const sizeStyle: React.CSSProperties = { width: 'min(460px, 94vw, calc(min(92vh, 940px) * 393 / 852))', aspectRatio: '393 / 852' };
     return (
         <div ref={frameRef} className="relative select-none" style={sizeStyle} data-desktop-frame>
             {/* 金属边框 */}
