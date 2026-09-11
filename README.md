@@ -68,7 +68,6 @@ npm run dev
 - **Vite** - 构建工具，快得像作弊
 - **IndexedDB** - 本地数据存储（聊天记录不会上传到任何地方），图片二进制走 **Blob** 存储省配额
 - **Cloudflare Workers** - 联网能力的代理层（搜索 / 云备份 / 点单 MCP 等），单文件 `worker/index.js`，可一键自托管
-- **Capacitor** - 可打包成安卓 App，真·手机模拟器
 - **Phosphor Icons** - 图标库，看起来挺酷的
 - **AMSG（ReiStandard）** - 主动消息 / Instant Push 协议
 - **Web Push** - 推送通知，叮叮叮
@@ -99,21 +98,6 @@ npm run dev
 **TTS（可选）**：语音支持 MiniMax、Fish Audio、ElevenLabs 三选一。在「设置 → 其他 API」填写所选服务的 Key 和模型，再到角色的语音设置填写对应音色 ID；未配置时仍可正常使用文字聊天。
 
 > 也可以建 `.env.local` 文件预填默认值，但设置里的优先级更高。
-
-## 打包成安卓 App（变成真·手机应用）
-
-```bash
-# 1. 构建前端
-npm run build
-
-# 2. 同步到 Capacitor
-npm run cap:sync
-
-# 3. 打开 Android Studio
-npm run cap:android
-```
-
-然后在 Android Studio 里点播放按钮，或者 Build → Generate Signed Bundle 生成 APK。草，终于能装在真手机上了。
 
 ## 数据存储在哪？（你的秘密安全吗）
 

@@ -57,18 +57,6 @@ xiaohongshu-skills/
 .claude/
 .pnpm-store/
 
-# TIAO-Capacitor local Android toolchain and caches (D: only, never committed)
-.android-sdk/
-.gradle-user-home/
-
-# Capacitor Android build artifacts (android/ shell itself IS committed)
-android/app/build/
-android/.gradle/
-android/local.properties
-android/app/src/main/assets/public/
-android/capacitor-cordova-android-plugins/
-android/.idea/
-
 # shopping 数据中间产物（可由 scripts/fetch-*.mjs 重新生成）
 public/shopping/shops-raw.json
 public/shopping/off-products.json

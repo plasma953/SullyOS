@@ -6,10 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm run build:workers && vite build",
-    "build:capacitor": "powershell -ExecutionPolicy Bypass -File scripts/sync-tiao-capacitor.ps1",
     "preview": "vite preview",
-    "cap:sync": "cap sync",
-    "cap:android": "cap open android",
     "build:workers": "node scripts/build-workers.mjs",
     "test": "vitest",
     "test:run": "vitest run"
