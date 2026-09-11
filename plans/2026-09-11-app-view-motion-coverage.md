@@ -16,9 +16,11 @@
 ## 批次与状态
 
 - [x] **D1 记忆宫殿**（本次）：`navDir` + `navTo` + `key={view}`；picker/palace/all/boxes/room/memory/settings/globalSettings 全方向化；停用提示/性格检测/分析结果改 `fade-soft`；修 3 处 `animation:'fade-in'` 失效（改 `animate-fade-in` 类）；角色切换面板补 `fade-soft`。
-- [ ] **D2 场景类**：RoomApp（含 pixelHome 六视图）、WorldHome（list/edit/world + PhoneModal tabs）、VRWorld（4 tab + RoomScene/ReaderModal/HelpModal）、LifeSim（3 tab + 6 overlay）、ThemeMaker（主/子 tab + 预览全屏 + 底部编辑面板）、PersonaSim/DreamTheater 各 phase 根。
-- [ ] **D3 通讯内容类**：CheckPhone 内部 activeAppId 子视图（10+，走共享 SubAppShell）、DateApp（5 mode + StoryTheater 子视图）、CallApp（role-select/history/record-detail + 7 覆盖层）、Terminal（3 tab + 3 抽屉）、Browser（首页↔正文）、Journal（select/calendar/write）、Chat（TheaterPlayer、ThinkingChainSettingsModal、两个 chrome sheet 入场）。
-- [ ] **D4 列表工具类**：Novel、Songwriting、GameApp、Guidebook、Handbook、FAQ、Takeout、Shopping、XhsStock、Tarot、Bank、Social、VoiceDesigner、XhsFreeRoam、Worldbook、Gallery（方向升级）。
+- [x] **D2 场景类**（已完成）：RoomApp（select/room/pixelHome 方向化 + 梦境外层）、PixelHomeView（map/room/各工具方向化）、WorldHome（list/edit/world + PhoneModal 入场 + tab 淡入）、VRWorld（App 根/4 tab/RoomScene/ReaderModal/HelpModal/各类 sheet）、ThemeMaker（tab 升级 fade-soft + 预览全屏 + 底部面板）、LifeSim（加载/tab/6 覆盖层）、PersonaSim 与 DreamTheater 各 phase 根。
+- [x] **D3 通讯内容类**（已完成）：CheckPhone 全部子视图（SubAppShell 统一入场 + key 重挂载）、DateApp（select/history/peek/settings/session/StoryTheater + StoryTheater 子视图）、CallApp（4 视图 + 可改的覆盖层）、Terminal（3 tab + 3 抽屉）、Browser（WebRenderer）、Journal（select/calendar/write）、Chat（装扮面板/chrome 两 sheet/McD/Luckin/小剧场/心象弹窗）。
+- [x] **D4 列表工具类**（已完成）：Novel、Songwriting、GameApp、Guidebook、Handbook（组件根承载动画）、FAQ、Takeout、Shopping、XhsStock、Tarot、Bank、Social、VoiceDesigner、XhsFreeRoam、Worldbook；Gallery 原本各 view 已有 fade-in，未重复加。
+- [ ] **D5 覆盖层入场批**：剩余盘点表中未覆盖的组件型覆盖层（ChibiStudio、CreatorPartsUploader、handbook 选择/录入/编辑、BankDollhouse、CallSetupGuide/UserCameraModePicker/VRoidBetaWarning/Live2DActionSettings、FilesTab、ScheduleAppearance、JournalAppearance、MessageItem 上下文、ObserveHUD、LifeRecordPanel、PerCharAvatarPicker、CompanionHome/Tamagotchi/MobileGame 抽屉、节日事件弹层等）。
+- [ ] **D6 覆盖层退场批**：`useExitPresence` 接入高频覆盖层（Chat 小剧场/装扮/McD/Luckin、Terminal 抽屉、Call sheets、StoryTheater、XhsFreeRoam、Social 详情/发帖、Bank 情报志等）。
 - [ ] **D5 覆盖层入场批**：按盘点表逐条补（Mcd/Luckin 6、Guidebook 8、StoryTheater 系列 8、Chat 4、Call 7、Terminal 3、CheckPhone 1、Music 1、Shopping/Takeout 2、ScheduleAppearance、JournalAppearance、TheaterPlayer、ChibiStudio、CreatorPartsUploader、handbook 4、bank/call 组件 8 等）。
 - [ ] **D6 覆盖层退场批**：`useExitPresence` 接入高频覆盖层（Chat 小剧场/装扮/McD/Luckin、Terminal 抽屉、Call sheets、StoryTheater、XhsFreeRoam、Social 详情/发帖、Bank 情报志等）。
 - [ ] **D7 门禁**：全量 vitest + mojibake + tsc 触碰零新增 + FFFD 扫描 + 构建；文档与版本记录。
