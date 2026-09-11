@@ -2,6 +2,7 @@ import React, { useMemo, useEffect, useLayoutEffect, useState, useRef, useCallba
 import { isPaperWallpaper, useOS } from '../context/OSContext';
 import { INSTALLED_APPS } from '../constants';
 import AppIcon from '../components/os/AppIcon';
+import { DesktopAppGrid } from '../components/desktop/DesktopAppGrid';
 import TokenImg from '../components/os/TokenImg';
 import { useBlobRefUrl } from '../utils/blobRef';
 import { DB } from '../utils/db';
@@ -23,7 +24,7 @@ const CompanionHome = React.lazy(() => import('../components/os/CompanionHome'))
 // --- Isolated Components to prevent full re-renders ---
 
 // 1. Clock Component (Consumes virtualTime)
-const DesktopClock = React.memo(() => {
+const DesktopClock = React.memo(({ compact = false }: { compact?: boolean }) => {
     const { virtualTime, theme } = useOS();
     const contentColor = theme.contentColor || '#ffffff';
     const paper = theme.skin !== 'animalcrossing' && theme.skin !== 'mobilegame' && theme.skin !== 'tamagotchi' && isPaperWallpaper(theme.wallpaper);
@@ -50,11 +51,11 @@ const DesktopClock = React.memo(() => {
         const weekdayTitle = dayName.charAt(0) + dayName.slice(1).toLowerCase();
         const monthTitle = monthName.charAt(0) + monthName.slice(1).toLowerCase();
         return (
-            <div className="mt-7 mb-5 text-center animate-fade-in select-none">
+            <div className={`text-center animate-fade-in select-none ${compact ? 'mt-3 mb-3' : 'mt-7 mb-5'}`}>
                 <div className="text-[13px] font-extrabold tracking-wide" style={{ color: '#8a7a5c' }}>
                     🍃 {greeting}, Resident
                 </div>
-                <div className="text-[3.5rem] font-extrabold leading-none mt-1.5 tracking-[2px]" style={{ color: '#8b7355' }}>
+                <div className={`${compact ? 'text-[2.5rem]' : 'text-[3.5rem]'} font-extrabold leading-none mt-1.5 tracking-[2px]`} style={{ color: '#8b7355' }}>
                     {hh}<span className="animate-pulse" style={{ color: '#cfcab2' }}>:</span>{mm}
                 </div>
                 <div className="text-[15px] font-bold mt-1.5" style={{ color: '#725C4E' }}>
@@ -65,9 +66,9 @@ const DesktopClock = React.memo(() => {
     }
 
     return (
-        <div className="flex flex-col mb-5 mt-5 relative animate-fade-in" style={{ color: contentColor }}>
+        <div className={`flex flex-col relative animate-fade-in ${compact ? 'mb-3 mt-2' : 'mb-5 mt-5'}`} style={{ color: contentColor }}>
             {/* 顶部装饰 — 状态胶囊 + 细线 */}
-            <div className="flex items-center gap-2 mb-3 opacity-90">
+            <div className={`flex items-center gap-2 opacity-90 ${compact ? 'mb-2' : 'mb-3'}`}>
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
                     style={{
                         background: paper ? 'rgba(224,221,215,0.30)' : 'rgba(255,255,255,0.28)',
@@ -81,14 +82,14 @@ const DesktopClock = React.memo(() => {
             </div>
 
             {/* 问候 */}
-            <div className="text-[11px] tracking-[0.25em] uppercase opacity-55 font-semibold mb-1">
+            <div className={`text-[11px] tracking-[0.25em] uppercase opacity-55 font-semibold ${compact ? 'mb-0.5' : 'mb-1'}`}>
                 {greeting}
             </div>
 
             {/* 主时钟 */}
             <div className="flex items-end gap-4">
                 <div className="relative">
-                    <div className={`${paper ? 'text-[5.65rem] font-semibold tracking-[-0.055em] drop-shadow-[0_2px_0_rgba(255,255,255,0.34)]' : 'text-[6.25rem] font-black tracking-tighter drop-shadow-2xl'} leading-[0.84]`}
+                    <div className={`${paper ? `${compact ? 'text-[3.75rem]' : 'text-[5.65rem]'} font-semibold tracking-[-0.055em] drop-shadow-[0_2px_0_rgba(255,255,255,0.34)]` : `${compact ? 'text-[4.25rem]' : 'text-[6.25rem]'} font-black tracking-tighter drop-shadow-2xl`} leading-[0.84]`}
                         style={{ fontFamily: paper ? `'Iowan Old Style', 'Baskerville', 'Times New Roman', serif` : `'Space Grotesk', 'SF Pro Display', sans-serif`, fontFeatureSettings: '"tnum"' }}>
                         <span>{virtualTime.hours.toString().padStart(2, '0')}</span>
                         <span className="opacity-35 font-thin mx-0.5 animate-pulse">:</span>
@@ -102,7 +103,7 @@ const DesktopClock = React.memo(() => {
                 <div className="flex flex-col justify-end pb-2.5 gap-0.5">
                     <div className="text-[10px] font-bold tracking-[0.22em] opacity-85">{dayName}</div>
                     <div className="flex items-baseline gap-1">
-                        <div className="text-2xl font-black leading-none" style={{ fontFamily: `'Space Grotesk', sans-serif` }}>{dateNum}</div>
+                        <div className={`${compact ? 'text-xl' : 'text-2xl'} font-black leading-none`} style={{ fontFamily: `'Space Grotesk', sans-serif` }}>{dateNum}</div>
                         <div className="text-[10px] font-bold tracking-[0.2em] opacity-70">{monthName}</div>
                     </div>
                 </div>
@@ -119,6 +120,7 @@ const CharacterWidget = React.memo(({
     onClick, 
     contentColor,
     paper = false,
+    compact = false,
 }: { 
     char: CharacterProfile | null, 
     unreadCount: number, 
@@ -126,6 +128,7 @@ const CharacterWidget = React.memo(({
     onClick: () => void,
     contentColor: string,
     paper?: boolean,
+    compact?: boolean,
 }) => {
     const { theme } = useOS();
     const acnh = theme.skin === 'animalcrossing'; // 动森彩蛋：会"说话"的村民卡
@@ -138,7 +141,7 @@ const CharacterWidget = React.memo(({
             <div className="mb-4 animate-fade-in" onClick={onClick}>
                 <div className="flex items-end gap-2.5 cursor-pointer active:scale-[0.98] transition-transform">
                     {/* 村民头像（圆角方块 + 白边） */}
-                    <div className="relative w-[60px] h-[60px] shrink-0 rounded-[26%] overflow-hidden bg-[#e8e2d6]"
+                    <div className={`relative shrink-0 rounded-[26%] overflow-hidden bg-[#e8e2d6] ${compact ? 'w-[48px] h-[48px]' : 'w-[60px] h-[60px]'}`}
                         style={{ border: '3px solid #ffffff', boxShadow: '0 4px 10px -2px rgba(61,52,40,0.28)' }}>
                         {char?.avatar
                             ? <TokenImg value={char.avatar} className="w-full h-full object-cover" alt="char" loading="lazy" />
@@ -171,7 +174,7 @@ const CharacterWidget = React.memo(({
     return (
         <div className="mb-3 group animate-fade-in">
              <div
-                className="relative h-24 w-full overflow-hidden rounded-3xl cursor-pointer transition-transform duration-300 active:scale-[0.98]"
+                className={`relative w-full overflow-hidden rounded-3xl cursor-pointer transition-transform duration-300 active:scale-[0.98] ${compact ? 'h-20' : 'h-24'}`}
                 onClick={onClick}
                 style={paper ? {
                     background: 'rgba(224,221,215,0.40)',
@@ -203,7 +206,7 @@ const CharacterWidget = React.memo(({
 
                  <div className="relative flex items-center p-3 gap-3 h-full">
                      {/* 头像 */}
-                     <div className={`w-[68px] h-[68px] shrink-0 rounded-2xl overflow-hidden relative ${paper ? 'bg-[#ded2c1]' : 'bg-slate-800'}`}
+                     <div className={`shrink-0 rounded-2xl overflow-hidden relative ${compact ? 'w-[56px] h-[56px]' : 'w-[68px] h-[68px]'} ${paper ? 'bg-[#ded2c1]' : 'bg-slate-800'}`}
                          style={{
                              border: paper ? '1px solid rgba(91,72,51,0.14)' : acnh ? '2px solid #e8e2d6' : '1.5px solid rgba(255,255,255,0.25)',
                              boxShadow: paper ? '0 5px 14px rgba(91,72,51,0.13)' : acnh ? '0 4px 12px -4px rgba(61,52,40,0.25)' : '0 4px 14px rgba(0,0,0,0.25)',
@@ -355,7 +358,7 @@ const CALENDAR_WEEKDAYS = [
 ] as const;
 
 // 4. Widget Page Component (Calendar + Events)
-const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characters, acnh = false, paper = false }: any) => {
+const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characters, acnh = false, paper = false, compact = false }: any) => {
     // 动森：奶油卡片样式（替代暗色玻璃）
     const acCard = acnh ? { background: 'rgb(247,243,223)', border: '2px solid #e8e2d6', boxShadow: '0 6px 18px rgba(61,52,40,0.12)' } : undefined;
     const acDot = acnh ? '#6fba2c' : undefined;
@@ -381,7 +384,7 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
             .sort((a: any, b: any) => a.date.localeCompare(b.date)),
         [anniversaries, todayStr]
     );
-    const EVENTS_PER_PAGE = 4;
+    const EVENTS_PER_PAGE = compact ? 3 : 4;
     const eventPageCount = Math.max(1, Math.ceil(upcomingEvents.length / EVENTS_PER_PAGE));
     const [eventPage, setEventPage] = useState(0);
     // Clamp the page if the list shrinks (e.g. an event passes / is removed)
@@ -391,8 +394,8 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
     const pagedEvents = upcomingEvents.slice(eventPage * EVENTS_PER_PAGE, eventPage * EVENTS_PER_PAGE + EVENTS_PER_PAGE);
 
     return (
-        <div className="w-full flex-shrink-0 snap-center snap-always flex flex-col px-6 pt-24 pb-8 space-y-6 h-full overflow-y-auto no-scrollbar">
-              <div className={`rounded-3xl p-6 ${acnh ? 'shadow-sm' : paper ? '' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={paper ? { background: 'rgba(224,221,215,0.36)', border: '1px solid rgba(91,72,51,0.07)', boxShadow: '0 5px 16px rgba(91,72,51,0.05)' } : acCard}>
+        <div className={`w-full flex flex-col ${compact ? 'px-0 pt-0 pb-0 space-y-4 h-auto' : 'flex-shrink-0 snap-center snap-always px-6 pt-24 pb-8 space-y-6 h-full overflow-y-auto no-scrollbar'}`}>
+              <div className={`rounded-3xl ${compact ? 'p-4' : 'p-6'} ${acnh ? 'shadow-sm' : paper ? '' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={paper ? { background: 'rgba(224,221,215,0.36)', border: '1px solid rgba(91,72,51,0.07)', boxShadow: '0 5px 16px rgba(91,72,51,0.05)' } : acCard}>
                   <div className="flex justify-between items-center mb-4" style={{ color: contentColor }}>
                       <h3 className="text-xl font-bold tracking-widest">{monthName} {currentYear}</h3>
                       <div onClick={() => openApp('schedule')} className={`p-2 rounded-full cursor-pointer transition-colors ${acnh ? 'bg-[#82D5BB]/30 hover:bg-[#82D5BB]/50' : paper ? 'bg-[#788369]/10 hover:bg-[#788369]/20' : 'bg-white/20 hover:bg-white/40'}`}>
@@ -412,9 +415,9 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
                           const hasEvent = anniversaries.some((a: any) => a.date === dateStr);
                           
                           return (
-                              <div key={day} className="flex flex-col items-center justify-center h-8 relative">
+                              <div key={day} className={`flex flex-col items-center justify-center relative ${compact ? 'h-7' : 'h-8'}`}>
                                   <div
-                                    className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium ${isToday ? (acnh ? 'text-white font-bold' : paper ? 'text-white font-bold' : 'bg-white text-black font-bold shadow-lg') : 'opacity-80'}`}
+                                    className={`${compact ? 'w-7 h-7 text-[13px]' : 'w-8 h-8 text-sm'} flex items-center justify-center rounded-full font-medium ${isToday ? (acnh ? 'text-white font-bold' : paper ? 'text-white font-bold' : 'bg-white text-black font-bold shadow-lg') : 'opacity-80'}`}
                                     style={isToday ? (acnh ? { background: '#19c8b9' } : paper ? { background: '#788369', boxShadow: '0 4px 10px rgba(91,72,51,0.14)' } : {}) : { color: contentColor }}
                                   >
                                       {day}
@@ -426,7 +429,7 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
                   </div>
               </div>
 
-              <div className={`rounded-3xl p-5 flex flex-col flex-1 min-h-[200px] ${acnh ? 'shadow-sm' : paper ? '' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={paper ? { background: 'rgba(224,221,215,0.36)', border: '1px solid rgba(91,72,51,0.07)', boxShadow: '0 5px 16px rgba(91,72,51,0.05)' } : acCard}>
+              <div className={`rounded-3xl ${compact ? 'p-4 flex flex-col min-h-0' : 'p-5 flex flex-col flex-1 min-h-[200px]'} ${acnh ? 'shadow-sm' : paper ? '' : 'bg-white/25 border border-white/25 shadow-xl'}`} style={paper ? { background: 'rgba(224,221,215,0.36)', border: '1px solid rgba(91,72,51,0.07)', boxShadow: '0 5px 16px rgba(91,72,51,0.05)' } : acCard}>
                   <div className="flex items-center justify-between mb-4">
                       <h3 className="text-xs font-bold opacity-60 uppercase tracking-widest flex items-center gap-2" style={{ color: contentColor }}>
                           <span className="w-2 h-2 rounded-full" style={{ background: acDot || (paper ? '#a66f52' : '#c084fc') }}></span> Upcoming Events
@@ -807,11 +810,11 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
     );
   }
 
-  // 桌面形态：复用手机版小部件（时钟 / 角色卡 / 纪念日 / 日程）做桌面双列排布 + 宽 App 网格。
-  // 底部 dock 交给左侧 DesktopDock，这里不渲染；横向分页、滚轮翻页也一并跳过。
+  // 桌面形态：左列紧凑小组件 + 右侧自适应应用网格，整页固定一屏（不滚动）；
+  // 底部 dock 交给左侧 DesktopDock，横向分页、滚轮翻页一并跳过。
   if (desktop) {
     return (
-      <div className="relative h-full w-full overflow-y-auto no-scrollbar px-8 py-8" {...drag.handlers}>
+      <div className="relative flex h-full w-full gap-5 overflow-hidden px-5 py-5" {...drag.handlers}>
         {layoutEditing && (
           <div className="fixed top-[calc(var(--safe-top)+0.65rem)] left-[84px] z-50 flex items-center gap-3 rounded-full px-3 py-2"
               style={{ background: 'rgba(75,65,54,0.88)', color: '#fffdf8', boxShadow: '0 8px 24px rgba(75,65,54,0.20)' }}>
@@ -819,10 +822,9 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
               <button onClick={finishLayoutEditing} className="px-3 py-1 rounded-full text-[10px] font-bold bg-white/15 active:scale-95">完成</button>
           </div>
         )}
-        <div className="mx-auto grid w-full max-w-[1280px] grid-cols-1 gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-          {/* 左列：小部件 */}
-          <div className="space-y-5">
-            <DesktopClock />
+        {/* 左列：小部件（compact；极端小窗允许列内滚动，整页不滚） */}
+        <div className="flex w-[clamp(280px,22vw,340px)] shrink-0 flex-col gap-4 overflow-y-auto no-scrollbar pr-1">
+            <DesktopClock compact />
             <CharacterWidget
               char={widgetChar}
               unreadCount={widgetUnread}
@@ -830,6 +832,7 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
               onClick={() => openApp(AppID.Chat)}
               contentColor={contentColor}
               paper={paper}
+              compact
             />
             <WidgetsPage
               contentColor={contentColor}
@@ -838,6 +841,7 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
               characters={characters}
               acnh={acnh}
               paper={paper}
+              compact
             />
             {scheduleChar && (
               <ScheduleHomeWidget
@@ -849,11 +853,10 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
                 paper={paper}
               />
             )}
-          </div>
-          {/* 右列：宽 App 网格（6 列，图标走原生 AppIcon） */}
-          <div className="min-w-0">
-            <AppGridPage apps={gridApps} openApp={openApp} acnh={acnh} editing={layoutEditing} columns={6} />
-          </div>
+        </div>
+        {/* 右列：自适应应用网格（全部 App 一屏装下，顺序与手机端一致） */}
+        <div className="min-w-0 flex-1">
+            <DesktopAppGrid apps={gridApps} openApp={openApp} editing={layoutEditing} />
         </div>
 
         <ScheduleFullscreenViewer
