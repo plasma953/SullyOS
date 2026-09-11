@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { handleGithub } from '../cloudflare/github-handler';
+// @ts-expect-error 中心 worker 是纯 JS，仓库没开 allowJs
+import worker from './index.js';
 
 afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
 });
 
-describe('GitHub Worker proxy', () => {
+describe('GitHub Worker proxy（中心 worker 内联版 /github）', () => {
     it('streams the incoming upload body and exposes retry diagnostics', async () => {
         let forwardedBody: BodyInit | null | undefined;
         const upstreamFetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
@@ -38,7 +39,7 @@ describe('GitHub Worker proxy', () => {
         );
         const incomingBody = request.body;
 
-        const response = await handleGithub(request);
+        const response = await worker.fetch(request, {}, { waitUntil: () => {} });
 
         expect(upstreamFetch).toHaveBeenCalledTimes(1);
         expect(forwardedBody).toBe(incomingBody);

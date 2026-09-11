@@ -10,11 +10,11 @@
 //   2. add a row to WORKERS below
 //   3. that's it — `pnpm run build` (which chains to build:workers) picks it up
 //
-// Why a manifest array instead of auto-discover: worker/proactive-push/ has
-// src/index.ts + wrangler.toml too, but its worker.bundle.js is hand-written
-// (not an esbuild artifact). A naive scan of worker/*/src/index.ts would
-// silently overwrite it. The manifest is explicit about which workers go
-// through this pipeline.
+// Why a manifest array instead of auto-discover: some workers keep their
+// runtime entry outside worker/<name>/src/index.ts (main-agent / heartbeat /
+// wake-bridge bundles are verbatim copies; amsg's Deno facade goes through
+// VERBATIM_COPIES). A naive scan would miss those. The manifest is explicit
+// about which workers go through this pipeline.
 
 import { build } from 'esbuild';
 import { existsSync, statSync, readFileSync, writeFileSync, copyFileSync } from 'fs';
@@ -58,6 +58,10 @@ const WORKERS = [
   // public/ 副本给设置页「复制 Worker 代码」按钮 fetch。amsg-server 2.6.0-next.2 起
   // 全 Web Crypto，和 instant 一样免 nodejs_compat flag。
   { name: 'amsg', outName: 'amsg-worker.bundle.js' },
+  // proactive-push = 主动消息 1.0 的推送加速器（D1 + cron）。VPS 宿主加载
+  // worker.bundle.js；此前 bundle 是 src 的手工合并版，2026-09-11 起改为
+  // esbuild 产物，与其它走构建的 worker 同形态（避免 src 改了 bundle 忘了跟）。
+  { name: 'proactive-push', skipPublicOut: true },
 ];
 
 // amsg-instant 0.3.0+ uses only Web Crypto (globalThis.crypto.subtle); the
@@ -124,6 +128,12 @@ const VERBATIM_COPIES = [
   // amsg 的 Deno 门面：给 Cloudflare worker 换一个国内能直连的地址。
   // 设置页「复制 Deno 代理代码」按钮 fetch 这份。
   { from: 'worker/amsg/deno-proxy.ts', to: 'public/amsg-deno-proxy.ts' },
+  // VPS 宿主加载的单文件 worker：bundle 是 src 的原样副本。以前靠手写
+  // `cp src/index.js worker.bundle.js`，改了 src 忘 cp 时线上跑的仍是旧代码
+  // ——纳入构建脚本保证每次 build 后两者一定同步。
+  { from: 'worker/main-agent/src/index.js', to: 'worker/main-agent/worker.bundle.js' },
+  { from: 'worker/heartbeat/src/index.js', to: 'worker/heartbeat/worker.bundle.js' },
+  { from: 'worker/wake-bridge/src/index.js', to: 'worker/wake-bridge/worker.bundle.js' },
 ];
 
 for (const { from, to } of VERBATIM_COPIES) {
