@@ -26,13 +26,42 @@ const FORWARD_REQUEST_HEADERS = [
     'last-event-id',
 ];
 
+// CORS 契约基础并集（见 docs/superpowers/specs/2026-09-11-cors-unification-design.md）：
+// 预检净化回显浏览器声明的请求头/方法，新头零配置放行。注意：预检回显 ≠ 转发放宽——
+// 实际转发的请求头仍由 FORWARD_REQUEST_HEADERS 与 X-MCP-Forward-Headers 白名单决定。
+const CORS_BASE_HEADERS = 'Content-Type, Accept, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID, X-Proxy-Key, X-MCP-Forward-Headers';
+const CORS_BASE_METHODS = 'POST, GET, DELETE, OPTIONS';
+
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID, X-Proxy-Key, X-MCP-Forward-Headers',
+    'Access-Control-Allow-Methods': CORS_BASE_METHODS,
+    'Access-Control-Allow-Headers': CORS_BASE_HEADERS,
     'Access-Control-Expose-Headers': 'Mcp-Session-Id, WWW-Authenticate',
     'Access-Control-Max-Age': '86400',
 };
+
+function sanitizeRequestedHeaders(raw) {
+    return String(raw || '').split(',').map(s => s.trim()).filter(Boolean)
+        .slice(0, 16)
+        .filter(s => s.length <= 64 && /^[A-Za-z0-9-]+$/.test(s));
+}
+
+function corsPreflight(request) {
+    const picked = sanitizeRequestedHeaders(request.headers.get('access-control-request-headers'));
+    const method = String(request.headers.get('access-control-request-method') || '').trim();
+    const allowMethods = Array.from(new Set([...CORS_BASE_METHODS.split(',').map(s => s.trim()), ...(method.length <= 16 && /^[A-Z]+$/.test(method) ? [method] : [])]));
+    const allowHeaders = Array.from(new Set([...CORS_BASE_HEADERS.split(',').map(s => s.trim()), ...picked]));
+    return new Response(null, {
+        status: 204,
+        headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': allowMethods.join(', '),
+            'Access-Control-Allow-Headers': allowHeaders.join(', '),
+            'Access-Control-Expose-Headers': 'Mcp-Session-Id, WWW-Authenticate',
+            'Access-Control-Max-Age': '86400',
+        },
+    });
+}
 
 function corsJson(status, obj) {
     return new Response(JSON.stringify(obj), {
@@ -71,17 +100,7 @@ function blockedTargetReason(rawUrl) {
 export default {
     async fetch(request, env) {
         if (request.method === 'OPTIONS') {
-            const headers = new Headers(CORS_HEADERS);
-            // 只回显白名单内的请求头：原样回显任意头会让任意站点把自定义头打进预检。
-            const allowed = new Set(
-                String(CORS_HEADERS['Access-Control-Allow-Headers']).split(',').map(s => s.trim().toLowerCase()),
-            );
-            const requestedHeaders = request.headers.get('access-control-request-headers');
-            if (requestedHeaders) {
-                const picked = requestedHeaders.split(',').map(s => s.trim()).filter(s => allowed.has(s.toLowerCase()));
-                if (picked.length) headers.set('Access-Control-Allow-Headers', picked.join(', '));
-            }
-            return new Response(null, { status: 204, headers });
+            return corsPreflight(request);
         }
 
         // PROXY_KEY 必填（fail-closed）：无鉴权的 ?target= 开放转发等于把 Worker 配额送人。

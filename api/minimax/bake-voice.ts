@@ -1,10 +1,5 @@
 import { runBakeVoice } from './_bakeVoiceCore';
-
-function setCors(res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-MiniMax-Region');
-}
+import { applyCors } from '../_cors';
 
 /**
  * Vercel serverless function: POST /api/minimax/bake-voice
@@ -21,7 +16,7 @@ function setCors(res: any) {
  * 三步编排见 ./_bakeVoiceCore.runBakeVoice（与 server/bake-voice-middleware.ts 共用）。
  */
 export default async function handler(req: any, res: any) {
-  setCors(res);
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();

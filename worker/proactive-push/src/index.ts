@@ -12,6 +12,7 @@
  */
 
 import { prepareVapid, sendPush, type VapidContext, type PushSubscription } from './webpush';
+import { preflightResponse } from '../../shared/cors';
 
 interface Env {
   DB: D1Database;
@@ -60,8 +61,6 @@ function json(data: unknown, status = 200): Response {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, X-Client-Token',
-      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     },
   });
 }
@@ -240,14 +239,7 @@ async function runScheduledSweep(env: Env): Promise<{ fired: number; dropped: nu
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type, X-Client-Token',
-          'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-          'Access-Control-Max-Age': '86400',
-        },
-      });
+      return preflightResponse(req);
     }
 
     const url = new URL(req.url);

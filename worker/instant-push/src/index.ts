@@ -25,6 +25,7 @@ import { sanitizeIntoSegments, type Segment } from '../../../utils/sanitize';
 import { INSTANT_WORKER_VERSION } from '../../../utils/instantWorkerVersion';
 import { requestEmotionEval, restoreEvalPrompt } from '../../../utils/emotionEvalCore';
 import { installOpencodeIdentityFetch } from '../../../utils/llmIdentity';
+import { corsHeaders, preflightResponse } from '../../shared/cors';
 
 // opencode.ai 上游自标识（同 worker/amsg）：LLM 凭据是原始供应商地址、直连调用，
 // 必须带 User-Agent + x-opencode-session（Go 防滥用要求）才不会被拒。
@@ -65,14 +66,9 @@ type D1PreparedStatement = {
 type OversizeTransportMode = 'multipart' | 'd1' | 'auto';
 
 const MULTIPART_TRANSPORT = { enabled: true };
-const UTILITY_CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  // X-Amsg-Request-Encoding: 大请求体 gzip 上行用的自定义头 (见 decodeGzipRequestBody)。
-  // 跨域带它会触发 CORS 预检, 必须放行, 否则浏览器拦请求。amsg-instant 库的预检不含它, 故 worker 自己回预检。
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Token, X-Amsg-Request-Encoding',
-  'Access-Control-Max-Age': '86400',
-};
+// 大请求体 gzip 上行用的 X-Amsg-Request-Encoding 是 CORS 安全列表外的自定义头，
+// 契约预检的额外基础头（见 worker/shared/cors.ts）。
+const CORS_EXTRA_HEADERS = ['X-Amsg-Request-Encoding'];
 const D1_BLOB_TABLE = 'amsg_transient_blobs';
 const D1_CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 const D1_CREATE_TABLE_SQL = `
@@ -328,7 +324,7 @@ function utilityJson(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      ...UTILITY_CORS_HEADERS,
+      'Access-Control-Allow-Origin': '*',
       'Content-Type': 'application/json; charset=utf-8',
     },
   });
@@ -357,9 +353,6 @@ function verifyUtilityClientToken(request: Request, env: Env): Response | null {
 // 比对, 不一致就提示重新部署。不要求 client token (这只是个静态查询, 不暴露任何
 // secret), 也不接受 POST — 没有副作用就用 GET。
 function handleVersionRequest(request: Request): Response {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: UTILITY_CORS_HEADERS });
-  }
   if (request.method !== 'GET') {
     return utilityJson(405, {
       success: false,
@@ -373,9 +366,6 @@ function handleVersionRequest(request: Request): Response {
 }
 
 async function handleCapabilitiesRequest(request: Request, env: Env): Promise<Response> {
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: UTILITY_CORS_HEADERS });
-  }
   if (request.method !== 'GET' && request.method !== 'POST') {
     return utilityJson(405, {
       success: false,
@@ -555,11 +545,10 @@ export default {
   fetch: async (request: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => {
     const url = new URL(request.url);
 
-    // CORS 预检自处理：amsg-instant 库的预检 Allow-Headers 写死且不含压缩用的
-    // X-Amsg-Request-Encoding，跨域带该头的预检会被它拦死。抢在库之前回我们自己的
-    // 预检响应（放行列表见 UTILITY_CORS_HEADERS），与 version/capabilities 分支一致。
+    // CORS 预检统一在入口处理（契约见 worker/shared/cors.ts）：抢在 amsg-instant 库
+    // 之前回净化回显的预检响应，新头零配置放行。
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: UTILITY_CORS_HEADERS });
+      return preflightResponse(request, { extraHeaders: CORS_EXTRA_HEADERS });
     }
 
     if (url.pathname === '/version') {
@@ -577,7 +566,7 @@ export default {
       return new Response(JSON.stringify({ error: 'Failed to decompress request body' }), {
         status: 400,
         headers: {
-          ...UTILITY_CORS_HEADERS,
+          ...corsHeaders(request, { extraHeaders: CORS_EXTRA_HEADERS }),
           'Content-Type': 'application/json',
         },
       });

@@ -34,6 +34,7 @@ import {
 } from '@rei-standard/amsg-server/cloudflare';
 import { stripReasoningTags } from '@rei-standard/amsg-shared';
 import { AMSG_BUNDLE_VERSION } from '../../../utils/amsgBundleVersion';
+import { preflightResponse } from '../../shared/cors';
 // 「上一次推送被判订阅失效」的形状，跟前端体检共用一个类型定义（那份是零依赖纯叶子；
 // 往里加任何浏览器依赖都会连累这个 bundle）。这里只产出事实，红绿灯和文案归前端。
 import type { AmsgPushGoneFailure } from '../../../utils/amsgDiagnostics';
@@ -2658,18 +2659,20 @@ export const inspectWorkerEnv = (env: Env): WorkerEnvReport => {
 };
 
 /**
- * 预检放行的请求头。
+ * amsg 专属请求头（契约基础并集之外的部分，见 worker/shared/cors.ts）。
  *
- * 这一份同时喂给包装层自己的响应（CORS_HEADERS）和上游 config 的 `cors.allowHeaders`
- * ——两处**必须**是同一串：预检放行的头少一个，正式请求就会被浏览器拦下，而拦下的表现
- * 同样是没有下文的 "Failed to fetch"，从外面根本看不出是 CORS 的事。
+ * 预检已统一由入口处理（净化回显），这一份只给上游 config 的 `cors.allowHeaders`
+ * 与包装层实际响应做兜底；预检路径不再依赖它，新增头也不必再往这里加。
  *
- * `Content-Encoding` 是给 gzip 上行用的。它不在 CORS 安全列表里，所以带上它的请求
- * 必过预检；上游默认那份白名单里没有它，不显式配的话，压过的请求一条都发不出去。
+ * `Content-Encoding` 是给 gzip 上行用的；`X-User-Id` / `X-Payload-Encrypted` 等
+ * 是加密载荷协议头。
  */
 const CORS_ALLOW_HEADERS =
   'Content-Type, Content-Encoding, X-User-Id, X-Payload-Encrypted, X-Encryption-Version, '
   + 'X-Response-Encrypted, X-Client-Token';
+
+/** 契约预检的额外基础头（配合入口 preflightResponse 使用）。 */
+const CORS_EXTRA_HEADERS = ['Content-Encoding', 'X-User-Id', 'X-Payload-Encrypted', 'X-Encryption-Version', 'X-Response-Encrypted'];
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -3041,12 +3044,17 @@ export default {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
     const method = request.method.toUpperCase();
 
+    // CORS 预检统一在入口处理（契约见 worker/shared/cors.ts）：先于配置门与鉴权，
+    // 回显浏览器声明要发的请求头，新头零配置放行；上游库的预检不会再有触发机会。
+    if (method === 'OPTIONS') {
+      return preflightResponse(request, { extraHeaders: CORS_EXTRA_HEADERS });
+    }
+
     // 探活：给状态面板与前端连接判定用的最小端点。刻意放在配置门之前 —— 「服务
     // 活着没」和「配置齐不齐」是两个独立问题：配置缺一半时这里照样回 200（缺什么
     // 让 /config-check 去说），否则面板会把「没配好」误报成「没连上」。VPS 宿主经
     // Caddy handle_path /amsg/* 剥前缀转发，前端探 {workerUrl}/health 即本路由。
     if (pathname === '/health') {
-      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(200, {
         success: true,
         data: { status: 'healthy', runtime: env.SULLYOS_RUNTIME === 'vps' ? 'vps' : 'cloudflare' },
@@ -3054,7 +3062,6 @@ export default {
     }
 
     if (pathname.endsWith('/config-check')) {
-      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       // 刻意不校验 X-Client-Token：worker 配了口令而前端没填正是要诊断的情形之一，
       // 校验了就查不出来。作为交换，这里只回「配没配」，不回任何值。
       //
@@ -3095,7 +3102,6 @@ export default {
     }
 
     if (pathname.endsWith('/debug')) {
-      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       // 全只读、也不设防，所以能报什么是有边界的：只有配置齐不齐、schema 对不对、
       // 数出来的条数，以及本来就公开的 VAPID 公钥。密钥的值、用户标识、任务正文、
       // 推送 endpoint 一概不出现——不是没取到，是刻意不取。
@@ -3116,7 +3122,6 @@ export default {
     }
 
     if (pathname.endsWith('/self-update')) {
-      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (method !== 'POST') {
         return jsonWithCors(405, {
           success: false,
@@ -3135,9 +3140,6 @@ export default {
 
     const report = inspectWorkerEnv(env);
     if (!report.ok) {
-      // 预检也得放行：带自定义头的请求会先发 OPTIONS，这一步被挡住的话正式请求
-      // 根本发不出去，下面那句 503 用户就永远看不到。
-      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(503, {
         success: false,
         error: { code: 'WORKER_CONFIG_MISSING', message: report.message, missing: report.missing },
@@ -3147,7 +3149,6 @@ export default {
     // 即时对话：一个请求把「传云端状态 + 建任务」串完，回 202 之后立刻起一跳。
     // 排在配置门之后，所以走到这里 D1 和密钥必然都在。
     if (pathname.endsWith('/push-test')) {
-      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (method !== 'POST') {
         return jsonWithCors(405, {
           success: false,
@@ -3217,7 +3218,6 @@ export default {
     // 即时对话：一个请求把「传云端状态 + 建任务」串完，回 202 之后立刻起一跳。
     // 排在配置门之后，所以走到这里 D1 和密钥必然都在。
     if (pathname.endsWith('/instant-chat')) {
-      if (method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (method !== 'POST') {
         return jsonWithCors(405, {
           success: false,

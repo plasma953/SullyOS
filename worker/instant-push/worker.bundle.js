@@ -1648,7 +1648,7 @@ function createInstantHandler(options) {
   const tokenSigningKey = options.tokenSigningKey ? String(options.tokenSigningKey) : "";
   const clientToken = options.clientToken ? String(options.clientToken) : "";
   const expectedClientTokenBytes = clientToken ? utf8(clientToken) : null;
-  const corsHeaders = buildCorsHeaders(options.cors);
+  const corsHeaders2 = buildCorsHeaders(options.cors);
   const onLLMOutput2 = typeof options.onLLMOutput === "function" ? options.onLLMOutput : null;
   const onBeforeLoop = typeof options.onBeforeLoop === "function" ? options.onBeforeLoop : null;
   const onAfterLoop = typeof options.onAfterLoop === "function" ? options.onAfterLoop : null;
@@ -1658,11 +1658,11 @@ function createInstantHandler(options) {
   const multipart = resolveMultipartOptions(options);
   const sse = resolveSseOptions(options.sse);
   const vapidValid = isVapidConfigValid(options.vapid);
-  const respond = (status, body) => jsonResponse(status, body, corsHeaders);
+  const respond = (status, body) => jsonResponse(status, body, corsHeaders2);
   return async function handler(request, envOrRuntime, runtime) {
     onEvent({ type: "request" });
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders });
+      return new Response(null, { status: 204, headers: corsHeaders2 });
     }
     let parsedUrl;
     try {
@@ -1672,7 +1672,7 @@ function createInstantHandler(options) {
     }
     const pathname = parsedUrl ? parsedUrl.pathname : "";
     if (pathname.startsWith("/blob/") && request.method === "GET") {
-      return handleBlobRead(request, pathname, blobStore, corsHeaders);
+      return handleBlobRead(request, pathname, blobStore, corsHeaders2);
     }
     if (request.method !== "POST") {
       return respond(405, {
@@ -1931,7 +1931,7 @@ data: ${JSON.stringify(stableBody)}
         {
           status: 200,
           headers: {
-            ...corsHeaders,
+            ...corsHeaders2,
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive"
@@ -3212,17 +3212,45 @@ function installOpencodeIdentityFetch(ua) {
   g.fetch = patched;
 }
 
+// worker/shared/cors.ts
+var CORS_BASE_HEADERS = ["Content-Type", "Authorization", "X-Client-Token", "Accept"];
+var CORS_BASE_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+var MAX_ECHO_HEADERS = 16;
+var MAX_HEADER_LENGTH = 64;
+var MAX_METHOD_LENGTH = 16;
+var HEADER_NAME_RE = /^[A-Za-z0-9-]+$/;
+var METHOD_RE = /^[A-Z]+$/;
+function sanitizeRequestedHeaders(raw) {
+  if (!raw) return [];
+  return raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, MAX_ECHO_HEADERS).filter((s) => s.length <= MAX_HEADER_LENGTH && HEADER_NAME_RE.test(s));
+}
+function sanitizeRequestedMethod(raw) {
+  if (!raw) return null;
+  const m = raw.trim();
+  return m.length <= MAX_METHOD_LENGTH && METHOD_RE.test(m) ? m : null;
+}
+function corsHeaders(request, opts = {}) {
+  const requested = sanitizeRequestedHeaders(request.headers.get("Access-Control-Request-Headers"));
+  const method = sanitizeRequestedMethod(request.headers.get("Access-Control-Request-Method"));
+  const allowHeaders = Array.from(/* @__PURE__ */ new Set([...CORS_BASE_HEADERS, ...opts.extraHeaders || [], ...requested]));
+  const allowMethods = Array.from(/* @__PURE__ */ new Set([...CORS_BASE_METHODS, ...method ? [method] : []]));
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": allowHeaders.join(", "),
+    "Access-Control-Allow-Methods": allowMethods.join(", "),
+    "Access-Control-Max-Age": "86400"
+  };
+  if (opts.expose) headers["Access-Control-Expose-Headers"] = opts.expose;
+  return headers;
+}
+function preflightResponse(request, opts = {}) {
+  return new Response(null, { status: 204, headers: corsHeaders(request, opts) });
+}
+
 // worker/instant-push/src/index.ts
 installOpencodeIdentityFetch("SullyOS-InstantPush/1.0 (+https://github.com/plasma953/SullyOS)");
 var MULTIPART_TRANSPORT = { enabled: true };
-var UTILITY_CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  // X-Amsg-Request-Encoding: 大请求体 gzip 上行用的自定义头 (见 decodeGzipRequestBody)。
-  // 跨域带它会触发 CORS 预检, 必须放行, 否则浏览器拦请求。amsg-instant 库的预检不含它, 故 worker 自己回预检。
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Token, X-Amsg-Request-Encoding",
-  "Access-Control-Max-Age": "86400"
-};
+var CORS_EXTRA_HEADERS = ["X-Amsg-Request-Encoding"];
 var D1_BLOB_TABLE = "amsg_transient_blobs";
 var D1_CLEANUP_INTERVAL_MS = 15 * 60 * 1e3;
 var D1_CREATE_TABLE_SQL = `
@@ -3436,7 +3464,7 @@ function utilityJson(status, body) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      ...UTILITY_CORS_HEADERS,
+      "Access-Control-Allow-Origin": "*",
       "Content-Type": "application/json; charset=utf-8"
     }
   });
@@ -3460,9 +3488,6 @@ function verifyUtilityClientToken(request, env) {
   return null;
 }
 function handleVersionRequest(request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: UTILITY_CORS_HEADERS });
-  }
   if (request.method !== "GET") {
     return utilityJson(405, {
       success: false,
@@ -3475,9 +3500,6 @@ function handleVersionRequest(request) {
   });
 }
 async function handleCapabilitiesRequest(request, env) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: UTILITY_CORS_HEADERS });
-  }
   if (request.method !== "GET" && request.method !== "POST") {
     return utilityJson(405, {
       success: false,
@@ -3599,7 +3621,7 @@ var src_default = {
   fetch: async (request, env, ctx) => {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: UTILITY_CORS_HEADERS });
+      return preflightResponse(request, { extraHeaders: CORS_EXTRA_HEADERS });
     }
     if (url.pathname === "/version") {
       return handleVersionRequest(request);
@@ -3614,7 +3636,7 @@ var src_default = {
       return new Response(JSON.stringify({ error: "Failed to decompress request body" }), {
         status: 400,
         headers: {
-          ...UTILITY_CORS_HEADERS,
+          ...corsHeaders(request, { extraHeaders: CORS_EXTRA_HEADERS }),
           "Content-Type": "application/json"
         }
       });

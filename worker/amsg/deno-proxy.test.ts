@@ -146,6 +146,21 @@ describe('buildUpstreamRequest - 请求改写', () => {
  * 状态码和错误正文全被挡在外面，排查的人对着一个跟病因无关的 CORS 报错干瞪眼。
  */
 describe('代理自造的响应必须带 CORS 头', () => {
+  it('OPTIONS 预检净化回显请求头，带 Max-Age 且在本地处理', async () => {
+    const response = await handleRequest(new Request('https://proxy.deno.net/init-tenant', {
+      method: 'OPTIONS',
+      headers: {
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'x-future-feature, bad header!',
+      },
+    }));
+    expect(response.status).toBe(204);
+    const allow = response.headers.get('access-control-allow-headers') || '';
+    expect(allow).toContain('x-future-feature');
+    expect(allow).not.toContain('bad header!');
+    expect(response.headers.get('access-control-max-age')).toBe('86400');
+  });
+
   it('自检端点带 Access-Control-Allow-Origin', async () => {
     const response = await handleRequest(new Request('https://proxy.deno.net/__proxy-health'));
     expect(response.headers.get('access-control-allow-origin')).toBe('*');

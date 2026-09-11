@@ -6772,6 +6772,41 @@ function createSingleUserCloudflareWorker(buildConfig, options = {}) {
 // utils/amsgBundleVersion.ts
 var AMSG_BUNDLE_VERSION = "2026-09-08";
 
+// worker/shared/cors.ts
+var CORS_BASE_HEADERS = ["Content-Type", "Authorization", "X-Client-Token", "Accept"];
+var CORS_BASE_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+var MAX_ECHO_HEADERS = 16;
+var MAX_HEADER_LENGTH = 64;
+var MAX_METHOD_LENGTH = 16;
+var HEADER_NAME_RE = /^[A-Za-z0-9-]+$/;
+var METHOD_RE = /^[A-Z]+$/;
+function sanitizeRequestedHeaders(raw) {
+  if (!raw) return [];
+  return raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, MAX_ECHO_HEADERS).filter((s) => s.length <= MAX_HEADER_LENGTH && HEADER_NAME_RE.test(s));
+}
+function sanitizeRequestedMethod(raw) {
+  if (!raw) return null;
+  const m = raw.trim();
+  return m.length <= MAX_METHOD_LENGTH && METHOD_RE.test(m) ? m : null;
+}
+function corsHeaders(request, opts = {}) {
+  const requested = sanitizeRequestedHeaders(request.headers.get("Access-Control-Request-Headers"));
+  const method = sanitizeRequestedMethod(request.headers.get("Access-Control-Request-Method"));
+  const allowHeaders = Array.from(/* @__PURE__ */ new Set([...CORS_BASE_HEADERS, ...opts.extraHeaders || [], ...requested]));
+  const allowMethods = Array.from(/* @__PURE__ */ new Set([...CORS_BASE_METHODS, ...method ? [method] : []]));
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": allowHeaders.join(", "),
+    "Access-Control-Allow-Methods": allowMethods.join(", "),
+    "Access-Control-Max-Age": "86400"
+  };
+  if (opts.expose) headers["Access-Control-Expose-Headers"] = opts.expose;
+  return headers;
+}
+function preflightResponse(request, opts = {}) {
+  return new Response(null, { status: 204, headers: corsHeaders(request, opts) });
+}
+
 // utils/amsgTaskKinds.ts
 var AMSG_TASK_KIND_KEY = "amsgKind";
 var readTaskKind = (metadata) => {
@@ -14281,6 +14316,7 @@ var inspectWorkerEnv = (env) => {
   };
 };
 var CORS_ALLOW_HEADERS2 = "Content-Type, Content-Encoding, X-User-Id, X-Payload-Encrypted, X-Encryption-Version, X-Response-Encrypted, X-Client-Token";
+var CORS_EXTRA_HEADERS = ["Content-Encoding", "X-User-Id", "X-Payload-Encrypted", "X-Encryption-Version", "X-Response-Encrypted"];
 var CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -14456,15 +14492,16 @@ var src_default = {
   async fetch(request, env) {
     const pathname = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
     const method = request.method.toUpperCase();
+    if (method === "OPTIONS") {
+      return preflightResponse(request, { extraHeaders: CORS_EXTRA_HEADERS });
+    }
     if (pathname === "/health") {
-      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(200, {
         success: true,
         data: { status: "healthy", runtime: env.SULLYOS_RUNTIME === "vps" ? "vps" : "cloudflare" }
       });
     }
     if (pathname.endsWith("/config-check")) {
-      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(200, {
         success: true,
         data: {
@@ -14487,7 +14524,6 @@ var src_default = {
       });
     }
     if (pathname.endsWith("/debug")) {
-      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       const probe = await inspectSchema(env);
       const storage = await inspectStorage(env, probe);
       return jsonWithCors(200, {
@@ -14504,7 +14540,6 @@ var src_default = {
       });
     }
     if (pathname.endsWith("/self-update")) {
-      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (method !== "POST") {
         return jsonWithCors(405, {
           success: false,
@@ -14520,14 +14555,12 @@ var src_default = {
     }
     const report = inspectWorkerEnv(env);
     if (!report.ok) {
-      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       return jsonWithCors(503, {
         success: false,
         error: { code: "WORKER_CONFIG_MISSING", message: report.message, missing: report.missing }
       });
     }
     if (pathname.endsWith("/push-test")) {
-      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (method !== "POST") {
         return jsonWithCors(405, {
           success: false,
@@ -14588,7 +14621,6 @@ var src_default = {
       return jsonWithCors(200, { success: true, data: { testId, sentAt: (/* @__PURE__ */ new Date()).toISOString() } });
     }
     if (pathname.endsWith("/instant-chat")) {
-      if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
       if (method !== "POST") {
         return jsonWithCors(405, {
           success: false,

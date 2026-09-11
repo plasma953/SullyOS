@@ -27,6 +27,7 @@
  */
 
 import { createServer } from 'http';
+import { pathToFileURL } from 'url';
 import { spawn } from 'child_process';
 import { writeFileSync, unlinkSync, mkdtempSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
@@ -66,12 +67,31 @@ function findSkillsDir() {
 const SKILLS_DIR = findSkillsDir();
 const CLI_PATH = join(SKILLS_DIR, 'scripts', 'cli.py');
 
+const CORS_BASE_HEADERS = 'Content-Type';
+const CORS_BASE_METHODS = 'POST, GET, OPTIONS';
+
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': CORS_BASE_METHODS,
+    'Access-Control-Allow-Headers': CORS_BASE_HEADERS,
     'Access-Control-Max-Age': '86400',
 };
+
+/** CORS 契约：净化回显浏览器声明的请求头/方法（与中心 worker 行为一致）。 */
+export function corsHeadersFor(req) {
+    const raw = String(req.headers['access-control-request-headers'] || '');
+    const picked = raw.split(',').map(s => s.trim()).filter(Boolean)
+        .slice(0, 16)
+        .filter(s => s.length <= 64 && /^[A-Za-z0-9-]+$/.test(s));
+    const method = String(req.headers['access-control-request-method'] || '').trim();
+    const allowMethods = Array.from(new Set([...CORS_BASE_METHODS.split(',').map(s => s.trim()), ...(method.length <= 16 && /^[A-Z]+$/.test(method) ? [method] : [])]));
+    const allowHeaders = Array.from(new Set([...CORS_BASE_HEADERS.split(',').map(s => s.trim()), ...picked]));
+    return {
+        ...CORS_HEADERS,
+        'Access-Control-Allow-Methods': allowMethods.join(', '),
+        'Access-Control-Allow-Headers': allowHeaders.join(', '),
+    };
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -365,9 +385,9 @@ const handlers = {
 
 // ==================== HTTP Server ====================
 
-createServer(async (req, res) => {
+const server = createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
-        res.writeHead(204, CORS_HEADERS);
+        res.writeHead(204, corsHeadersFor(req));
         res.end();
         return;
     }
@@ -422,7 +442,12 @@ createServer(async (req, res) => {
             res.end(JSON.stringify({ error: e.message }));
         }
     });
-}).listen(PORT, () => {
+});
+
+// 直接运行才监听端口；被测试 import 时不启动服务。
+const isDirectRun = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
+if (isDirectRun) {
+    server.listen(PORT, () => {
     console.log(`XHS Bridge Server started`);
     console.log(`  Listen:     http://localhost:${PORT}/api`);
     console.log(`  Skills dir: ${SKILLS_DIR}`);
@@ -453,4 +478,5 @@ createServer(async (req, res) => {
     console.log(`  - cli.py 会在首次请求时自动启动 bridge_server.py 和打开 Chrome`);
     console.log(`  - 确保 "XHS Bridge" 浏览器扩展已在 Chrome 加载并启用`);
     console.log(`  - 扩展加载方式: chrome://extensions/ → 开发者模式 → 加载已解压扩展 → 选 extension/ 目录`);
-});
+    });
+}

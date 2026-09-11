@@ -41,7 +41,7 @@ const HEALTH_PATH = '/__proxy-health';
  * 「Playground 里跑的到底是哪一版」的办法 —— 版本号不动的话，
  * 贴没贴成功、部署有没有生效，全靠猜。
  */
-const PROXY_REVISION = 'amsg-deno-proxy-v2';
+const PROXY_REVISION = 'amsg-deno-proxy-v3';
 
 declare const Deno: {
   env: { get(name: string): string | undefined };
@@ -133,8 +133,35 @@ export const relayResponse = (upstreamResponse: Response): Response => {
 const SELF_RESPONSE_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': '*',
+};
+
+/**
+ * CORS 预检（契约见 docs/superpowers/specs/2026-09-11-cors-unification-design.md）：
+ * 净化回显浏览器声明的请求头/方法，新头零配置放行。原来这里写死
+ * `Access-Control-Allow-Headers: '*'`，Safari 不认通配回显、预检会失败。
+ * 预检在代理层本地处理，不再转发给上游 —— 上游不可达时预检也能正常通过。
+ */
+const CORS_BASE_HEADERS = 'Content-Type, Authorization, X-Client-Token, Accept, Content-Encoding, X-User-Id, X-Payload-Encrypted, X-Encryption-Version, X-Response-Encrypted';
+const CORS_BASE_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+
+const sanitizeRequestedHeaders = (raw: string | null): string[] =>
+  String(raw || '').split(',').map((s) => s.trim()).filter(Boolean)
+    .slice(0, 16)
+    .filter((s) => s.length <= 64 && /^[A-Za-z0-9-]+$/.test(s));
+
+export const corsPreflight = (request: Request): Response => {
+  const picked = sanitizeRequestedHeaders(request.headers.get('access-control-request-headers'));
+  const method = String(request.headers.get('access-control-request-method') || '').trim();
+  const allowMethods = Array.from(new Set([...CORS_BASE_METHODS.split(',').map((s) => s.trim()), ...(method.length <= 16 && /^[A-Z]+$/.test(method) ? [method] : [])]));
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': [CORS_BASE_HEADERS, ...picked].join(', '),
+      'Access-Control-Allow-Methods': allowMethods.join(', '),
+      'Access-Control-Max-Age': '86400',
+    },
+  });
 };
 
 const json = (body: unknown, status: number): Response =>
@@ -147,6 +174,10 @@ const json = (body: unknown, status: number): Response =>
 export const handleRequest = async (request: Request): Promise<Response> => {
   const upstream = resolveUpstream();
   const pathname = new URL(request.url).pathname;
+
+  if (request.method === 'OPTIONS') {
+    return corsPreflight(request);
+  }
 
   if (pathname === HEALTH_PATH) {
     return json(

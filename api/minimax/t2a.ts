@@ -1,3 +1,5 @@
+import { applyCors } from '../_cors';
+
 const DOMESTIC_BASE = 'https://api.minimaxi.com';
 const OVERSEAS_BASE = 'https://api.minimax.io';
 const T2A_PATH = '/v1/t2a_v2';
@@ -21,19 +23,13 @@ const resolveGroupId = (req: any): string => {
   return [bodyGroupId, headerGroupId, envGroupId].map(v => String(v || '').trim()).find(Boolean) || '';
 };
 
-function setCors(res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-MiniMax-API-Key,X-MiniMax-Group-Id,X-MiniMax-Region');
-}
-
 function normalizeApiKey(raw?: string): string {
   if (!raw) return '';
   return raw.trim().replace(/^Bearer\s+/i, '').trim();
 }
 
 export default async function handler(req: any, res: any) {
-  setCors(res);
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();

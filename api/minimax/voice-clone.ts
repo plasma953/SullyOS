@@ -1,3 +1,5 @@
+import { applyCors } from '../_cors';
+
 const DOMESTIC_BASE = 'https://api.minimaxi.com';
 const OVERSEAS_BASE = 'https://api.minimax.io';
 const VOICE_CLONE_PATH = '/v1/voice_clone';
@@ -14,19 +16,13 @@ const resolveTargetUrl = (req: any): string => {
   return `${base}${VOICE_CLONE_PATH}`;
 };
 
-function setCors(res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-MiniMax-API-Key,X-MiniMax-Region');
-}
-
 function normalizeApiKey(raw?: string): string {
   if (!raw) return '';
   return raw.trim().replace(/^Bearer\s+/i, '').trim();
 }
 
 export default async function handler(req: any, res: any) {
-  setCors(res);
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();

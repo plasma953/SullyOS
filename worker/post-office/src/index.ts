@@ -77,14 +77,10 @@ interface D1PreparedStatement {
     all<T = unknown>(): Promise<{ results: T[] }>;
 }
 
-const CORS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-    'Access-Control-Max-Age': '86400',
-};
+import { preflightResponse } from '../../shared/cors';
+
 const json = (data: unknown, status = 200) =>
-    new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+    new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
 
 const MAX_CONTENT = 400;          // 单封正文字数上限（按字符：1 汉字/标点 = 1 字）
 const MAX_BATCH = 20;             // 单次上传封数上限
@@ -366,7 +362,7 @@ function isAdmin(req: Request, _url: URL, env: Env): boolean {
 
 export default {
     async fetch(req: Request, env: Env): Promise<Response> {
-        if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
+        if (req.method === 'OPTIONS') return preflightResponse(req);
         if (!env.DB) return json({ ok: false, error: 'D1 binding "DB" 未配置' }, 500);
 
         const url = new URL(req.url);

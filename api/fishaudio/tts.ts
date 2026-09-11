@@ -3,14 +3,10 @@
  * 转发到 https://api.fish.audio/v1/tts，把二进制音频原样回传。
  * 鱼声要求每个请求带 `model` 头（s2.1-pro / s2-pro / s1）+ Authorization Bearer。
  */
+import { applyCors } from '../_cors';
+
 const FISH_UPSTREAM = 'https://api.fish.audio/v1/tts';
 const DEFAULT_MODEL = 's2.1-pro';
-
-function setCors(res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,model');
-}
 
 function normalizeApiKey(raw?: string): string {
   if (!raw) return '';
@@ -18,7 +14,7 @@ function normalizeApiKey(raw?: string): string {
 }
 
 export default async function handler(req: any, res: any) {
-  setCors(res);
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();

@@ -3,14 +3,10 @@
  * Key 必须由客户端请求头提供；代理只转发，不记录 Key 与待合成文本。
  * 注意：不要在这里回退到环境变量——CORS 全开 + 无鉴权时，部署者的 Key 会被公网任意调用烧掉。
  */
+import { applyCors } from '../_cors';
+
 const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
 const DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
-
-function setCors(res: any) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,xi-api-key');
-}
 
 function normalizeApiKey(raw?: string): string {
   return (raw || '').trim();
@@ -27,7 +23,7 @@ function normalizeOutputFormat(raw: unknown): string {
 }
 
 export default async function handler(req: any, res: any) {
-  setCors(res);
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();

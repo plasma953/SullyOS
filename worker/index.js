@@ -18,7 +18,8 @@ const doubanListCache = new Map();
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, xi-api-key, Depth, X-Brave-API-Key, X-Notion-API-Key, X-Feishu-Token, X-Xhs-Cookie, X-Xhs-Platform, X-Rnote-API-Key, X-Xhs-Experiment-Ack, X-Netease-Cookie, X-WebDAV-Method, X-WebDAV-Depth, X-WebDAV-Range, X-GitHub-Method, X-GitHub-Api-Version, X-CF-Method, Mcp-Session-Id, Accept, Range",
     "Access-Control-Expose-Headers": "Mcp-Session-Id",
     "Access-Control-Max-Age": "86400",
@@ -2432,7 +2433,7 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin") || "*";
 
-    // CORS preflight：固定放行表 + 浏览器声明要发的头原样回显（数量/长度封顶）。
+    // CORS preflight：固定放行表 + 浏览器声明要发的头/方法原样回显（数量/长度封顶）。
     // 新功能加请求头时不再需要改放行表，回显只做"允许声明"，worker 实际读取的
     // 头仍由各端点按名显式取用——放宽的是预检，不是上游转发面。
     if (request.method === "OPTIONS") {
@@ -2445,6 +2446,12 @@ export default {
         const base = String(preflight.get("Access-Control-Allow-Headers") || "")
           .split(",").map((s) => s.trim()).filter(Boolean);
         preflight.set("Access-Control-Allow-Headers", Array.from(new Set([...base, ...picked])).join(", "));
+      }
+      const requestedMethod = (request.headers.get("Access-Control-Request-Method") || "").trim();
+      if (requestedMethod.length <= 16 && /^[A-Z]+$/.test(requestedMethod)) {
+        const baseMethods = String(preflight.get("Access-Control-Allow-Methods") || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
+        preflight.set("Access-Control-Allow-Methods", Array.from(new Set([...baseMethods, requestedMethod])).join(", "));
       }
       return new Response(null, { status: 204, headers: preflight });
     }

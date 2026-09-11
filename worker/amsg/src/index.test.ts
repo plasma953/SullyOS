@@ -798,17 +798,26 @@ describe('VAPID 配置', () => {
     expect(config.vapid.email).toBe('mailto:me@example.com');
   });
 
-  // 上游端点的 CORS 头由上游按 config.cors 出，包装层自己的路由用另一份常量。
-  // 两处不一致的话，一半端点能用、另一半被浏览器拦死，而拦下的表现都是那句没有
-  // 下文的 "Failed to fetch"——最难查的那种半瘫。
-  it('上游 config 的 allowHeaders 跟包装层预检那份是同一串，且都放行 Content-Encoding', async () => {
+  // 预检由入口统一处理（契约见 worker/shared/cors.ts）：回显浏览器声明要发的头，
+  // 不再依赖静态列表。上游 config 的 allowHeaders 只作兜底，仍要含 Content-Encoding。
+  it('入口预检回显任意自定义头，库配置仍兜底放行 Content-Encoding', async () => {
     const config = buildWorkerConfig(baseEnv);
     const preflight = await (worker as any).fetch(
-      new Request('https://w.example/instant-chat', { method: 'OPTIONS' }),
+      new Request('https://w.example/instant-chat', {
+        method: 'OPTIONS',
+        headers: {
+          'Origin': 'https://sully.test',
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'x-branch-new-header, content-encoding',
+        },
+      }),
       baseEnv,
       { waitUntil: () => {} },
     );
-    expect(config.cors.allowHeaders).toBe(preflight.headers.get('Access-Control-Allow-Headers'));
+    expect(preflight.status).toBe(204);
+    const allow = (preflight.headers.get('Access-Control-Allow-Headers') || '').toLowerCase();
+    expect(allow).toContain('x-branch-new-header');
+    expect(allow).toContain('content-encoding');
     expect(config.cors.allowHeaders).toContain('Content-Encoding');
   });
 

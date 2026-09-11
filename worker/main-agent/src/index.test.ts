@@ -116,14 +116,20 @@ describe('/v1/mcp-relay 第三方公网 target', () => {
 });
 
 describe('/v1/mcp-relay 预检', () => {
-    it('OPTIONS 204 且放行携带头', async () => {
+    it('OPTIONS 204 且回显携带头', async () => {
         const res = await worker.fetch(
-            new Request(`${AGENT}/agent/v1/mcp-relay?target=https://mcp.example.com/mcp`, { method: 'OPTIONS' }),
+            new Request(`${AGENT}/agent/v1/mcp-relay?target=https://mcp.example.com/mcp`, {
+                method: 'OPTIONS',
+                headers: {
+                    'Access-Control-Request-Method': 'POST',
+                    'Access-Control-Request-Headers': RELAY_AUTH_HEADER,
+                },
+            }),
             {},
             { waitUntil: () => {} },
         );
         expect(res.status).toBe(204);
-        expect(res.headers.get('Access-Control-Allow-Headers')).toContain(RELAY_AUTH_HEADER);
+        expect((res.headers.get('Access-Control-Allow-Headers') || '').toLowerCase()).toContain(RELAY_AUTH_HEADER.toLowerCase());
     });
 });
 

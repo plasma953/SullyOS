@@ -22,6 +22,7 @@
 
 import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
+import { pathToFileURL } from 'url';
 
 const args = process.argv.slice(2);
 const getArg = (name, fallback) => {
@@ -37,15 +38,32 @@ const LISTEN_HOST = getArg('--host', '127.0.0.1');
 const UPSTREAM_TIMEOUT_MS = 30000;
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
 
-const CORS_ALLOW_HEADERS = 'Content-Type, Accept, Authorization, X-Proxy-Key';
+const CORS_BASE_HEADERS = 'Content-Type, Accept, Authorization, X-Proxy-Key';
+const CORS_BASE_METHODS = 'POST, GET, PATCH, DELETE, OPTIONS';
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, GET, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': CORS_ALLOW_HEADERS,
+    'Access-Control-Allow-Methods': CORS_BASE_METHODS,
+    'Access-Control-Allow-Headers': CORS_BASE_HEADERS,
     'Access-Control-Expose-Headers': 'WWW-Authenticate',
     'Access-Control-Max-Age': '86400',
 };
+
+/** CORS 契约：净化回显浏览器声明的请求头/方法（与 worker/opencode-proxy 行为一致）。 */
+export function corsHeadersFor(req) {
+    const raw = String(req.headers['access-control-request-headers'] || '');
+    const picked = raw.split(',').map(s => s.trim()).filter(Boolean)
+        .slice(0, 16)
+        .filter(s => s.length <= 64 && /^[A-Za-z0-9-]+$/.test(s));
+    const method = String(req.headers['access-control-request-method'] || '').trim();
+    const allowMethods = Array.from(new Set([...CORS_BASE_METHODS.split(',').map(s => s.trim()), ...(method.length <= 16 && /^[A-Z]+$/.test(method) ? [method] : [])]));
+    const allowHeaders = Array.from(new Set([...CORS_BASE_HEADERS.split(',').map(s => s.trim()), ...picked]));
+    return {
+        ...CORS_HEADERS,
+        'Access-Control-Allow-Methods': allowMethods.join(', '),
+        'Access-Control-Allow-Headers': allowHeaders.join(', '),
+    };
+}
 
 /** ?target= 只允许回环/局域网目标：本代理无鉴权，任意公网 target 等于帮任意网页做跳板。 */
 function targetOverrideAllowed(url) {
@@ -63,16 +81,10 @@ function deny(res, message) {
     res.end(message);
 }
 
-createServer((req, res) => {
-    // CORS preflight：只回显白名单内的请求头。
+const server = createServer((req, res) => {
+    // CORS preflight：净化回显浏览器声明的请求头/方法。
     if (req.method === 'OPTIONS') {
-        const allowed = new Set(CORS_ALLOW_HEADERS.split(',').map(s => s.trim().toLowerCase()));
-        const requestedHeaders = req.headers['access-control-request-headers'];
-        const picked = String(requestedHeaders || '').split(',').map(s => s.trim()).filter(s => allowed.has(s.toLowerCase()));
-        res.writeHead(204, {
-            ...CORS_HEADERS,
-            ...(picked.length ? { 'Access-Control-Allow-Headers': picked.join(', ') } : {}),
-        });
+        res.writeHead(204, corsHeadersFor(req));
         res.end();
         return;
     }
@@ -159,12 +171,18 @@ createServer((req, res) => {
         if (body.length > 0) proxyReq.write(body);
         proxyReq.end();
     });
-}).listen(PROXY_PORT, LISTEN_HOST, () => {
-    console.log(`opencode CORS Proxy started`);
-    console.log(`  Proxy:  http://${LISTEN_HOST === '0.0.0.0' ? 'localhost' : LISTEN_HOST}:${PROXY_PORT}/`);
-    console.log(`  Target: ${TARGET}`);
-    if (LISTEN_HOST === '0.0.0.0') {
-        console.log(`  注意：正在监听全网卡，本代理无鉴权，仅建议在可信局域网使用。`);
-    }
-    console.log(`\nSet the proxy URL in SullyOS Settings to: http://localhost:${PROXY_PORT}`);
 });
+
+// 直接运行才监听端口；被测试 import 时不启动服务。
+const isDirectRun = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
+if (isDirectRun) {
+    server.listen(PROXY_PORT, LISTEN_HOST, () => {
+        console.log(`opencode CORS Proxy started`);
+        console.log(`  Proxy:  http://${LISTEN_HOST === '0.0.0.0' ? 'localhost' : LISTEN_HOST}:${PROXY_PORT}/`);
+        console.log(`  Target: ${TARGET}`);
+        if (LISTEN_HOST === '0.0.0.0') {
+            console.log(`  注意：正在监听全网卡，本代理无鉴权，仅建议在可信局域网使用。`);
+        }
+        console.log(`\nSet the proxy URL in SullyOS Settings to: http://localhost:${PROXY_PORT}`);
+    });
+}

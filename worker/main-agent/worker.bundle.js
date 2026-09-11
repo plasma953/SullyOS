@@ -19,6 +19,11 @@
 
 const DONE_MARKER = '[DONE]';
 
+// CORS 契约（见 docs/superpowers/specs/2026-09-11-cors-unification-design.md）：
+// 预检净化回显浏览器声明的请求头/方法，新头零配置放行；单文件内联以保持可整份复制部署。
+const CORS_BASE_HEADERS = 'Content-Type, Authorization, X-Client-Token, Accept';
+const CORS_BASE_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS, PROPFIND, MKCOL';
+
 // ─────────────────────── 基础工具 ───────────────────────
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -26,19 +31,28 @@ function json(data, status = 200) {
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'access-control-allow-origin': '*',
-      'access-control-allow-headers': 'Content-Type, Authorization, X-Client-Token',
-      'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS, PROPFIND, MKCOL',
+      'access-control-allow-headers': CORS_BASE_HEADERS,
+      'access-control-allow-methods': CORS_BASE_METHODS,
     },
   });
 }
 
-function corsPreflight() {
+function sanitizeRequestedHeaders(raw) {
+  return String(raw || '').split(',').map((s) => s.trim()).filter(Boolean)
+    .slice(0, 16)
+    .filter((s) => s.length <= 64 && /^[A-Za-z0-9-]+$/.test(s));
+}
+
+function corsPreflight(request) {
+  const picked = sanitizeRequestedHeaders(request && request.headers ? request.headers.get('access-control-request-headers') : '');
+  const method = String((request && request.headers ? request.headers.get('access-control-request-method') : '') || '').trim();
+  const allowMethods = Array.from(new Set([...CORS_BASE_METHODS.split(',').map((s) => s.trim()), ...(method.length <= 16 && /^[A-Z]+$/.test(method) ? [method] : [])]));
   return new Response(null, {
     status: 204,
     headers: {
       'access-control-allow-origin': '*',
-      'access-control-allow-headers': 'Content-Type, Authorization, X-Client-Token, Accept, Mcp-Session-Id, Last-Event-Id, X-Relay-Target-Authorization',
-      'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS, PROPFIND, MKCOL',
+      'access-control-allow-headers': [CORS_BASE_HEADERS, ...picked].join(', '),
+      'access-control-allow-methods': allowMethods.join(', '),
       'access-control-max-age': '86400',
     },
   });
@@ -742,7 +756,7 @@ export default {
     // Caddy /agent/* 会剥前缀；同时兼容裸路径与带前缀路径
     const plain = path.replace(/^\/agent(?=\/|$)/, '') || '/';
 
-    if (request.method === 'OPTIONS') return corsPreflight();
+    if (request.method === 'OPTIONS') return corsPreflight(request);
 
     if (plain === '/health' || plain === '/') {
       const providers = providersOf(env);

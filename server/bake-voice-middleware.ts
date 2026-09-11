@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { runBakeVoice } from '../api/minimax/_bakeVoiceCore';
+import { applyCors } from '../api/_cors';
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -16,9 +17,7 @@ function readBody(req: IncomingMessage): Promise<string> {
  * 三步编排见 ../api/minimax/_bakeVoiceCore.runBakeVoice（与 Vercel 函数共用）。
  */
 export async function bakeVoiceMiddleware(req: IncomingMessage, res: ServerResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-MiniMax-Region');
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     res.statusCode = 204;

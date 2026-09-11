@@ -29,6 +29,7 @@
 
 import { createServer, request as httpRequest } from 'http';
 import { request as httpsRequest } from 'https';
+import { pathToFileURL } from 'url';
 
 const args = process.argv.slice(2);
 const getArg = (name, fallback) => {
@@ -40,13 +41,32 @@ const PROXY_PORT = parseInt(getArg('--port', '18061'), 10);
 const TARGET = getArg('--target', 'http://localhost:18060');
 const PREWARM_ENABLED = !args.includes('--no-prewarm');
 
+const CORS_BASE_HEADERS = 'Content-Type, Accept, Mcp-Session-Id, Authorization, MCP-Protocol-Version, Last-Event-ID, X-MCP-Forward-Headers';
+const CORS_BASE_METHODS = 'POST, GET, DELETE, OPTIONS';
+
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Accept, Mcp-Session-Id, Authorization, MCP-Protocol-Version, Last-Event-ID, X-MCP-Forward-Headers',
+    'Access-Control-Allow-Methods': CORS_BASE_METHODS,
+    'Access-Control-Allow-Headers': CORS_BASE_HEADERS,
     'Access-Control-Expose-Headers': 'Mcp-Session-Id',
     'Access-Control-Max-Age': '86400',
 };
+
+/** CORS 契约：净化回显浏览器声明的请求头/方法（与 worker/mcp-proxy 行为一致）。 */
+export function corsHeadersFor(req) {
+    const raw = String(req.headers['access-control-request-headers'] || '');
+    const picked = raw.split(',').map(s => s.trim()).filter(Boolean)
+        .slice(0, 16)
+        .filter(s => s.length <= 64 && /^[A-Za-z0-9-]+$/.test(s));
+    const method = String(req.headers['access-control-request-method'] || '').trim();
+    const allowMethods = Array.from(new Set([...CORS_BASE_METHODS.split(',').map(s => s.trim()), ...(method.length <= 16 && /^[A-Z]+$/.test(method) ? [method] : [])]));
+    const allowHeaders = Array.from(new Set([...CORS_BASE_HEADERS.split(',').map(s => s.trim()), ...picked]));
+    return {
+        ...CORS_HEADERS,
+        'Access-Control-Allow-Methods': allowMethods.join(', '),
+        'Access-Control-Allow-Headers': allowHeaders.join(', '),
+    };
+}
 
 // ==================== SPA Pre-warm 逻辑 ====================
 
@@ -128,15 +148,10 @@ function isReplyCommentCall(parsed) {
 
 // ==================== Proxy Server ====================
 
-createServer((req, res) => {
-    // CORS preflight
+const server = createServer((req, res) => {
+    // CORS preflight：净化回显（含 MCP 自定义鉴权头，用户配置的头名零配置放行）。
     if (req.method === 'OPTIONS') {
-        // 自定义 MCP 鉴权头的名字由用户配置，预检时原样允许浏览器请求的头名。
-        const requestedHeaders = req.headers['access-control-request-headers'];
-        res.writeHead(204, {
-            ...CORS_HEADERS,
-            ...(requestedHeaders ? { 'Access-Control-Allow-Headers': requestedHeaders } : {}),
-        });
+        res.writeHead(204, corsHeadersFor(req));
         res.end();
         return;
     }
@@ -228,10 +243,16 @@ createServer((req, res) => {
         if (body.length > 0) proxyReq.write(body);
         proxyReq.end();
     });
-}).listen(PROXY_PORT, () => {
-    console.log(`MCP CORS Proxy started`);
-    console.log(`  Proxy:  http://localhost:${PROXY_PORT}/mcp`);
-    console.log(`  Target: ${TARGET}/mcp`);
-    console.log(`  SPA Pre-warm: ${PREWARM_ENABLED ? 'ENABLED' : 'disabled'}`);
-    console.log(`\nSet your MCP URL to: http://localhost:${PROXY_PORT}/mcp`);
 });
+
+// 直接运行才监听端口；被测试 import 时不启动服务。
+const isDirectRun = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
+if (isDirectRun) {
+    server.listen(PROXY_PORT, () => {
+        console.log(`MCP CORS Proxy started`);
+        console.log(`  Proxy:  http://localhost:${PROXY_PORT}/mcp`);
+        console.log(`  Target: ${TARGET}/mcp`);
+        console.log(`  SPA Pre-warm: ${PREWARM_ENABLED ? 'ENABLED' : 'disabled'}`);
+        console.log(`\nSet your MCP URL to: http://localhost:${PROXY_PORT}/mcp`);
+    });
+}

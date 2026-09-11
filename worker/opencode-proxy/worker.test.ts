@@ -79,16 +79,17 @@ describe('opencode-proxy worker', () => {
         expect(calls).toHaveLength(0);
     });
 
-    it('OPTIONS 只回显白名单内的请求头', async () => {
+    it('OPTIONS 回显任意合法请求头，非法头被丢弃', async () => {
         stubUpstream();
         const res = await worker.fetch(new Request('https://oc-proxy.test/', {
             method: 'OPTIONS',
-            headers: { 'access-control-request-headers': 'Authorization, X-Evil-Header' },
+            headers: { 'access-control-request-headers': 'X-New-Feature, bad header!' },
         }), ENV, { waitUntil: () => {} });
         expect(res.status).toBe(204);
         const echoed = res.headers.get('Access-Control-Allow-Headers') || '';
+        expect(echoed).toContain('X-New-Feature');
         expect(echoed).toContain('Authorization');
-        expect(echoed).not.toContain('X-Evil-Header');
+        expect(echoed).not.toContain('bad header!');
     });
 
     it('PROXY_KEY 对不上 → 403，上游不发', async () => {
