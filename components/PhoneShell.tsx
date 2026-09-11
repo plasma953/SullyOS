@@ -739,6 +739,9 @@ const PhoneShell: React.FC = () => {
     });
   }, [theme.wallpaper]);
 
+  // 布局形态判定（钩子必须在任何提前 return 之前调用，否则引导结束时会触发 hooks 数量不一致而崩溃）。
+  const layoutMode = useLayoutMode(theme.desktopMode);
+
   // 冷启动：先放「世界入场」cinematic（数据没就绪时它持续呼吸等待，绝不出现 spinner）。
   // BootSequence 在「数据就绪 + 停留够时长」后推进退场，再交还控制权给下方的锁屏/桌面。
   if (!bootDone && bootAnimationEnabled) {
@@ -906,7 +909,6 @@ const PhoneShell: React.FC = () => {
   // TODO(safe-area-A): 把剩余「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
   const shellPadsSafeArea = shellHandlesSafeArea(activeApp);
   // 桌面形态：全屏桌面 UI（左侧 Dock + 居中限宽内容区）。手机/平板竖屏保持原布局。
-  const layoutMode = useLayoutMode(theme.desktopMode);
   const isDesktopLayout = layoutMode === 'desktop';
 
   return (
