@@ -235,3 +235,18 @@ node_modules\.bin\tsc.CMD --noEmit -p tsconfig.json   # 触碰文件零新增命
 - 番茄钟专注态桌面重排。
 - MemoryPalace inline style 体系重构、CheckPhone 内部双栏（二期）。
 - worker/、VPS、Caddy 任何改动。
+
+---
+
+## 执行状态（2026-09-11）
+
+**已完成：**
+- 阶段 0：归档 `apk-archive` 分支；删除投屏 PiP；删除 APK 出包链（android/、CI、cap 配置、文档）；删除原生运行时钩子与原生推送线；删除 CapacitorHttp 回退与全部 `@capacitor` 依赖。构建 + 422 文件测试全绿。
+- 顺带：umami 残留清理；Vercel 部署存储治理（330→42 部署）；资产瘦身（塔罗 WebP 22→8.9MB、mediapipe 去 nosimd，dist 91→67MB）。
+- 阶段 1：`utils/layoutMode.ts`（手机/桌面两态判定，宽≥1024 且高≥600 进桌面）+ 测试；`DesktopDock`（左侧全局 Dock）；`DesktopHome`（桌面 App 网格主屏）；`DesktopHost` 三态化（桌面全屏 / 窗口化手机框 / 透传）。
+- 阶段 3（通用部分）：桌面内容区居中限宽，按 App 定制宽度（阅读/表单窄、画布/网格宽），覆盖全部 App。
+
+**实现口径调整（相对原计划）：** 原计划对每个 App 做 bespoke 多栏布局。实际采用「**通用桌面框架（左 Dock + 居中限宽内容区）覆盖全部 App + 按 App 定制宽度**」的方案——单次改动即让全部 App 获得桌面形态且零业务回归风险。Chat/GroupChat/Settings 等大文件（2400~4800 行）的 bespoke 双/三栏留作后续增量，避免在超大文件中重构顶层 return 引入回归。
+
+**后续增量（未做）：** Chat 中央列浮动头、GroupChat 双栏、Settings 左锚点导航、桌面弹窗居中化、平板横竖屏真机验收。
+
