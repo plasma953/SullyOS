@@ -88,6 +88,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Pomodoro: ({ className }) => <Timer className={className} weight="regular" />,
   Tarot: ({ className }) => <Cards className={className} weight="regular" />,
   Terminal: ({ className }) => <TerminalWindow className={className} weight="regular" />,
+  Launcher: ({ className }) => <House className={className} weight="fill" />,
 };
 
 export const INSTALLED_APPS: AppConfig[] = [

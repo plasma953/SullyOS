@@ -117,6 +117,9 @@ import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
 import { setAppPayloadWarmer, shouldUseIdleAppPreload } from './os/appPreload';
 import { isBrowserBackGuardState, makeBrowserBackGuardState } from '../utils/browserBackGuard';
+import { DesktopDock } from './desktop/DesktopDock';
+import { DesktopHome } from './desktop/DesktopHome';
+import { useLayoutMode } from '../utils/layoutMode';
 
 /*
 // Internal Error Boundary Component
@@ -877,9 +880,12 @@ const PhoneShell: React.FC = () => {
   // 自理名单见 utils/safeAreaApps.ts（迁移一个 App = 把它加进名单 + 顶栏用 --chrome-top 自己让位）。
   // TODO(safe-area-A): 把剩余「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
   const shellPadsSafeArea = shellHandlesSafeArea(activeApp);
+  // 桌面形态：全屏桌面 UI（左侧 Dock + 居中限宽内容区）。手机/平板竖屏保持原布局。
+  const layoutMode = useLayoutMode(theme.desktopMode);
+  const isDesktopLayout = layoutMode === 'desktop';
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none">
+    <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none" data-shell-layout={layoutMode}>
        {/* Optimized Background Layer */}
        {/* 壁纸底层：进 App 时只柔和虚化/压暗作背景，不再做缩放「过场」——
           进 App 的过渡感统一交给 App 容器的淡入（见下方 animate-fade-in 包裹层）。 */}
@@ -901,16 +907,18 @@ const PhoneShell: React.FC = () => {
             内容只画到可见 viewport 内，home 条上方留出 safe-bottom 视觉间隙。
           - 已迁移 App（彼方/聊天/群聊/桌面）：自理安全区。外壳直接把底边收回到可见 viewport
             （bottom = --standalone-safe-area-bottom），不让那多出来的 34px 把 App 底部控件压到 home 条上。 */}
+      {isDesktopLayout && <DesktopDock />}
+
       <div
         className="sully-shell-content absolute top-0 left-0 right-0 z-10 overflow-hidden bg-transparent overscroll-none flex flex-col"
         style={
           shellPadsSafeArea
-            ? { bottom: 0, paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }
-            : { bottom: 'var(--standalone-safe-area-bottom, 0px)' }
+            ? { bottom: 0, paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)', ...(isDesktopLayout ? { left: 68 } : null) }
+            : { bottom: 'var(--standalone-safe-area-bottom, 0px)', ...(isDesktopLayout ? { left: 68 } : null) }
         }
       >
           {/* App Container */}
-          <div className="flex-1 relative overflow-hidden" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
+          <div className={`flex-1 relative overflow-hidden ${isDesktopLayout ? 'mx-auto w-full max-w-[1400px]' : ''}`} style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
             <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>
               <Suspense fallback={<AppLoadingFallback onReturn={closeApp} animationEnabled={theme.appLoadingAnimationEnabled !== false} />}>
                 {/* 统一「淡入」过渡：每次切换 App 时 key 变化 → 重新挂载并淡入，
@@ -920,7 +928,7 @@ const PhoneShell: React.FC = () => {
                     时长也压短，进重 App 时不至于多等。 */}
                 <div key={activeApp} className="w-full h-full" style={{ animation: 'appEnterFade 200ms ease-out both' }}>
                   <style>{`@keyframes appEnterFade{from{opacity:0}to{opacity:1}}`}</style>
-                  {renderApp()}
+                  {isDesktopLayout && activeApp === AppID.Launcher ? <DesktopHome /> : renderApp()}
                 </div>
               </Suspense>
             </AppErrorBoundary>
