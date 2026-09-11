@@ -41,6 +41,9 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
   const { addToast, apiConfig, characters, userProfile, remoteVectorConfig } = useOS();
   const char = characters.find(c => c.id === charId);
   const [viewMode, setViewMode] = useState<PixelHomeViewMode>('map');
+  // 视图导航方向：'l' 前进、'r' 返回、'none' 首次进入（走淡入）
+  const [navDir, setNavDir] = useState<'l' | 'r' | 'none'>('none');
+  const viewAnim = navDir === 'l' ? 'animate-page-in-l' : navDir === 'r' ? 'animate-page-in-r' : 'animate-fade-soft';
   const [homeState, setHomeState] = useState<PixelHomeState | null>(null);
   const [assets, setAssets] = useState<PixelAsset[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<MemoryRoom>('living_room');
@@ -125,6 +128,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
       addToast?.('像素形象保存失败，可能是存储空间不足', 'error');
       return;
     }
+    setNavDir('r');
     setViewMode('map');
   }, [charId, charName, editorTarget, addToast]);
 
@@ -138,20 +142,24 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
     if (!pixelUserConfig) {
       addToast?.('先捏一下你自己的像素形象，再一起潜入TA的内心', 'info');
       setEditorTarget('user');
+      setNavDir('l');
       setViewMode('charEditor');
       return;
     }
     if (!pixelCharConfig) {
       addToast?.(`再给${charName}也捏一个像素形象吧，不然TA会以默认形象出现`, 'info');
       setEditorTarget('char');
+      setNavDir('l');
       setViewMode('charEditor');
       return;
     }
+    setNavDir('l');
     setViewMode('dive');
   }, [pixelUserConfig, pixelCharConfig, charName, addToast]);
 
   // 记忆潜行结束回调
   const handleDiveExit = useCallback((result: DiveResult | null) => {
+    setNavDir('r');
     setViewMode('map');
     if (result) {
       setLastDiveResult(result);
@@ -163,7 +171,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
   }, [addToast]);
 
   const handleEnterRoom = useCallback((roomId: MemoryRoom) => {
-    setSelectedRoom(roomId); setViewMode('room');
+    setSelectedRoom(roomId); setNavDir('l'); setViewMode('room');
   }, []);
 
   const handleRoomUpdate = useCallback(async () => {
@@ -202,16 +210,17 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
 
   const handleOpenLibrary = useCallback((slotId: string | null) => {
     pendingSlotRef.current = slotId;
+    setNavDir('l');
     setViewMode('library');
   }, []);
 
   // 从仓库选择资产
   const handleSelectAsset = useCallback(async (assetId: string) => {
     const slotId = pendingSlotRef.current;
-    if (!homeState) { setViewMode('room'); return; }
+    if (!homeState) { setNavDir('r'); setViewMode('room'); return; }
 
     const roomLayout = homeState.rooms.find(r => r.roomId === selectedRoom);
-    if (!roomLayout) { setViewMode('room'); return; }
+    if (!roomLayout) { setNavDir('r'); setViewMode('room'); return; }
 
     if (slotId === '__add__') {
       // 自由添加新家具
@@ -243,6 +252,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
     }
 
     pendingSlotRef.current = null;
+    setNavDir('r');
     setViewMode('room');
   }, [homeState, selectedRoom, handleRoomUpdate, addToast]);
 
@@ -274,10 +284,12 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             // 仓库若是从房间中"添加/替换家具"进入的，应回到房间；其它（全局仓库/工坊/捏人/单房间编辑）一律回地图
             if (viewMode === 'library' && pendingSlotRef.current) {
               pendingSlotRef.current = null;
+              setNavDir('r');
               setViewMode('room');
               return;
             }
             pendingSlotRef.current = null;
+            setNavDir('r');
             setViewMode('map');
           }}
           className="p-2 -ml-2 rounded-full hover:bg-slate-700 active:scale-90 transition-all">
@@ -297,6 +309,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
 
       {/* 主内容区 */}
       <div className="flex-1 overflow-hidden relative">
+        <div key={viewMode} className={`absolute inset-0 ${viewAnim}`}>
         {viewMode === 'map' && (
           <PixelHomeMap homeState={homeState} assets={assets}
             charSprite={pixelCharSprite || charAvatar} userName={userName} onEnterRoom={handleEnterRoom}
@@ -318,7 +331,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             targetLabel={editorTarget === 'user' ? '你自己' : charName}
             initial={editorTarget === 'user' ? pixelUserConfig : pixelCharConfig}
             onSave={handleSaveChar}
-            onCancel={() => setViewMode('map')}
+            onCancel={() => { setNavDir('r'); setViewMode('map'); }}
           />
         )}
         {viewMode === 'generator' && (
@@ -342,6 +355,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             onExit={handleDiveExit}
           />
         )}
+        </div>
       </div>
 
       {/* 底部工具栏 */}
@@ -350,10 +364,10 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
           <div className="flex items-center justify-around px-4 py-2">
             <BottomTab label="家园" active onClick={() => setViewMode('map')} />
             <BottomTab label="🌀潜行" onClick={handleEnterDive} />
-            <BottomTab label="仓库/工坊" onClick={() => { pendingSlotRef.current = null; setViewMode('library');  }} />
+            <BottomTab label="仓库/工坊" onClick={() => { pendingSlotRef.current = null; setNavDir('l'); setViewMode('library');  }} />
             <BottomTab label="导出" onClick={handleExport} />
-            <BottomTab label="捏TA" onClick={() => { setEditorTarget('char'); setViewMode('charEditor');  }} />
-            <BottomTab label="捏我" onClick={() => { setEditorTarget('user'); setViewMode('charEditor');  }} />
+            <BottomTab label="捏TA" onClick={() => { setEditorTarget('char'); setNavDir('l'); setViewMode('charEditor');  }} />
+            <BottomTab label="捏我" onClick={() => { setEditorTarget('user'); setNavDir('l'); setViewMode('charEditor');  }} />
             <BottomTab label="导入" onClick={() => importInputRef.current?.click()} />
           </div>
           <input ref={importInputRef} type="file" accept=".json" className="hidden"

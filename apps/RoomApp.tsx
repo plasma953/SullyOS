@@ -324,6 +324,9 @@ const RoomApp: React.FC = () => {
     });
     // 小小窝里的三个独立分区：房间 / 像素家园 / 家园（家园是另一套体系，单独成区）
     const [homeTab, setHomeTab] = useState<'room' | 'pixelHome' | 'worldHome'>(() => launchIntent?.tab || 'room');
+    // 视图导航方向：'l' 前进、'r' 返回、'none' 首次进入
+    const [navDir, setNavDir] = useState<'l' | 'r' | 'none'>('none');
+    const navAnim = navDir === 'none' ? '' : navDir === 'l' ? 'animate-page-in-l' : 'animate-page-in-r';
     // 家园「正式开始玩」（进世界/编辑）时全屏，隐去顶部三栏
     const [worldHomeFull, setWorldHomeFull] = useState(false);
     // 选人页（拜访谁的房间）的分组筛选
@@ -525,6 +528,7 @@ const RoomApp: React.FC = () => {
 
     const handleEnterRoom = async (c: CharacterProfile) => {
         setActiveCharacterId(c.id);
+        setNavDir('l');
         setViewState('room');
         
         // Load Items: Priority -> Character Config > Sully Defaults > Generic Defaults
@@ -1654,13 +1658,15 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
     // PIXEL HOME SCREEN
     if (viewState === 'pixelHome' && char) {
         return (
+            <div key="pixelHome" className={`h-full w-full ${navAnim}`}>
             <PixelHomeView
                 charId={char.id}
                 charName={char.name}
                 charAvatar={char.avatar}
                 userName={userProfile?.name || '用户'}
-                onBack={() => { if (launchedFromDesktopRef.current) closeApp(); else setViewState('select'); }}
+                onBack={() => { if (launchedFromDesktopRef.current) closeApp(); else { setNavDir('r'); setViewState('select'); } }}
             />
+            </div>
         );
     }
 
@@ -1702,7 +1708,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         // 按分组筛出要展示的角色（「全部」时就是原列表）
         const visitChars = filterCharactersByGroup(characters, characterGroups, visitGroupId);
         return (
-            <div className="h-full w-full flex flex-col font-light relative overflow-hidden" style={{ background: th.pageBg }}>
+            <div key={viewState} className={`h-full w-full flex flex-col font-light relative overflow-hidden ${navAnim}`} style={{ background: th.pageBg }}>
                 {/* 星点氛围 */}
                 <div className="absolute inset-0 pointer-events-none opacity-70" style={{ backgroundImage: th.stars }} />
 
@@ -1769,7 +1775,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                         const pixel = homeTab === 'pixelHome';
                                         const tint = th.tints[i % th.tints.length];
                                         return (
-                                            <button key={c.id} onClick={() => { if (pixel) { setActiveCharacterId(c.id); setViewState('pixelHome'); } else handleEnterRoom(c); }}
+                                            <button key={c.id} onClick={() => { if (pixel) { setActiveCharacterId(c.id); setNavDir('l'); setViewState('pixelHome'); } else handleEnterRoom(c); }}
                                                 className="group relative rounded-2xl px-3 pt-8 pb-5 flex flex-col items-center active:scale-95 transition-all overflow-hidden"
                                                 style={{ background: tint, border: `1px solid ${th.cardBorder}`, boxShadow: th.cardShadow }}>
                                                 {/* 内描金细框 + 四角宝石 */}
@@ -1878,7 +1884,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
     );
 
     return (
-        <div className="h-full w-full bg-[#f8fafc] flex flex-col relative overflow-hidden font-sans select-none">
+        <div key={viewState} className={`h-full w-full bg-[#f8fafc] flex flex-col relative overflow-hidden font-sans select-none ${navAnim}`}>
 
             {/* 「更新这一天」时一趟把整个房间生成出来（按次计费，所以一趟读完，之后逛屋不再等待）。
                 慢是必然的，这里用小字向用户解释清楚为什么。进门本身不再触发它。 */}
@@ -1996,7 +2002,11 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
             )}
 
             {/* 梦境演出 · 全屏覆盖（角色不记得梦，但用户偷看到了） */}
-            {showDream && char && <DreamTheater char={char} onExit={() => { setShowDream(false); if (launchedFromDesktopRef.current) closeApp(); }} />}
+            {showDream && char && (
+                <div key="dream" className="animate-fade-soft">
+                <DreamTheater char={char} onExit={() => { setShowDream(false); if (launchedFromDesktopRef.current) closeApp(); }} />
+                </div>
+            )}
 
             {/* Sidebar Toggle Button */}
             <button onClick={() => setShowSidebar(true)} className={`absolute right-0 top-1/2 -translate-y-1/2 bg-white/90 p-3 rounded-l-2xl shadow-lg border border-r-0 border-slate-200 transition-transform duration-300 z-[300] ${showSidebar ? 'translate-x-full' : 'translate-x-0'}`}>
@@ -2071,7 +2081,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
             {/* UI Overlay */}
             <div className="absolute top-0 w-full px-4 pb-2 flex justify-between z-30 pointer-events-none" style={{ paddingTop: 'max(3rem, var(--safe-top, 0px))' }}>
-                <button onClick={() => { if (launchedFromDesktopRef.current) closeApp(); else setViewState('select'); }} className="bg-white/90 p-2 rounded-full shadow-md pointer-events-auto active:scale-90 transition-transform text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg></button>
+                <button onClick={() => { if (launchedFromDesktopRef.current) closeApp(); else { setNavDir('r'); setViewState('select'); } }} className="bg-white/90 p-2 rounded-full shadow-md pointer-events-auto active:scale-90 transition-transform text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg></button>
                 <div className="flex gap-2 pointer-events-auto">
                     {/* 装修模式：撤销 / 重做 */}
                     {mode === 'edit' && (
