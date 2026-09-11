@@ -226,4 +226,4 @@ print('FFFD_FILES',bad)
 - ✅ A：Gallery `:283/:338/:326`、Study `:1995`、Shopping `:489/:503`、Journal `:972/:789/:1164`（行号为改后近似）+ 三处 `isDesktop` 接线（Gallery/Study/Shopping 补 `theme` 解构与 `useLayoutMode` 导入，Journal 已有 `theme`）。
 - ✅ 门禁：全量 425 文件 / 5031 用例全绿；`tsc --noEmit` 45 存量错误、触碰文件零命中；mojibakeGuard 绿；22 个触碰文件 FFFD/BOM 扫描 0；`vite build` 通过。
 - ✅ 文档：`docs/design-system.md` §三/§五、`notes/ethernet-branch-context.md`、`utils/buildInfo.ts` `v3.14 (Desktop Details)`。
-- ⏳ 未 commit、未 push；待用户在桌面/手机双档实测（外卖分类按钮过渡、各网格尺寸、reduced-motion）。
+- ✅ 提交 `a522ec49`，已 push origin/ethernet；待用户在桌面/手机双档实测（外卖分类按钮过渡、各网格尺寸、reduced-motion）。

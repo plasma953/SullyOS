@@ -78,4 +78,4 @@ SSH：`root@<your-vps-ip>:<ssh-port>`（opencode 的 vps 工具里叫 `default`�
 - ✅ 桌面占位组件缩小 + 全 App 按钮动效（2026-09-11，计划 `plans/2026-09-11-desktop-polish-button-motion.md`）：
   - **按钮动效**：`index.html` 中央兜底 `button, button *` 状态过渡（颜色/描边/阴影 200ms、transform/scale 150ms；自带 `transition-*` 的按钮类选择器优先，保留原样）+ 无 `active:` 档位按钮统一 `scale:0.98` 轻压（`scale` 属性不冲定位 transform，`inset-0` 整屏遮罩跳过）+ reduced-motion 降级；另把 49 个「有过渡但只过渡 transform、选中变色仍瞬跳」的按钮（ChatInputArea 22、ScheduleApp 5、GameApp 4 等 18 文件）升级 `transition-all duration-200`。
   - **桌面缩小**：Gallery 相册人物/照片网格、Study 书架（导入教材卡）、Shopping 商品网格改 `useLayoutMode` 桌面分支 `repeat(auto-fill,minmax(132-176px,1fr))`；Journal 选本网格桌面限宽 860 居中 + 空白角色页 `max-w-sm max-h-[420px] m-auto` 紧凑占位；手机端类名零变化。空态 `col-span-2` → `col-span-full`。
-  - 门禁：全量 425 文件 / 5031 用例全绿 + tsc 触碰零命中（存量 45）+ mojibake 绿 + FFFD/BOM 0 + `vite build` 通过。*待用户实测*：桌面 1440×900 各网格/占位尺寸、外卖分类按钮等选中过渡手感、reduced-motion；未 commit 未 push，Vercel 测试通道需 push 后可见。
+  - 门禁：全量 425 文件 / 5031 用例全绿 + tsc 触碰零命中（存量 45）+ mojibake 绿 + FFFD/BOM 0 + `vite build` 通过。提交 `a522ec49`，已 push origin/ethernet（Vercel 测试通道可用）。*待用户实测*：桌面 1440×900 各网格/占位尺寸、外卖分类按钮等选中过渡手感、reduced-motion。
