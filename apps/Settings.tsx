@@ -1416,7 +1416,6 @@ const Settings: React.FC = () => {
               blob,
               fileName,
               shareTitle: 'Sully Backup',
-              nativeChunked: true,
           });
           if (result === 'cancelled') return;
       } catch (e: any) {
@@ -1449,7 +1448,7 @@ const Settings: React.FC = () => {
       setDownloadUrl(url);
       setDownloadFileName(fileName);
       setShowExportModal(true);
-      await shareOrDownloadBlob({ blob, fileName, shareTitle, nativeChunked: true });
+      await shareOrDownloadBlob({ blob, fileName, shareTitle });
   };
 
   const handleAvatarModelExport = async () => {

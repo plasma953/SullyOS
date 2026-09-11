@@ -12,7 +12,6 @@
  * 文本清洗 / <语音> 标签解析仍复用 minimaxTts 的那套（与服务商无关）。
  */
 import { CharacterProfile, APIConfig } from '../types';
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { hashTtsParams, getCachedTts, saveCachedTts } from './ttsCache';
 import { normalizeApiKey } from './minimaxApiKey';
 import { getProxyWorkerUrl } from './proxyWorker';
@@ -221,25 +220,9 @@ export const normalizeFishReferenceId = (raw?: string | null): string => {
 export const canSynthesizeFish = (char: CharacterProfile, apiConfig: APIConfig): boolean =>
   !!resolveFishAudioApiKey(apiConfig) && !!normalizeFishReferenceId(char.voiceProfile?.fishReferenceId);
 
-const isNative = (): boolean => {
-  try {
-    return Capacitor.isNativePlatform();
-  } catch {
-    return false;
-  }
-};
-
 const shouldBypassWebProxy = (): boolean => {
   if (typeof window === 'undefined') return false;
   return isStaticWebDeployment(window.location.protocol, window.location.hostname);
-};
-
-/** base64 → Blob（CapacitorHttp 二进制响应是 base64 字符串）。 */
-const base64ToBlob = (b64: string, mime = 'audio/mpeg'): Blob => {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
 };
 
 /** 鱼声错误中文化（与 elevenLabsTts 的 friendlyElevenLabsError 同风格）。 */
@@ -255,7 +238,6 @@ const friendlyFishAudioError = (status: number, detail: string): string => {
 /**
  * 调鱼声 /v1/tts，拿回音频 Blob。
  * web：默认走 /api/fishaudio/tts 代理；静态预览（github.io / file:）直连上游兜底。
- * native：CapacitorHttp 直连上游，responseType='blob' 绕过浏览器 CORS。
  */
 const fishFetchAudio = async (
   payload: any,
@@ -267,21 +249,6 @@ const fishFetchAudio = async (
     Authorization: `Bearer ${apiKey}`,
     model,
   };
-
-  if (isNative()) {
-    const response = await CapacitorHttp.request({
-      url: FISH_UPSTREAM,
-      method: 'POST',
-      headers: jsonHeaders,
-      data: payload,
-      responseType: 'blob',
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(friendlyFishAudioError(response.status, String(response.data || '')));
-    }
-    // CapacitorHttp blob 响应：data 是 base64 字符串
-    return base64ToBlob(String(response.data || ''));
-  }
 
   // 静态部署（github.io / file:）没有 /api serverless 代理，直连 api.fish.audio 会被浏览器
   // CORS 挡（Fish 不发 ACAO 头）。走项目通用 sfworker 代理 /fishaudio/tts（带 CORS 头）。

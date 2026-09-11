@@ -179,9 +179,6 @@ export default defineConfig({
             if (id.includes('@phosphor-icons')) {
               return 'vendor-icons';
             }
-            if (id.includes('@capacitor')) {
-              return 'vendor-capacitor';
-            }
             return 'vendor';
           }
           if (id.includes('utils/memoryPalace')) {

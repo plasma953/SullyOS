@@ -3,9 +3,8 @@
  *
  * 第一阶段沿用 SullyOS 现有的「拿到完整 Blob 后播放 + IndexedDB 缓存」契约，
  * 因而聊天、见面、电话无需引入第二套 PCM 播放器。浏览器走同源 /api 或主代理
- * Worker，Capacitor 原生端直连官方接口；三条路径的请求体完全一致。
+ * Worker。
  */
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { APIConfig, CharacterProfile } from '../types';
 import { normalizeApiKey } from './minimaxApiKey';
 import { hashTtsParams, getCachedTts, saveCachedTts } from './ttsCache';
@@ -190,20 +189,9 @@ export const buildElevenLabsRequestBody = (
   };
 };
 
-const isNative = (): boolean => {
-  try { return Capacitor.isNativePlatform(); } catch { return false; }
-};
-
 const useStaticWorker = (): boolean => {
   if (typeof window === 'undefined') return false;
   return isStaticWebDeployment(window.location.protocol, window.location.hostname);
-};
-
-const base64ToBlob = (base64: string, mime = 'audio/mpeg'): Blob => {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
 };
 
 const friendlyElevenLabsError = (status: number, detail: string): string => {
@@ -222,22 +210,6 @@ const elevenLabsFetchAudio = async (
   payload: ElevenLabsRequestBody,
 ): Promise<Blob> => {
   const query = `voice_id=${encodeURIComponent(voiceId)}&output_format=${encodeURIComponent(ELEVENLABS_OUTPUT_FORMAT)}`;
-  if (isNative()) {
-    const response = await CapacitorHttp.request({
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=${encodeURIComponent(ELEVENLABS_OUTPUT_FORMAT)}`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey },
-      data: payload,
-      responseType: 'blob',
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(friendlyElevenLabsError(response.status, String(response.data || '')));
-    }
-    const blob = base64ToBlob(String(response.data || ''));
-    if (!blob.size) throw new Error('ElevenLabs 返回了空音频');
-    return blob;
-  }
-
   const url = useStaticWorker()
     ? `${getProxyWorkerUrl()}/elevenlabs/tts?${query}`
     : `/api/elevenlabs/tts?${query}`;

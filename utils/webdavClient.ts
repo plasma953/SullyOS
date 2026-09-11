@@ -3,37 +3,20 @@
  *
  * Supports: 坚果云 (Nutstore), Nextcloud, Synology NAS, TeraCloud, Box, etc.
  *
- * Two transports:
- *   - Native (Capacitor Android/iOS): hits the WebDAV server directly via
- *     CapacitorHttp, which uses the OS HTTP stack and bypasses CORS. No
- *     Cloudflare Worker request quota burned, no extra hop.
- *   - Web: routes POST + X-WebDAV-Method through the sully-n CF Worker so the
- *     browser CORS preflight passes (TeraCloud / infini-cloud / NAS don't
- *     return CORS headers).
+ * Transport: routes POST + X-WebDAV-Method through the sully-n CF Worker so the
+ * browser CORS preflight passes (TeraCloud / infini-cloud / NAS don't return
+ * CORS headers).
  */
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
-
 import { CloudBackupConfig, CloudBackupFile } from '../types';
 import { getProxyWorkerUrl } from './proxyWorker';
 
-// 经 CF Worker 代理上传（web 路径）的请求体上限。Cloudflare Worker 免费版单次请求体约 100MB，
+// 经 CF Worker 代理上传的请求体上限。Cloudflare Worker 免费版单次请求体约 100MB，
 // 超了会被 Worker/平台直接拒（返回 413 之类），且大请求体上行还可能撞 ~42s 上行超时。所以在发起
 // 上传前先按 blob 大小预检：超限直接给可执行的报错（改用本地导出 / GitHub），别让用户傻等几十秒
 // 才失败。备份 blob 已是压缩 zip，gzip 上行无意义，这里只做大小闸。
-// 注：native 路径（CapacitorHttp 直连上游 WebDAV，不过 Worker）不受此限，上游各家容量不一，
-// 由响应状态兜底；native 端把整个 blob 读进 ArrayBuffer 的额外拷贝是已知内存开销，彻底解需改
-// 「先落临时文件再按路径 PUT」，列为 follow-up。
 const WORKER_MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 const formatMiB = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-
-const isNative = (): boolean => {
-    try {
-        return Capacitor.isNativePlatform();
-    } catch {
-        return false;
-    }
-};
 
 const buildFullUrl = (webdavUrl: string, path: string): string =>
     webdavUrl.replace(/\/+$/, '') + '/' + path.replace(/^\/+/, '');
@@ -57,25 +40,6 @@ type WebdavResponse = {
     arrayBuffer: () => Promise<ArrayBuffer>;
 };
 
-// Android's HttpURLConnection (which CapacitorHttp uses under the hood) rejects
-// non-standard HTTP verbs like PROPFIND and MKCOL with `ProtocolException`.
-// Standard verbs go direct on native; the rest fall back to the Worker, which
-// is fine because PROPFIND/MKCOL responses are <1 KB.
-const NATIVE_DIRECT_METHODS: ReadonlySet<WebdavMethod> = new Set(['GET', 'PUT', 'DELETE']);
-
-const decodeBinaryFromCapacitor = (data: any): ArrayBuffer => {
-    if (data instanceof ArrayBuffer) return data;
-    if (data && data.buffer instanceof ArrayBuffer) return data.buffer;
-    if (typeof data === 'string') {
-        // Capacitor encodes binary as base64 for the JS bridge
-        const bin = atob(data);
-        const out = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-        return out.buffer;
-    }
-    return new ArrayBuffer(0);
-};
-
 const webdavRequest = async (
     config: CloudBackupConfig,
     path: string,
@@ -84,35 +48,6 @@ const webdavRequest = async (
 ): Promise<WebdavResponse> => {
     const fullUrl = buildFullUrl(config.webdavUrl, path);
     const auth = buildAuthHeader(config);
-
-    if (isNative() && NATIVE_DIRECT_METHODS.has(method)) {
-        const headers: Record<string, string> = { Authorization: auth };
-        if (opts.range) headers['Range'] = opts.range;
-        if (opts.depth) headers['Depth'] = opts.depth;
-        if (opts.contentType) headers['Content-Type'] = opts.contentType;
-
-        let data: any = undefined;
-        if (opts.body !== undefined && opts.body !== null) {
-            if (opts.body instanceof Blob) data = await opts.body.arrayBuffer();
-            else data = opts.body;
-        }
-
-        const isBinaryGet = method === 'GET';
-        const response = await CapacitorHttp.request({
-            url: fullUrl,
-            method,
-            headers,
-            data,
-            responseType: isBinaryGet ? 'arraybuffer' : 'text',
-        });
-
-        const respData = response.data;
-        return {
-            status: response.status,
-            text: async () => (typeof respData === 'string' ? respData : ''),
-            arrayBuffer: async () => decodeBinaryFromCapacitor(respData),
-        };
-    }
 
     // Web path → POST through Worker, real method goes in X-WebDAV-Method
     const url = buildProxyUrl(fullUrl);
@@ -175,9 +110,7 @@ export const createDirectory = async (config: CloudBackupConfig): Promise<boolea
 /**
  * Upload a backup file to WebDAV.
  *
- * Web: XMLHttpRequest so upload.onprogress can report real bytes-uploaded.
- * Native: CapacitorHttp PUT direct to upstream — no real progress events,
- * but the round-trip skips the Worker entirely.
+ * Uses XMLHttpRequest so upload.onprogress can report real bytes-uploaded.
  */
 export const uploadBackup = async (
     config: CloudBackupConfig,
@@ -194,23 +127,6 @@ export const uploadBackup = async (
         if (s === 507) return { ok: false, message: '云端空间不足' };
         return { ok: false, message: `上传失败 (${s})` };
     };
-
-    // On native, PUT goes direct via CapacitorHttp (no XHR upload progress
-    // available, so we just bookend with 5% → 100%). On web we keep XHR for
-    // real byte-level progress through the Worker.
-    if (isNative() && NATIVE_DIRECT_METHODS.has('PUT')) {
-        try {
-            onProgress?.(5);
-            const res = await webdavRequest(config, remotePath, 'PUT', {
-                contentType: 'application/zip',
-                body: blob,
-            });
-            onProgress?.(100);
-            return mapStatus(res.status);
-        } catch (e: any) {
-            return { ok: false, message: `上传失败: ${e?.message || '未知错误'}` };
-        }
-    }
 
     return new Promise((resolve) => {
         // 大小预检：经 Worker 代理的上传超体积上限时，直接给可执行报错，不发起注定失败的上传。
@@ -271,10 +187,9 @@ export const listBackups = async (config: CloudBackupConfig): Promise<CloudBacku
  *
  * Single-shot GET reliably failed for large backups: through the Worker, the
  * upstream→worker→client pipe outlived the worker's wall-clock budget on slow
- * links and the browser logged `net::ERR_FAILED 200 (OK)`. Through native
- * CapacitorHttp, the whole response would have to land in JS as one
- * ArrayBuffer (OOM risk on big zips). Chunking solves both: each request is
- * bounded, retries are local, and progress reflects actual bytes.
+ * links and the browser logged `net::ERR_FAILED 200 (OK)`. Chunking solves
+ * that: each request is bounded, retries are local, and progress reflects
+ * actual bytes.
  */
 const CHUNK_SIZE = 8 * 1024 * 1024;
 const MAX_CHUNK_RETRIES = 3;

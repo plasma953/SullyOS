@@ -1,9 +1,8 @@
 /**
- * MiniMax API endpoint resolution + native HTTP for Capacitor.
+ * MiniMax API endpoint resolution.
  *
  * Web/dev mode: prefers `/api/minimax/*` when a proxy exists.
  * Static web/file previews: falls back to MiniMax upstream directly.
- * Capacitor native: uses CapacitorHttp to bypass browser CORS.
  *
  * Region-aware: resolves upstream to either
  *   - 国内站   https://api.minimaxi.com   ('domestic', default)
@@ -13,7 +12,6 @@
  * (Vite dev proxy, Vercel serverless, dev middleware) can route correctly.
  */
 
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { MinimaxRegion } from '../types';
 import { safeResponseJson } from './safeApi';
 import { isStaticWebDeployment } from './staticWebDeployment';
@@ -53,14 +51,6 @@ export function getMinimaxBaseUrl(region: MinimaxRegion = currentRegion): string
   return REGION_BASE_URLS[normalizeMinimaxRegion(region)];
 }
 
-const isNative = (): boolean => {
-  try {
-    return Capacitor.isNativePlatform();
-  } catch {
-    return false;
-  }
-};
-
 const getUpstreamUrl = (proxyPath: string, region: MinimaxRegion = currentRegion): string | null => {
   const endpoint = PROXY_ENDPOINTS[proxyPath];
   if (!endpoint) return null;
@@ -72,18 +62,6 @@ const wrapWebResponse = (response: Response): MiniMaxResponseLike => ({
   status: response.status,
   json: async () => safeResponseJson(response.clone()),
 });
-
-/**
- * Return the actual URL to fetch for a given proxy path.
- * Native platforms always hit the upstream directly (no CORS).
- */
-export function resolveMinimaxUrl(proxyPath: string): string {
-  const upstream = getUpstreamUrl(proxyPath);
-  if (upstream && isNative()) {
-    return upstream;
-  }
-  return proxyPath;
-}
 
 const normalizeHeaders = (headers: Record<string, string> = {}): Record<string, string> => {
   const normalized: Record<string, string> = {};
@@ -155,8 +133,7 @@ const fetchUpstreamWeb = async (
 };
 
 /**
- * A fetch-like wrapper that uses CapacitorHttp on native platforms
- * and safe JSON parsing on web. The current MiniMax region is
+ * A fetch-like wrapper with safe JSON parsing. The current MiniMax region is
  * appended as `X-MiniMax-Region` so server-side proxies can route.
  */
 export async function minimaxFetch(
@@ -165,38 +142,22 @@ export async function minimaxFetch(
 ): Promise<MiniMaxResponseLike> {
   const region = currentRegion;
   const enrichedInit = { ...init, headers: withRegionHeader(init.headers, region) };
-  const url = resolveMinimaxUrl(proxyPath);
 
-  if (!isNative()) {
-    if (shouldBypassWebProxy(proxyPath)) {
-      return fetchUpstreamWeb(proxyPath, enrichedInit, region);
-    }
-
-    try {
-      const res = await fetch(url, enrichedInit);
-      // Static preview servers can rewrite missing /api routes to index.html.
-      if (shouldRetryAgainstUpstream(proxyPath, res)) {
-        return fetchUpstreamWeb(proxyPath, enrichedInit, region);
-      }
-      return wrapWebResponse(res);
-    } catch (error) {
-      if (PROXY_ENDPOINTS[proxyPath]) {
-        return fetchUpstreamWeb(proxyPath, enrichedInit, region);
-      }
-      throw error;
-    }
+  if (shouldBypassWebProxy(proxyPath)) {
+    return fetchUpstreamWeb(proxyPath, enrichedInit, region);
   }
 
-  const response = await CapacitorHttp.request({
-    url,
-    method: enrichedInit.method || 'POST',
-    headers: enrichedInit.headers || {},
-    data: enrichedInit.body ? JSON.parse(enrichedInit.body) : undefined,
-  });
-
-  return {
-    ok: response.status >= 200 && response.status < 300,
-    status: response.status,
-    json: async () => response.data,
-  };
+  try {
+    const res = await fetch(proxyPath, enrichedInit);
+    // Static preview servers can rewrite missing /api routes to index.html.
+    if (shouldRetryAgainstUpstream(proxyPath, res)) {
+      return fetchUpstreamWeb(proxyPath, enrichedInit, region);
+    }
+    return wrapWebResponse(res);
+  } catch (error) {
+    if (PROXY_ENDPOINTS[proxyPath]) {
+      return fetchUpstreamWeb(proxyPath, enrichedInit, region);
+    }
+    throw error;
+  }
 }

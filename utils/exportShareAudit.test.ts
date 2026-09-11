@@ -24,21 +24,18 @@ describe('文件导出统一分享适配', () => {
         expect(violations).toEqual([]);
     });
 
-    it('大体积系统备份也复用统一分享，并开启原生分片写盘', () => {
+    it('大体积系统备份也复用统一分享出口', () => {
         const settings = readFileSync(`${projectRoot}/apps/Settings.tsx`, 'utf8');
         expect(settings).toContain("import { shareOrDownloadBlob } from '../utils/shareExport'");
-        expect(settings).toContain('nativeChunked: true');
         expect(settings).not.toContain('Filesystem.appendFile');
     });
 
-    it('统一出口的顺序是原生分享、Web 文件分享、桌面下载兜底', () => {
+    it('统一出口的顺序是 Web 文件分享、桌面下载兜底', () => {
         const source = readFileSync(`${projectRoot}/utils/shareExport.ts`, 'utf8');
-        const nativeShare = source.indexOf('Capacitor.isNativePlatform()');
         const webShare = source.indexOf('navigator.share');
         const browserDownload = source.indexOf('anchor.download');
 
-        expect(nativeShare).toBeGreaterThanOrEqual(0);
-        expect(webShare).toBeGreaterThan(nativeShare);
+        expect(webShare).toBeGreaterThanOrEqual(0);
         expect(browserDownload).toBeGreaterThan(webShare);
     });
 });

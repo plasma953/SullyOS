@@ -16,7 +16,6 @@
  *     the configured Cloudflare Worker. This is independent of the system VPN
  *     and can succeed or fail independently too.
  */
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
 
 import { CloudBackupConfig, CloudBackupFile } from '../types';
 import { getProxyWorkerUrl } from './proxyWorker';
@@ -31,8 +30,8 @@ const RELEASE_NAME_PREFIX = 'Sully Backup ';
 // 32 MB / 片。备份超过这个体积时会自动切成多个 asset 上传到同一个
 // release，恢复时再拼回来。
 // Keep every transfer comfortably below both Cloudflare's request-body ceiling
-// and its 128 MB isolate memory ceiling. Smaller parts also reduce the native
-// Capacitor base64 bridge peak during downloads.
+// and its 128 MB isolate memory ceiling. Smaller parts also reduce peak memory
+// during downloads.
 const MAX_PART_SIZE = 32 * 1024 * 1024;
 const PART_FILENAME_RE = /^(.+)\.part(\d+)of(\d+)\.zip$/i;
 const MANIFEST_SUFFIX = '.sully-backup.json';
@@ -81,30 +80,6 @@ const isUsableAsset = (asset: any, expectedSize?: number): asset is GithubAsset 
     if (!Number.isFinite(size) || size <= 0) return false;
     return expectedSize === undefined || size === expectedSize;
 };
-
-const isNative = (): boolean => {
-    try { return Capacitor.isNativePlatform(); } catch { return false; }
-};
-
-// Capacitor 官方文档明确说：Android/iOS 上 CapacitorHttp 的 data 字段只接受
-// string 或 JSON。直接塞 Blob / ArrayBuffer，native bridge 会调 .toString()
-// 得到 "[object ArrayBuffer]" 之类的垃圾字符串发上去——GitHub 照样回 201
-// Created，但 asset 只有几十字节，UI 上看就是 0.0 MB。修法是把二进制转成
-// base64 字符串、加上 dataType:'file'，原生层会自己 base64 解码后写原始字节。
-//
-// 用 FileReader.readAsDataURL 走流式编码，比 btoa(String.fromCharCode(...))
-// 抗大文件——后者一次性展开 80MB Uint8Array 当 apply 参数会爆栈。
-const blobToBase64 = (blob: Blob): Promise<string> =>
-    new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = typeof reader.result === 'string' ? reader.result : '';
-            const comma = result.indexOf(',');
-            resolve(comma >= 0 ? result.slice(comma + 1) : result);
-        };
-        reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
-        reader.readAsDataURL(blob);
-    });
 
 // 安全默认：GitHub 备份优先直连。只有用户在新版风险提示下亲手开启过代理，
 // 才允许把 Token 与备份流量交给所选 Worker。consentVersion 会让旧配置里由
@@ -217,29 +192,11 @@ export const readResponseArrayBuffer = async (
     return merged.buffer;
 };
 
-const decodeBinary = (data: any): ArrayBuffer => {
-    if (data instanceof ArrayBuffer) return data;
-    if (data && data.buffer instanceof ArrayBuffer) return data.buffer;
-    if (typeof data === 'string') {
-        const bin = atob(data);
-        const out = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-        return out.buffer;
-    }
-    return new ArrayBuffer(0);
-};
-
 /**
  * Single request entry point. Routing priority:
- *   1. useProxy ON  → fetch() via CF Worker (works on both web and native;
- *      WebView fetch handles Blob bodies fine, and going through the Worker
- *      avoids CapacitorHttp's binary-body bridge bug while also helping
- *      users behind the GFW reach github.com).
- *   2. native + useProxy OFF → CapacitorHttp direct (uses OS HTTP stack,
- *      bypasses WebView CORS). For binary uploads, callers (uploadOneAsset)
- *      bypass this and use fetch() directly because CapacitorHttp can't
- *      forward ArrayBuffer/Blob body across the JS↔native bridge.
- *   3. web + useProxy OFF → fetch() direct.
+ *   1. useProxy ON  → fetch() via CF Worker (helps users behind the GFW
+ *      reach github.com).
+ *   2. useProxy OFF → fetch() direct.
  */
 const ghRequest = async (
     config: CloudBackupConfig,
@@ -267,48 +224,6 @@ const ghRequest = async (
             text: () => res.text(),
             json: () => res.json(),
             arrayBuffer: (onProgress) => readResponseArrayBuffer(res, onProgress),
-        };
-    }
-
-    if (isNative()) {
-        // 仅 useProxy=false 才走到这里。CapacitorHttp 用 OS HTTP 栈，绕过
-        // WebView CORS 直连 GitHub。注意：binary 上传不会走到这条路 —
-        // uploadOneAsset 的 native 分支专门用 fetch() 处理 Blob body，
-        // 因为 CapacitorHttp 不能正确转发二进制 body（桥会 JSON 化）。
-        let data: any = undefined;
-        let dataType: 'file' | undefined;
-        if (opts.body !== undefined && opts.body !== null) {
-            if (opts.body instanceof Blob) {
-                data = await blobToBase64(opts.body);
-                dataType = 'file';
-            } else if (opts.body instanceof ArrayBuffer) {
-                data = await blobToBase64(new Blob([opts.body]));
-                dataType = 'file';
-            } else if (typeof opts.body === 'string') {
-                data = opts.body;
-            } else {
-                data = opts.body;
-            }
-        }
-        const response = await CapacitorHttp.request({
-            url: fullUrl,
-            method,
-            headers: baseHeaders,
-            data,
-            ...(dataType ? { dataType } : {}),
-            responseType: opts.binary ? 'arraybuffer' : 'json',
-        });
-        const respData = response.data;
-        const respHeaders: Record<string, string> = {};
-        for (const [k, v] of Object.entries(response.headers || {})) {
-            respHeaders[k.toLowerCase()] = String(v);
-        }
-        return {
-            status: response.status,
-            headers: respHeaders,
-            text: async () => (typeof respData === 'string' ? respData : JSON.stringify(respData)),
-            json: async () => (typeof respData === 'string' ? JSON.parse(respData || 'null') : respData),
-            arrayBuffer: async () => decodeBinary(respData),
         };
     }
 
@@ -435,60 +350,6 @@ const uploadOneAsset = async (
     const owner = config.githubOwner!;
     const repo = repoName(config);
     const url = `${UPLOAD_HOST}/repos/${owner}/${repo}/releases/${releaseId}/assets?name=${encodeURIComponent(assetName)}`;
-
-    if (isNative()) {
-        // CapacitorHttp 在原生这边不能正确转发二进制 body — 把 Blob/ArrayBuffer
-        // 通过 JS↔native 桥传过去，桥会尝试 JSON 化导致 upstream 收到 0 字节体，
-        // GitHub 还是 201 创建了 asset，但 size = 0（用户看到的就是 0.0 MB）。
-        // WebView 自带的 fetch() 可以直接处理 Blob body；是否真的能触达
-        // uploads.github.com 仍取决于设备网络、VPN/PWA 接管和服务端跨域行为。
-        // useProxy 决定走应用内 Worker 还是直连。
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), UPLOAD_TIMEOUT_MS);
-        try {
-            const targetUrl = shouldUseGithubProxy(config) ? proxify(url) : url;
-            const headers: Record<string, string> = {
-                Authorization: `Bearer ${token}`,
-                Accept: 'application/vnd.github+json',
-                'Content-Type': contentType,
-            };
-            if (shouldUseGithubProxy(config)) headers['X-GitHub-Method'] = 'POST';
-            const res = await fetch(targetUrl, {
-                method: 'POST',
-                headers,
-                body: blob,
-                signal: abortController.signal,
-            });
-            onFraction?.(1);
-            const responseHeaders: Record<string, string> = {};
-            res.headers.forEach((value, key) => { responseHeaders[key.toLowerCase()] = value; });
-            if (res.status === 201) {
-                let asset: GithubAsset | undefined;
-                try { asset = await res.json(); } catch { /* reconciled by caller */ }
-                if (isUsableAsset(asset, blob.size)) {
-                    return { ok: true, message: '上传成功', status: res.status, headers: responseHeaders, asset };
-                }
-                return {
-                    ok: false,
-                    status: res.status,
-                    headers: responseHeaders,
-                    message: 'GitHub 已创建附件，但附件状态或大小不正确',
-                };
-            }
-            const text = await res.text();
-            return {
-                ok: false,
-                status: res.status,
-                headers: responseHeaders,
-                message: `上传失败 (${res.status}): ${text.slice(0, 120)}`,
-            };
-        } catch (e: any) {
-            const kind = e?.name === 'AbortError' ? 'timeout' : 'network';
-            return { ok: false, message: describeGithubUploadTransportFailure(config, kind) };
-        } finally {
-            clearTimeout(timeoutId);
-        }
-    }
 
     return new Promise((resolve) => {
         const targetUrl = shouldUseGithubProxy(config) ? proxify(url) : url;
@@ -929,8 +790,7 @@ export const listBackups = async (config: CloudBackupConfig): Promise<CloudBacku
 
 /**
  * Asset download: GET /releases/assets/{id} with Accept:octet-stream returns
- * a 302 to a signed CDN URL. fetch() with redirect:'follow' handles it on
- * web; CapacitorHttp follows redirects by default.
+ * a 302 to a signed CDN URL. fetch() with redirect:'follow' handles it.
  *
  * For multi-part backups, href is 'releaseId:id1,id2,id3,...'. We download
  * each part sequentially and concatenate into a single Blob — bytes line up
@@ -1034,7 +894,6 @@ export const downloadBackup = async (
     } catch (error: any) {
         if (
             !shouldUseGithubProxy(config)
-            && !isNative()
             && (error instanceof TypeError || /failed to fetch/i.test(String(error?.message || '')))
         ) {
             throw new Error(
