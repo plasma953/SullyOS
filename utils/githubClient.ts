@@ -19,6 +19,7 @@
 
 import { CloudBackupConfig, CloudBackupFile } from '../types';
 import { getProxyWorkerUrl } from './proxyWorker';
+import { externalFetch } from './externalRequest';
 
 const API_HOST = 'https://api.github.com';
 const UPLOAD_HOST = 'https://uploads.github.com';
@@ -211,10 +212,12 @@ const ghRequest = async (
             ...baseHeaders,
             'X-GitHub-Method': method,
         };
-        const res = await fetch(proxify(fullUrl), {
+        const res = await externalFetch(`/github?url=${encodeURIComponent(fullUrl)}`, {
+            route: 'worker',
             method: 'POST',
             headers,
             body: (opts.body as BodyInit | undefined) ?? null,
+            purpose: `GitHub ${method}`,
         });
         const respHeaders: Record<string, string> = {};
         res.headers.forEach((v, k) => { respHeaders[k.toLowerCase()] = v; });
@@ -227,11 +230,13 @@ const ghRequest = async (
         };
     }
 
-    const res = await fetch(fullUrl, {
+    const res = await externalFetch(fullUrl, {
+        route: 'direct',
         method,
         headers: baseHeaders,
         body: (opts.body as BodyInit | undefined) ?? null,
         redirect: 'follow',
+        purpose: `GitHub ${method}`,
     });
     const respHeaders: Record<string, string> = {};
     res.headers.forEach((v, k) => { respHeaders[k.toLowerCase()] = v; });

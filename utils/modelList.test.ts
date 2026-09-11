@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractModelIds, fetchChatModelList, normalizeModelIds } from './modelList';
 
 describe('model list normalization', () => {
@@ -32,13 +32,18 @@ describe('fetchChatModelList（浏览器拉 /models 唯一入口）', () => {
         localStorage.removeItem(AGENT_KEY);
     });
 
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     it('未配置中转：浏览器直连，key 放 Authorization', async () => {
         const seen: Array<{ url: string; init: RequestInit }> = [];
         const fake = vi.fn(async (url: string, init: RequestInit) => {
             seen.push({ url: String(url), init });
             return okJson({ data: [{ id: 'm1' }] });
         });
-        const out = await fetchChatModelList('https://api.example.com/v1/', 'sk-x', fake as typeof fetch);
+        vi.stubGlobal('fetch', fake);
+        const out = await fetchChatModelList('https://api.example.com/v1/', 'sk-x');
         expect(out).toEqual(['m1']);
         expect(seen).toHaveLength(1);
         expect(seen[0].url).toBe('https://api.example.com/v1/models');
@@ -53,7 +58,8 @@ describe('fetchChatModelList（浏览器拉 /models 唯一入口）', () => {
             return okJson({ data: [{ id: 'm2' }] });
         });
         try {
-            const out = await fetchChatModelList('https://opencode.ai/zen/go/v1', 'sk-y', fake as typeof fetch);
+            vi.stubGlobal('fetch', fake);
+            const out = await fetchChatModelList('https://opencode.ai/zen/go/v1', 'sk-y');
             expect(out).toEqual(['m2']);
             expect(seen).toHaveLength(1);
             expect(seen[0].url).toBe(
@@ -71,10 +77,12 @@ describe('fetchChatModelList（浏览器拉 /models 唯一入口）', () => {
 
     it('上游非 200 / 非法 JSON 按原样抛错', async () => {
         const bad = vi.fn(async () => okJson({ error: 'x' }, 401));
-        await expect(fetchChatModelList('https://a.example.com', 'k', bad as typeof fetch))
+        vi.stubGlobal('fetch', bad);
+        await expect(fetchChatModelList('https://a.example.com', 'k'))
             .rejects.toThrow('HTTP 401');
         const broken = vi.fn(async () => new Response('not-json', { status: 200 }));
-        await expect(fetchChatModelList('https://a.example.com', 'k', broken as typeof fetch))
+        vi.stubGlobal('fetch', broken);
+        await expect(fetchChatModelList('https://a.example.com', 'k'))
             .rejects.toThrow('模型列表不是合法 JSON');
     });
 });

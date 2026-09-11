@@ -77,11 +77,16 @@ describe('collaboration API selection', () => {
     const request = vi.fn(async () => new Response(JSON.stringify({ data: { models: [{ model_name: 'alpha' }, { id: 'beta' }] } }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
-    })) as unknown as typeof fetch;
-    const models = await fetchCollaborationModels({ baseUrl: 'https://api.example/v1/', apiKey: 'remembered-key' }, request);
-    expect(models).toEqual(['alpha', 'beta']);
-    expect(request).toHaveBeenCalledWith('https://api.example/v1/models', expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: 'Bearer remembered-key' }),
     }));
+    vi.stubGlobal('fetch', request);
+    try {
+      const models = await fetchCollaborationModels({ baseUrl: 'https://api.example/v1/', apiKey: 'remembered-key' });
+      expect(models).toEqual(['alpha', 'beta']);
+      expect(request).toHaveBeenCalledWith('https://api.example/v1/models', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer remembered-key' }),
+      }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

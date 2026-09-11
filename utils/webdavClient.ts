@@ -9,6 +9,7 @@
  */
 import { CloudBackupConfig, CloudBackupFile } from '../types';
 import { getProxyWorkerUrl } from './proxyWorker';
+import { externalFetch } from './externalRequest';
 
 // 经 CF Worker 代理上传的请求体上限。Cloudflare Worker 免费版单次请求体约 100MB，
 // 超了会被 Worker/平台直接拒（返回 413 之类），且大请求体上行还可能撞 ~42s 上行超时。所以在发起
@@ -50,7 +51,6 @@ const webdavRequest = async (
     const auth = buildAuthHeader(config);
 
     // Web path → POST through Worker, real method goes in X-WebDAV-Method
-    const url = buildProxyUrl(fullUrl);
     const headers: Record<string, string> = {
         Authorization: auth,
         'X-WebDAV-Method': method,
@@ -59,10 +59,12 @@ const webdavRequest = async (
     if (opts.depth) headers['X-WebDAV-Depth'] = opts.depth;
     if (opts.contentType) headers['Content-Type'] = opts.contentType;
 
-    const res = await fetch(url, {
+    const res = await externalFetch(`/webdav?url=${encodeURIComponent(fullUrl)}`, {
+        route: 'worker',
         method: 'POST',
         headers,
         body: (opts.body as BodyInit | undefined) ?? null,
+        purpose: `WebDAV ${method}`,
     });
     return {
         status: res.status,
