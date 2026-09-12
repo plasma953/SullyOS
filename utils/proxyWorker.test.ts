@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_PROXY_WORKER,
+  FALLBACK_PROXY_WORKER,
+  resolveDefaultProxyWorker,
   getProxyWorkerUrl,
   setProxyWorkerUrl,
   isCustomProxyWorker,
@@ -119,5 +121,26 @@ describe('rewriteStaleWorkerUrl', () => {
     expect(rewriteStaleWorkerUrl(DEFAULT_PROXY_WORKER)).toBe(DEFAULT_PROXY_WORKER);
     expect(rewriteStaleWorkerUrl('https://my-own.example.com/api')).toBe('https://my-own.example.com/api');
     expect(rewriteStaleWorkerUrl('')).toBe('');
+  });
+});
+
+// 构建期默认地址（VITE_PROXY_WORKER_URL → __PROXY_WORKER_URL__）：
+// 部署者在构建环境注入自建实例后，这份前端清除本地覆盖/新设备默认就指向它；
+// 未注入或注入非法值时回落作者公共实例，仓库默认行为不变。
+describe('resolveDefaultProxyWorker', () => {
+  it('合法 https 地址：原样返回并去掉尾斜杠', () => {
+    expect(resolveDefaultProxyWorker('https://my-own.example.com/')).toBe('https://my-own.example.com');
+    expect(resolveDefaultProxyWorker('  https://my-own.example.com///  ')).toBe('https://my-own.example.com');
+  });
+
+  it('http 地址也接受', () => {
+    expect(resolveDefaultProxyWorker('http://localhost:8787')).toBe('http://localhost:8787');
+  });
+
+  it('空值 / 非法值：回落作者公共实例', () => {
+    expect(resolveDefaultProxyWorker('')).toBe(FALLBACK_PROXY_WORKER);
+    expect(resolveDefaultProxyWorker(undefined)).toBe(FALLBACK_PROXY_WORKER);
+    expect(resolveDefaultProxyWorker('my-worker.example.com')).toBe(FALLBACK_PROXY_WORKER);
+    expect(resolveDefaultProxyWorker('javascript:alert(1)')).toBe(FALLBACK_PROXY_WORKER);
   });
 });

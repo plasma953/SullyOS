@@ -16,14 +16,32 @@
  *
  * 默认指向作者部署的公共实例。如果作者哪天不再维护、或你想完全自托管，
  * 把自己部署的 worker 地址填进「设置 → 网络代理 (Worker)」即可，
- * 以上全部能力会自动切到你的实例，无需改任何代码。
+ * 以上全部能力会自动切到你的实例，无需改任何代码。部署者也可以在构建期设置
+ * VITE_PROXY_WORKER_URL，让你部署的这份前端默认就指向自建实例
+ * （见 docs/superpowers/specs/2026-09-12-worker-default-origin-guard-design.md）。
  *
  * 网易云音乐（MusicContext）在播放器设置里另有一个服务地址输入框：留空 = 跟随这里，
  * 填了则只有音乐走那个地址。小红书 Lite 的 serverUrl 指向用户自己电脑上跑的服务，
  * 跟这里是两回事。
  */
 
-export const DEFAULT_PROXY_WORKER = 'https://sullymeow.ccwu.cc';
+/** 作者公共实例：构建期未注入 VITE_PROXY_WORKER_URL 时的默认值。 */
+export const FALLBACK_PROXY_WORKER = 'https://sullymeow.ccwu.cc';
+
+/**
+ * 解析构建期注入的默认 Worker 地址（VITE_PROXY_WORKER_URL → __PROXY_WORKER_URL__）。
+ * 非法值（非 http/https）回落作者公共实例。纯函数，单测直接覆盖。
+ */
+export function resolveDefaultProxyWorker(envValue?: string): string {
+  const url = String(envValue || '').trim().replace(/\/+$/, '');
+  return /^https?:\/\//i.test(url) ? url : FALLBACK_PROXY_WORKER;
+}
+
+// 非浏览器运行时（amsg worker bundle 走 esbuild，没有该 define）：typeof 读取
+// 未声明标识符是安全的，回落作者默认即可——后台地址由 setProxyWorkerUrlOverride()
+// 在运行时注入。
+const injectedDefault = typeof __PROXY_WORKER_URL__ === 'string' ? __PROXY_WORKER_URL__ : '';
+export const DEFAULT_PROXY_WORKER = resolveDefaultProxyWorker(injectedDefault);
 
 const LS_KEY = 'sully_proxy_worker_url_v1';
 const SETTINGS_FOCUS_SESSION_KEY = 'sully_settings_focus_proxy_worker_v1';

@@ -76,6 +76,9 @@ export default defineConfig({
     __BUILD_COMMIT__: JSON.stringify(gitInfo.commit),
     __BUILD_TIME__: JSON.stringify(buildTime),
     __BUILD_BADGE_VISIBLE__: JSON.stringify(showBuildBadge),
+    // 部署者可设 VITE_PROXY_WORKER_URL 让中心 worker 默认指向自建实例；
+    // 未设 = 空串，代理层回落作者公共实例。见 utils/proxyWorker.ts。
+    __PROXY_WORKER_URL__: JSON.stringify(process.env.VITE_PROXY_WORKER_URL || ''),
   },
   // GitHub Pages 发布时使用相对路径，避免仓库子路径导致资源 404
   base: process.env.GITHUB_PAGES ? './' : '/',

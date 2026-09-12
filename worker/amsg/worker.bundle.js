@@ -8052,7 +8052,13 @@ var isFreshChatPresence = (value, charId, nowMs) => Boolean(
 );
 
 // utils/proxyWorker.ts
-var DEFAULT_PROXY_WORKER = "https://sullymeow.ccwu.cc";
+var FALLBACK_PROXY_WORKER = "https://sullymeow.ccwu.cc";
+function resolveDefaultProxyWorker(envValue) {
+  const url = String(envValue || "").trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(url) ? url : FALLBACK_PROXY_WORKER;
+}
+var injectedDefault = typeof __PROXY_WORKER_URL__ === "string" ? __PROXY_WORKER_URL__ : "";
+var DEFAULT_PROXY_WORKER = resolveDefaultProxyWorker(injectedDefault);
 var LS_KEY = "sully_proxy_worker_url_v1";
 var STALE_HOSTS = [/sully-n\.qegj567\.workers\.dev/i, /sullymeow\.ccwu213\.cc/i];
 var normalize = (url) => url.trim().replace(/\/+$/, "");

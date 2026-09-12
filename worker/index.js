@@ -2433,6 +2433,18 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin") || "*";
 
+    // Origin 白名单（可选，设计见 docs/superpowers/specs/2026-09-12-worker-default-origin-guard-design.md）：
+    // env.ALLOWED_ORIGINS 逗号分隔；未配置 = 维持现状全开（公共实例/旧行为）。
+    // 浏览器请求带 Origin 且不在名单 → 403 且不回 CORS 头；无 Origin（后台任务/curl）放行。
+    const allowedOrigins = String((env && env.ALLOWED_ORIGINS) || "")
+      .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    if (allowedOrigins.length > 0 && origin !== "*" && !allowedOrigins.includes(origin.toLowerCase())) {
+      return new Response(JSON.stringify({ error: "origin_not_allowed" }), {
+        status: 403,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
     // CORS preflight：固定放行表 + 浏览器声明要发的头/方法原样回显（数量/长度封顶）。
     // 新功能加请求头时不再需要改放行表，回显只做"允许声明"，worker 实际读取的
     // 头仍由各端点按名显式取用——放宽的是预检，不是上游转发面。
