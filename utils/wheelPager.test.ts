@@ -56,3 +56,62 @@ describe('wheelPager', () => {
         expect(goPage).not.toHaveBeenCalled();
     });
 });
+
+describe('wheelPager · 纵向滚动容器判定（DOM）', () => {
+    const makeEl = (opts: { overflowY?: string; scrollHeight?: number; clientHeight?: number; scrollTop?: number } = {}) => {
+        const el = document.createElement('div');
+        if (opts.overflowY) el.style.overflowY = opts.overflowY;
+        Object.defineProperty(el, 'scrollHeight', { value: opts.scrollHeight ?? 0, configurable: true });
+        Object.defineProperty(el, 'clientHeight', { value: opts.clientHeight ?? 0, configurable: true });
+        Object.defineProperty(el, 'scrollTop', { value: opts.scrollTop ?? 0, writable: true, configurable: true });
+        return el;
+    };
+
+    const mount = (container: HTMLElement, target: HTMLElement) => {
+        container.appendChild(target);
+        document.body.appendChild(container);
+        return () => container.remove();
+    };
+
+    it('内容溢出但滚不动的祖先（overflow 可见）不拦截翻页', () => {
+        const wrapper = makeEl({ scrollHeight: 500, clientHeight: 400 });
+        const target = document.createElement('span');
+        const unmount = mount(wrapper, target);
+        const goPage = vi.fn();
+        createWheelPager(goPage).handle(evt(120, { target }));
+        expect(goPage).toHaveBeenCalledWith(1);
+        unmount();
+    });
+
+    it('真滚动容器未到底不翻页，到底才翻页', () => {
+        const scroller = makeEl({ overflowY: 'auto', scrollHeight: 500, clientHeight: 400, scrollTop: 0 });
+        const target = document.createElement('span');
+        const unmount = mount(scroller, target);
+
+        const before = vi.fn();
+        createWheelPager(before).handle(evt(120, { target }));
+        expect(before).not.toHaveBeenCalled();
+
+        scroller.scrollTop = 100;
+        const after = vi.fn();
+        createWheelPager(after).handle(evt(120, { target }));
+        expect(after).toHaveBeenCalledWith(1);
+        unmount();
+    });
+
+    it('真滚动容器未到顶不翻页，到顶翻上一页', () => {
+        const scroller = makeEl({ overflowY: 'auto', scrollHeight: 500, clientHeight: 400, scrollTop: 100 });
+        const target = document.createElement('span');
+        const unmount = mount(scroller, target);
+
+        const before = vi.fn();
+        createWheelPager(before).handle(evt(-120, { target }));
+        expect(before).not.toHaveBeenCalled();
+
+        scroller.scrollTop = 0;
+        const after = vi.fn();
+        createWheelPager(after).handle(evt(-120, { target }));
+        expect(after).toHaveBeenCalledWith(-1);
+        unmount();
+    });
+});

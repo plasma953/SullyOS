@@ -907,7 +907,7 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onClickCapture={handleClickCapture}
-        className="flex-1 flex overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
+        className="flex-1 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
         style={{
             scrollBehavior: 'smooth',
             overscrollBehaviorX: 'contain',

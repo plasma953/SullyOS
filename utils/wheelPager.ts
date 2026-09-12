@@ -5,6 +5,9 @@ import { useCallback, useRef, type WheelEvent } from 'react';
 // 手机无滚轮硬件不触发；触控板横向滚动（deltaX 主导）交给原生横滑。
 // 纵向滚动优先：向上遍历祖先，若存在纵向可滚容器且未滚到对应边界，
 // 让原生滚动消化这次滚轮，到边界才翻页（动作面板/弹窗内容可滚的场景）。
+// 只认真滚动容器：overflow-y 必须是 auto/scroll/overlay。内容溢出但
+// overflow 可见/hidden/clip 的容器滚不动任何东西，不能拦截翻页（否则窗口变矮、
+// 页面内容被裁剪时会出现「只能单方向翻页」）。
 
 export interface WheelPagerEvent {
     deltaY: number;
@@ -23,10 +26,16 @@ const ACCUM_THRESHOLD = 48;    // 累积位移达到该值才翻页
 const IDLE_RESET_MS = 160;     // 停滚多久后累积归零
 const DEFAULT_LOCK_MS = 550;   // 翻页后锁这段时间（覆盖 smooth 滚动/过渡动画）
 
+const isVerticallyScrollable = (el: HTMLElement): boolean => {
+    if (el.scrollHeight - el.clientHeight <= VERTICAL_OVERFLOW) return false;
+    const overflowY = window.getComputedStyle(el).overflowY;
+    return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+};
+
 const findVerticalScroller = (start: EventTarget | null): HTMLElement | null => {
     let el = start instanceof Element ? (start as HTMLElement) : null;
     while (el && el !== document.body) {
-        if (el.scrollHeight - el.clientHeight > VERTICAL_OVERFLOW) return el;
+        if (isVerticallyScrollable(el)) return el;
         el = el.parentElement;
     }
     return null;
