@@ -139,8 +139,9 @@ export const instantNotificationTag = (charId: string) => `amsg-instant-${charId
  *                用户会说「有时候响有时候不响」的那种情况。一轮响一声：第一段重新
  *                提醒，后面几段安静地把内容更新掉。
  *
- * 只给即时对话用——主动消息是「到点找人说话」，那条路要响铃叫人，既不折叠也不静音。
- *
+ * 只给即时对话用——主动消息的折叠在推送出口统一做（见 pushPolicy.ts 的
+ * applyScheduledNotificationPolicy）：同样按角色只留最新一条、一批只响第一声，
+ * 但保留「到点叫人」的语义——每批第一段重新提醒、后续段安静更新。
  * 载荷本来就没有 notification 时不凭空造一个：SW 拿不到 title / body 只能弹一条空白
  * 横幅，而「没有 notification」这件事本身在 SW 那边有按 messageKind 的默认行为，
  * 替它做主只会把默认行为弄坏。

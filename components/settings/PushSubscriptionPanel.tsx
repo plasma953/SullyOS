@@ -61,8 +61,8 @@ const REGISTRATION_TEXT: Record<AmsgPushRegistrationState, { value: string; bad:
   'worker-unset': { value: '还没填云端地址', bad: true },
   unreachable: { value: '问不到（云端连不上，或版本太旧没这个接口）', bad: true },
   missing: { value: '没有登记', bad: true },
-  'other-endpoint': { value: '登记的是别的设备', bad: true },
-  matched: { value: '已登记（就是这台设备）', bad: false },
+  'other-endpoint': { value: '登记列表里没有这台设备', bad: true },
+  matched: { value: '已登记（含本机）', bad: false },
 };
 
 const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast }) => {
@@ -272,7 +272,11 @@ const PushSubscriptionPanel: React.FC<PushSubscriptionPanelProps> = ({ addToast 
               bad={!browser.endpoint || browser.endpointDead}
             />
             <Row label="推送通道" value={browser.channel} />
-            <Row label="云端登记" value={registrationText.value} bad={registrationText.bad} />
+            <Row
+              label="云端登记"
+              value={`${registrationText.value}${remote?.endpoints && remote.endpoints.length > 0 ? ` · 共 ${remote.endpoints.length} 台设备` : ''}`}
+              bad={registrationText.bad}
+            />
             {/* 上面每一行答的都是「配好了吗」，这一行答的是「实际推出去了吗」。前面全绿
                 后面照样能红——那正是「任务建得成、到点没消息」最难自己发现的一种坏法。 */}
             <Row label="上次投递" value={deliveryText.value} bad={deliveryText.bad} />

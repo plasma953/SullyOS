@@ -161,6 +161,15 @@ import {
 import { buildScheduleChangeResult } from '../../../utils/amsgScheduleResult';
 import type { ActiveMsg2TaskRecord } from '../../../types';
 import { createHybridPushTransport, isFcmConfigured, type NativeFcmEnv } from './nativeFcm';
+import { applyScheduledNotificationPolicy } from './pushPolicy';
+import {
+  enrichPushSubscriptionResponse,
+  mirrorPushSubscriptionRequest,
+  removeAllForUser,
+  removeByEndpointHash,
+  withPushFanout,
+  type FanoutDb,
+} from './pushFanout';
 import { installOpencodeIdentityFetch } from '../../../utils/llmIdentity';
 
 // opencode.ai 上游自标识：凭据表里存的是原始供应商地址，worker 直连时必须带
@@ -2385,6 +2394,11 @@ export const amsgHooks = {
       if (stash.instant) {
         payloads = payloads.map((payload, index) =>
           applyInstantNotificationPolicy(payload, stash.charId, index === 0));
+      } else {
+        // 定时任务（非即时）：同一套折叠——按角色只留最新一条，一批只响第一声
+        // （首段 renotify，后续静默替换；见 pushPolicy.ts）。
+        payloads = payloads.map((payload, index) =>
+          applyScheduledNotificationPolicy(payload, stash.charId, index === 0));
       }
 
       return { ...decision, pushPayloads: payloads };
@@ -2519,16 +2533,19 @@ export const buildWorkerConfig = (env: Env) => {
     ? { email: vapid.email, publicKey: 'native-fcm', privateKey: 'native-fcm' }
     : vapid;
   const webpush = createHybridPushTransport(env, createWebCryptoWebPush(effectiveVapid));
+  // 多设备广播 + 结果类推送折叠（见 pushFanout.ts / pushPolicy.ts）：包一层。
+  // 库的「每用户一条主订阅」语义不变；多设备表为空时自动用主订阅播种（老设备免重注册）。
+  const pushTransport = withPushFanout(webpush, { db: env.DB as unknown as FanoutDb, masterKey: env.AMSG_MASTER_KEY });
   // 即时对话终态失败的直发通道拿同一份 transport（见 sendInstantErrorPush）。
   configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY
-    ? { webpush, db: env.DB as unknown as InstantErrorPushDeps['db'], masterKey: env.AMSG_MASTER_KEY }
+    ? { webpush: pushTransport, db: env.DB as unknown as InstantErrorPushDeps['db'], masterKey: env.AMSG_MASTER_KEY }
     : null);
   return {
     // db 缺省时 factory 自动用 createD1Adapter(env.DB)
     masterKey: env.AMSG_MASTER_KEY,
     serverToken: env.AMSG_SERVER_TOKEN,
     vapid: effectiveVapid,
-    webpush,
+    webpush: pushTransport,
     // 前端和 Worker 不同源，带自定义头的请求会先发 CORS 预检，必须放行。
     // 单用户自用默认全开；想收紧就把 '*' 换成自己的 SullyOS 站点 origin。
     // allowHeaders 显式给：上游默认那份不含 Content-Encoding，而 gzip 上行要用它
@@ -3225,6 +3242,76 @@ export default {
         });
       }
       return handleInstantChat({ request, env, upstream, json: jsonWithCors });
+    }
+
+    // 多设备推送：订阅注册镜像（转发成功后 best-effort 落进多设备表）。
+    if (method === 'PUT' && pathname.endsWith('/push-subscription')) {
+      const mirrored = request.clone();
+      const response = await upstream.fetch(request, env);
+      if (response.ok) {
+        try {
+          await mirrorPushSubscriptionRequest({
+            db: env.DB as unknown as FanoutDb,
+            masterKey: env.AMSG_MASTER_KEY,
+            userId: request.headers.get('X-User-Id')?.trim() || '',
+            rawBody: await mirrored.text(),
+          });
+        } catch (error) {
+          console.warn('[amsg] push 订阅镜像失败（忽略）:', error instanceof Error ? error.message : error);
+        }
+      }
+      return response;
+    }
+
+    // 多设备推送：查询时补 endpoints 列表，让面板认出「本机也在登记列表里」。
+    if (method === 'GET' && pathname.endsWith('/push-subscription')) {
+      const response = await upstream.fetch(request, env);
+      return enrichPushSubscriptionResponse(response, {
+        db: env.DB as unknown as FanoutDb,
+        masterKey: env.AMSG_MASTER_KEY,
+      });
+    }
+
+    // 多设备推送：移除本机端点（endpointHash）或清空全部（all）。鉴权口径与 /push-test 一致。
+    if (pathname.endsWith('/push-subscription/remove')) {
+      if (method !== 'POST') {
+        return jsonWithCors(405, {
+          success: false,
+          error: { code: 'METHOD_NOT_ALLOWED', message: '/push-subscription/remove 只接受 POST' },
+        });
+      }
+      const removeServerToken = (env.AMSG_SERVER_TOKEN ?? '').trim();
+      const removeClientToken = request.headers.get('X-Client-Token') ?? '';
+      if (removeServerToken
+        && (!removeClientToken || !(await constantTimeEqual(removeClientToken, removeServerToken)))) {
+        return jsonWithCors(401, {
+          success: false,
+          error: { code: 'INVALID_CLIENT_TOKEN', message: '共享密钥无效或缺失' },
+        });
+      }
+      let removeBody: { endpointHash?: unknown; all?: unknown } = {};
+      try { removeBody = await request.json() as typeof removeBody; } catch { /* 空 body 走参数校验 */ }
+      try {
+        if (removeBody?.all === true) {
+          await removeAllForUser(env.DB as unknown as FanoutDb);
+        } else if (typeof removeBody?.endpointHash === 'string' && /^[a-f0-9]{64}$/i.test(removeBody.endpointHash)) {
+          await removeByEndpointHash(env.DB as unknown as FanoutDb, removeBody.endpointHash);
+        } else {
+          return jsonWithCors(400, {
+            success: false,
+            error: { code: 'INVALID_REQUEST', message: '需要 endpointHash（64 位 hex）或 all:true' },
+          });
+        }
+      } catch (error) {
+        return jsonWithCors(500, {
+          success: false,
+          error: { code: 'FANOUT_REMOVE_FAILED', message: error instanceof Error ? error.message : String(error) },
+        });
+      }
+      return jsonWithCors(200, {
+        success: true,
+        data: { removed: removeBody?.all === true ? 'all' : removeBody?.endpointHash },
+      });
     }
 
     return upstream.fetch(request, env);

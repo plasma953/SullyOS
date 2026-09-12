@@ -85,10 +85,23 @@ const clientWith = (impl: any) => ({ putClientState: impl } as any);
 beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
-/** 起 promise + 把退避时钟推完，返回 promise 供断言。 */
+/** 起 promise + 持续推进时钟直到它落定，返回 promise 供断言。 */
 const runWithTimers = <T>(promise: Promise<T>): Promise<T> => {
-  void vi.advanceTimersByTimeAsync(5_000);
-  return promise;
+  let settled = false;
+  const tracked = promise.then(
+    (value) => { settled = true; return value; },
+    (error) => { settled = true; throw error; },
+  );
+  // 一次推完 5s 会在「真实异步（crypto / fetch）还没让出控制权」的场景下提前结束，
+  // 之后流程再安排的 setTimeout（如退订 settle 等待）就永远等不到。改成循环推进：
+  // 有计时点就推，promise 一落定就停。
+  void (async () => {
+    for (let i = 0; i < 50 && !settled; i += 1) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      await Promise.resolve();
+    }
+  })();
+  return tracked;
 };
 
 describe('putClientStateOrThrow', () => {
@@ -1702,10 +1715,30 @@ describe('compareRemotePushSubscription（⑥b worker 登记的是不是本机�
       updatedAt: 1,
     })).toBe('other-endpoint');
   });
+
+  it('多设备列表包含本机 → matched（主订阅可能是另一台设备）', () => {
+    expect(compareRemotePushSubscription(LOCAL, {
+      exists: true,
+      endpoint: 'https://fcm.googleapis.com/send/another-device',
+      updatedAt: 1,
+      endpoints: ['https://fcm.googleapis.com/send/another-device', LOCAL],
+    })).toBe('matched');
+  });
+
+  it('多设备列表缺本机时退回主订阅精确比对（列表与主订阅矛盾时不误判丢已登记）', () => {
+    expect(compareRemotePushSubscription(LOCAL, {
+      exists: true,
+      endpoint: LOCAL, // 主订阅恰好是本机，但多设备列表里没有它（脏状态）
+      updatedAt: 1,
+      endpoints: ['https://fcm.googleapis.com/send/another-device'],
+    })).toBe('matched');
+  });
 });
 
 describe('ActiveMsgClient.resetPushSubscription（⑥a 重置后必须重新登记）', () => {
   const FRESH = 'https://fcm.googleapis.com/send/fresh';
+  /** 多设备移除请求（POST /push-subscription/remove）的全局 fetch 桩。 */
+  let removeFetch: ReturnType<typeof vi.fn>;
 
   /** subscribe() 依次吐出这些端点；数组用尽后一直吐最后一个。 */
   const stubResetEnv = (existing: any, endpoints: string[]) => {
@@ -1740,6 +1773,14 @@ describe('ActiveMsgClient.resetPushSubscription（⑥a 重置后必须重新登�
     reiClient.getVapidPublicKey.mockReset().mockResolvedValue(VAPID_AQID);
     reiClient.putPushSubscription.mockReset().mockResolvedValue({ success: true, data: { updatedAt: 1 } });
     reiClient.deletePushSubscription.mockReset().mockResolvedValue({ success: true, data: { deleted: 1 } });
+    // 重置流程现在还会 best-effort 调 POST /push-subscription/remove（多设备表）；
+    // 这里桩掉全局 fetch，避免测试环境真发网络请求。形状照同文件其它用例（plain 对象）。
+    removeFetch = vi.fn(async () => ({
+      status: 200,
+      text: async () => JSON.stringify({ success: true }),
+      headers: new Headers({ 'content-type': 'application/json' }),
+    }));
+    vi.stubGlobal('fetch', removeFetch);
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1765,6 +1806,18 @@ describe('ActiveMsgClient.resetPushSubscription（⑥a 重置后必须重新登�
     expect(reiClient.deletePushSubscription).toHaveBeenCalledTimes(1);
     expect(reiClient.deletePushSubscription.mock.invocationCallOrder[0])
       .toBeLessThan(reiClient.putPushSubscription.mock.invocationCallOrder[0]);
+  });
+
+  it('多设备表里也摘掉本机旧端点（endpointHash），避免旧端点继续被广播', async () => {
+    stubResetEnv(makeSub('https://fcm.googleapis.com/send/old', [1, 2, 3]), [FRESH]);
+
+    await runWithTimers(ActiveMsgClient.resetPushSubscription());
+
+    expect(removeFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = removeFetch.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain('/push-subscription/remove');
+    const body = JSON.parse(String(init.body));
+    expect(body.endpointHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('删旧行失败不拦路——重新登记本来就是覆盖写', async () => {
@@ -1854,6 +1907,42 @@ describe('ActiveMsgClient.getRemotePushSubscription（⑥b 问不到就说问不
   it('请求本身炸了 → null，不往外抛（面板会反复调它）', async () => {
     reiClient.getPushSubscription.mockRejectedValue(new Error('offline'));
     await expect(ActiveMsgClient.getRemotePushSubscription()).resolves.toBeNull();
+  });
+});
+
+// 停用全部推送（清空云端数据的收尾）：删掉 worker 主订阅后，多设备表的副本也要清，
+// 否则那台 worker 还会继续往旧端点广播（直到推送服务回 410 才被动清理）。
+describe('ActiveMsgClient.deleteRemotePushSubscription（停用全部推送）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('删主订阅后同时通知 worker 清多设备列表（all:true）', async () => {
+    reiClient.init.mockReset().mockResolvedValue(undefined);
+    reiClient.deletePushSubscription.mockReset().mockResolvedValue({ success: true, data: { deleted: 1 } });
+    const fetchSpy = vi.fn(async () => ({
+      status: 200,
+      text: async () => JSON.stringify({ success: true }),
+      headers: new Headers({ 'content-type': 'application/json' }),
+    }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await ActiveMsgClient.deleteRemotePushSubscription();
+
+    expect(reiClient.deletePushSubscription).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain('/push-subscription/remove');
+    expect(JSON.parse(String(init.body)).all).toBe(true);
+  });
+
+  it('多设备清理失败不抛（旧 worker 没有这条路由）', async () => {
+    reiClient.init.mockReset().mockResolvedValue(undefined);
+    reiClient.deletePushSubscription.mockReset().mockResolvedValue({ success: true, data: { deleted: 1 } });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    await expect(ActiveMsgClient.deleteRemotePushSubscription()).resolves.toBeUndefined();
   });
 });
 

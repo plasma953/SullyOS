@@ -13004,6 +13004,290 @@ var isFcmConfigured = (env) => Boolean(
   env.FCM_PROJECT_ID?.trim() && env.FCM_SERVICE_ACCOUNT_EMAIL?.trim() && env.FCM_SERVICE_ACCOUNT_PRIVATE_KEY?.trim()
 );
 
+// worker/amsg/src/pushPolicy.ts
+var RESULT_PUSH_TAG_PREFIX = "amsg-result-";
+var isPlainObject2 = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+var nonEmptyString = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
+function resolvePushNotificationTarget(payload, charId) {
+  const explicit = nonEmptyString(charId);
+  if (explicit) return explicit;
+  const metadata = isPlainObject2(payload.metadata) ? payload.metadata : null;
+  const metaCharId = nonEmptyString(metadata?.charId);
+  if (metaCharId) return metaCharId;
+  const contact = nonEmptyString(payload.contactName) || nonEmptyString(metadata?.contactName);
+  return contact ? `name:${contact}` : null;
+}
+var tagForTarget = (target) => target.startsWith("name:") ? `amsg-push-${target}` : instantNotificationTag(target);
+function applyScheduledNotificationPolicy(payload, charId, isFirstSegment = false) {
+  const notification = payload.notification;
+  if (!isPlainObject2(notification)) return payload;
+  if (nonEmptyString(notification.tag)) return payload;
+  const target = resolvePushNotificationTarget(payload, charId);
+  if (!target) return payload;
+  return {
+    ...payload,
+    notification: {
+      ...notification,
+      tag: tagForTarget(target),
+      ...isFirstSegment ? { renotify: true } : {}
+    }
+  };
+}
+function applyResultPushPolicy(bodyJson) {
+  let payload;
+  try {
+    const parsed = JSON.parse(bodyJson);
+    if (!isPlainObject2(parsed)) return bodyJson;
+    payload = parsed;
+  } catch {
+    return bodyJson;
+  }
+  if (payload.messageKind !== "result") return bodyJson;
+  const notification = payload.notification;
+  if (!isPlainObject2(notification)) return bodyJson;
+  if (nonEmptyString(notification.tag)) return bodyJson;
+  const target = resolvePushNotificationTarget(payload);
+  if (!target) return bodyJson;
+  const tag = target.startsWith("name:") ? `${RESULT_PUSH_TAG_PREFIX}${target.slice("name:".length)}` : instantNotificationTag(target);
+  return JSON.stringify({
+    ...payload,
+    notification: { ...notification, tag, renotify: true }
+  });
+}
+
+// worker/amsg/src/pushFanout.ts
+var MAX_FANOUT_DEVICES = 10;
+var MULTI_TABLE_DDL = `CREATE TABLE IF NOT EXISTS push_subscriptions_multi (
+  endpoint_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  encrypted_subscription TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+)`;
+async function hashEndpoint(endpoint) {
+  const bytes = new TextEncoder().encode(String(endpoint || "").trim());
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+var endpointOf = (subscription) => {
+  const value = subscription?.endpoint;
+  return typeof value === "string" ? value.trim() : "";
+};
+var isSubscriptionShape = (subscription) => endpointOf(subscription).length > 0;
+async function ensureMultiTable(db) {
+  try {
+    await db.prepare(MULTI_TABLE_DDL).run();
+  } catch {
+  }
+}
+async function upsertSubscriptionRow(db, args) {
+  await db.prepare(
+    `INSERT INTO push_subscriptions_multi (endpoint_hash, user_id, encrypted_subscription, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(endpoint_hash) DO UPDATE SET
+       user_id = excluded.user_id,
+       encrypted_subscription = excluded.encrypted_subscription,
+       updated_at = excluded.updated_at`
+  ).bind(args.endpointHash, args.userId, args.encrypted, args.updatedAt).run();
+  const rows = await db.prepare(
+    "SELECT endpoint_hash FROM push_subscriptions_multi ORDER BY updated_at DESC"
+  ).all();
+  const stale = (rows?.results || []).slice(MAX_FANOUT_DEVICES);
+  for (const row of stale) {
+    const hash = typeof row.endpoint_hash === "string" ? row.endpoint_hash : "";
+    if (!hash) continue;
+    await db.prepare("DELETE FROM push_subscriptions_multi WHERE endpoint_hash = ?").bind(hash).run();
+  }
+  return true;
+}
+async function decryptStoredSubscription(row, masterKey) {
+  const stored = row?.subscription;
+  const userId = row?.user_id;
+  if (typeof stored !== "string" || !stored || typeof userId !== "string" || !userId) return null;
+  try {
+    const userKey = await deriveUserEncryptionKey(userId, masterKey);
+    return { userId, subscription: JSON.parse(await decryptFromStorage(stored, userKey)) };
+  } catch {
+    try {
+      return { userId, subscription: JSON.parse(stored) };
+    } catch {
+      return null;
+    }
+  }
+}
+async function mirrorRegistration(args) {
+  const { db, masterKey, userId, envelope } = args;
+  if (!db || !masterKey || !userId) return false;
+  const env = envelope;
+  if (!env || typeof env.iv !== "string" || typeof env.authTag !== "string" || typeof env.encryptedData !== "string") {
+    return false;
+  }
+  try {
+    const userKey = await deriveUserEncryptionKey(userId, masterKey);
+    const payload = await decryptPayload(env, userKey);
+    const subscription = payload?.subscription;
+    if (!isSubscriptionShape(subscription)) return false;
+    await ensureMultiTable(db);
+    const encrypted = await encryptForStorage(JSON.stringify(subscription), userKey);
+    return await upsertSubscriptionRow(db, {
+      endpointHash: await hashEndpoint(endpointOf(subscription)),
+      userId,
+      encrypted,
+      updatedAt: Date.now()
+    });
+  } catch (error) {
+    console.warn("[amsg:push-fanout] \u6CE8\u518C\u955C\u50CF\u5931\u8D25\uFF08\u5FFD\u7565\uFF09:", error instanceof Error ? error.message : error);
+    return false;
+  }
+}
+async function mirrorPushSubscriptionRequest(args) {
+  let envelope;
+  try {
+    envelope = JSON.parse(args.rawBody);
+  } catch {
+    return false;
+  }
+  return mirrorRegistration({ ...args, envelope });
+}
+async function removeByEndpointHash(db, endpointHash) {
+  if (!/^[a-f0-9]{64}$/i.test(endpointHash)) return;
+  await ensureMultiTable(db);
+  await db.prepare("DELETE FROM push_subscriptions_multi WHERE endpoint_hash = ?").bind(endpointHash).run();
+}
+async function removeAllForUser(db, userId) {
+  await ensureMultiTable(db);
+  if (userId) {
+    await db.prepare("DELETE FROM push_subscriptions_multi WHERE user_id = ?").bind(userId).run();
+  } else {
+    await db.prepare("DELETE FROM push_subscriptions_multi").run();
+  }
+}
+async function seedFromPrimary(db, masterKey) {
+  if (!db || !masterKey) return;
+  try {
+    const row = await db.prepare("SELECT user_id, subscription FROM push_subscriptions LIMIT 1").first();
+    if (!row) return;
+    const decoded = await decryptStoredSubscription(row, masterKey);
+    if (!decoded || !isSubscriptionShape(decoded.subscription)) return;
+    await ensureMultiTable(db);
+    const userKey = await deriveUserEncryptionKey(decoded.userId, masterKey);
+    await upsertSubscriptionRow(db, {
+      endpointHash: await hashEndpoint(endpointOf(decoded.subscription)),
+      userId: decoded.userId,
+      encrypted: await encryptForStorage(JSON.stringify(decoded.subscription), userKey),
+      updatedAt: Date.now()
+    });
+  } catch (error) {
+    console.warn("[amsg:push-fanout] \u4E3B\u8BA2\u9605\u64AD\u79CD\u5931\u8D25\uFF08\u5FFD\u7565\uFF09:", error instanceof Error ? error.message : error);
+  }
+}
+async function listRecipients(db, masterKey) {
+  if (!db || !masterKey) return [];
+  try {
+    const rows = await db.prepare(
+      "SELECT endpoint_hash, user_id, encrypted_subscription FROM push_subscriptions_multi ORDER BY updated_at DESC"
+    ).all();
+    const out = [];
+    for (const row of rows?.results || []) {
+      const endpointHash = typeof row.endpoint_hash === "string" ? row.endpoint_hash : "";
+      const userId = typeof row.user_id === "string" ? row.user_id : "";
+      const encrypted = typeof row.encrypted_subscription === "string" ? row.encrypted_subscription : "";
+      if (!endpointHash || !userId || !encrypted) continue;
+      try {
+        const userKey = await deriveUserEncryptionKey(userId, masterKey);
+        const subscription = JSON.parse(await decryptFromStorage(encrypted, userKey));
+        const endpoint = endpointOf(subscription);
+        if (!endpoint) continue;
+        out.push({ endpointHash, endpoint, subscription });
+      } catch {
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+function withPushFanout(webpush, deps) {
+  if (!webpush || typeof webpush.sendNotification !== "function") return webpush;
+  const db = deps?.db || null;
+  const masterKey = String(deps?.masterKey || "");
+  const fanout = Object.create(webpush);
+  Object.defineProperty(fanout, "sendNotification", {
+    value: async (subscription, body) => {
+      const collapsed = applyResultPushPolicy(String(body));
+      if (!db || !masterKey) return webpush.sendNotification(subscription, collapsed);
+      const passedEndpoint = endpointOf(subscription);
+      let recipients = [];
+      try {
+        await ensureMultiTable(db);
+        recipients = await listRecipients(db, masterKey);
+        if (recipients.length === 0) {
+          await seedFromPrimary(db, masterKey);
+          recipients = await listRecipients(db, masterKey);
+        }
+      } catch (error) {
+        console.warn("[amsg:push-fanout] \u8BFB\u591A\u8BBE\u5907\u8868\u5931\u8D25\uFF0C\u9000\u5316\u4E3A\u5355\u53D1:", error instanceof Error ? error.message : error);
+      }
+      if (passedEndpoint && !recipients.some((r) => r.endpoint === passedEndpoint)) {
+        recipients.push({
+          endpointHash: await hashEndpoint(passedEndpoint),
+          endpoint: passedEndpoint,
+          subscription
+        });
+      }
+      if (recipients.length === 0) {
+        return webpush.sendNotification(subscription, collapsed);
+      }
+      let success = 0;
+      let lastResult = null;
+      let lastError = null;
+      for (const recipient of recipients) {
+        try {
+          lastResult = await webpush.sendNotification(recipient.subscription, collapsed);
+          success += 1;
+        } catch (error) {
+          lastError = error;
+          const status = Number(
+            error?.statusCode ?? error?.status
+          );
+          if (status === 404 || status === 410) {
+            try {
+              await removeByEndpointHash(db, recipient.endpointHash);
+            } catch {
+            }
+          }
+        }
+      }
+      if (success > 0) return lastResult;
+      throw lastError ?? new Error("push fan-out failed");
+    }
+  });
+  return fanout;
+}
+async function enrichPushSubscriptionResponse(response, deps) {
+  const db = deps?.db || null;
+  const masterKey = String(deps?.masterKey || "");
+  if (!response.ok || !db || !masterKey) return response;
+  try {
+    const body = await response.clone().json();
+    if (!body || typeof body !== "object" || !body.data || typeof body.data !== "object") return response;
+    await ensureMultiTable(db);
+    let recipients = await listRecipients(db, masterKey);
+    if (recipients.length === 0) {
+      await seedFromPrimary(db, masterKey);
+      recipients = await listRecipients(db, masterKey);
+    }
+    const headers = new Headers(response.headers);
+    headers.delete("content-length");
+    headers.set("content-type", "application/json; charset=utf-8");
+    return new Response(JSON.stringify({
+      ...body,
+      data: { ...body.data, endpoints: recipients.map((r) => r.endpoint) }
+    }), { status: response.status, headers });
+  } catch {
+    return response;
+  }
+}
+
 // utils/llmIdentity.ts
 var OPENCODE_HOST_RE = /(^|\.)opencode\.ai$/i;
 var CHAT_COMPLETIONS_RE = /\/chat\/completions$/;
@@ -14148,6 +14432,8 @@ var amsgHooks = {
       }
       if (stash.instant) {
         payloads = payloads.map((payload, index) => applyInstantNotificationPolicy(payload, stash.charId, index === 0));
+      } else {
+        payloads = payloads.map((payload, index) => applyScheduledNotificationPolicy(payload, stash.charId, index === 0));
       }
       return { ...decision, pushPayloads: payloads };
     }
@@ -14220,13 +14506,14 @@ var buildWorkerConfig = (env) => {
   const nativeFcmReady = isFcmConfigured(env);
   const effectiveVapid = nativeFcmReady && (!vapid.publicKey?.trim() || !vapid.privateKey?.trim()) ? { email: vapid.email, publicKey: "native-fcm", privateKey: "native-fcm" } : vapid;
   const webpush = createHybridPushTransport(env, createWebCryptoWebPush(effectiveVapid));
-  configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY ? { webpush, db: env.DB, masterKey: env.AMSG_MASTER_KEY } : null);
+  const pushTransport = withPushFanout(webpush, { db: env.DB, masterKey: env.AMSG_MASTER_KEY });
+  configureInstantErrorPush(env.DB && env.AMSG_MASTER_KEY ? { webpush: pushTransport, db: env.DB, masterKey: env.AMSG_MASTER_KEY } : null);
   return {
     // db 缺省时 factory 自动用 createD1Adapter(env.DB)
     masterKey: env.AMSG_MASTER_KEY,
     serverToken: env.AMSG_SERVER_TOKEN,
     vapid: effectiveVapid,
-    webpush,
+    webpush: pushTransport,
     // 前端和 Worker 不同源，带自定义头的请求会先发 CORS 预检，必须放行。
     // 单用户自用默认全开；想收紧就把 '*' 换成自己的 SullyOS 站点 origin。
     // allowHeaders 显式给：上游默认那份不含 Content-Encoding，而 gzip 上行要用它
@@ -14634,6 +14921,72 @@ var src_default = {
         });
       }
       return handleInstantChat({ request, env, upstream, json: jsonWithCors });
+    }
+    if (method === "PUT" && pathname.endsWith("/push-subscription")) {
+      const mirrored = request.clone();
+      const response = await upstream.fetch(request, env);
+      if (response.ok) {
+        try {
+          await mirrorPushSubscriptionRequest({
+            db: env.DB,
+            masterKey: env.AMSG_MASTER_KEY,
+            userId: request.headers.get("X-User-Id")?.trim() || "",
+            rawBody: await mirrored.text()
+          });
+        } catch (error) {
+          console.warn("[amsg] push \u8BA2\u9605\u955C\u50CF\u5931\u8D25\uFF08\u5FFD\u7565\uFF09:", error instanceof Error ? error.message : error);
+        }
+      }
+      return response;
+    }
+    if (method === "GET" && pathname.endsWith("/push-subscription")) {
+      const response = await upstream.fetch(request, env);
+      return enrichPushSubscriptionResponse(response, {
+        db: env.DB,
+        masterKey: env.AMSG_MASTER_KEY
+      });
+    }
+    if (pathname.endsWith("/push-subscription/remove")) {
+      if (method !== "POST") {
+        return jsonWithCors(405, {
+          success: false,
+          error: { code: "METHOD_NOT_ALLOWED", message: "/push-subscription/remove \u53EA\u63A5\u53D7 POST" }
+        });
+      }
+      const removeServerToken = (env.AMSG_SERVER_TOKEN ?? "").trim();
+      const removeClientToken = request.headers.get("X-Client-Token") ?? "";
+      if (removeServerToken && (!removeClientToken || !await constantTimeEqual2(removeClientToken, removeServerToken))) {
+        return jsonWithCors(401, {
+          success: false,
+          error: { code: "INVALID_CLIENT_TOKEN", message: "\u5171\u4EAB\u5BC6\u94A5\u65E0\u6548\u6216\u7F3A\u5931" }
+        });
+      }
+      let removeBody = {};
+      try {
+        removeBody = await request.json();
+      } catch {
+      }
+      try {
+        if (removeBody?.all === true) {
+          await removeAllForUser(env.DB);
+        } else if (typeof removeBody?.endpointHash === "string" && /^[a-f0-9]{64}$/i.test(removeBody.endpointHash)) {
+          await removeByEndpointHash(env.DB, removeBody.endpointHash);
+        } else {
+          return jsonWithCors(400, {
+            success: false,
+            error: { code: "INVALID_REQUEST", message: "\u9700\u8981 endpointHash\uFF0864 \u4F4D hex\uFF09\u6216 all:true" }
+          });
+        }
+      } catch (error) {
+        return jsonWithCors(500, {
+          success: false,
+          error: { code: "FANOUT_REMOVE_FAILED", message: error instanceof Error ? error.message : String(error) }
+        });
+      }
+      return jsonWithCors(200, {
+        success: true,
+        data: { removed: removeBody?.all === true ? "all" : removeBody?.endpointHash }
+      });
     }
     return upstream.fetch(request, env);
   },

@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearSubscribeFailure,
   explainSubscribeError,
+  hashPushEndpoint,
   readSubscribeFailure,
   rememberSubscribeFailure,
   subscribeWithRetry,
@@ -153,5 +154,22 @@ describe('readSubscribeFailure 的容错', () => {
 
     localStorage.setItem('push_last_subscribe_failure_v1', JSON.stringify({ kind: 'x' }));
     expect(readSubscribeFailure()).toBeNull();
+  });
+});
+
+// 端点哈希：worker 多设备表只存 SHA-256（不落明文 endpoint），前端「只移除本机」
+// 必须与服务端同口径——这里用 node:crypto 的独立实现钉住格式（hex、全小写、trim）。
+describe('hashPushEndpoint', () => {
+  it('与 node:crypto 的 SHA-256 hex 一致，且先 trim', async () => {
+    const { createHash } = await import('node:crypto');
+    const endpoint = 'https://fcm.googleapis.com/send/abc';
+    const expected = createHash('sha256').update(endpoint).digest('hex');
+    await expect(hashPushEndpoint(endpoint)).resolves.toBe(expected);
+    await expect(hashPushEndpoint(`  ${endpoint}  `)).resolves.toBe(expected);
+  });
+
+  it('空串给空串的哈希（不抛）', async () => {
+    const { createHash } = await import('node:crypto');
+    await expect(hashPushEndpoint('')).resolves.toBe(createHash('sha256').update('').digest('hex'));
   });
 });

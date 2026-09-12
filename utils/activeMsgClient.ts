@@ -102,6 +102,7 @@ import { KeepAlive } from './keepAlive';
 import {
   bytesToB64u,
   describePushCapabilityGap,
+  hashPushEndpoint,
   isDeadPushEndpoint,
   subscribeWithRetry,
   SUBSCRIBE_SETTLE_MS,
@@ -116,29 +117,33 @@ export interface ActiveMsg2PushStatus {
   detail?: string;
 }
 
-/** worker 上登记的那份订阅（一个用户一行）。读不到时调用方拿 null。 */
+/** worker 上登记的那份订阅（主订阅一行 + 多设备列表由包装层补的 endpoints）。读不到时调用方拿 null。 */
 export interface AmsgRemotePushSubscription {
   exists: boolean;
   endpoint: string | null;
   updatedAt: number | null;
+  /** 多设备：该用户已登记的全部端点（新 worker 的包装层补的字段；旧 worker 没有）。 */
+  endpoints?: string[];
 }
 
 /**
  * 「worker 到点会不会推到这台设备」的结论。
  *
  * 中间那两档是主动消息最难自己发现的故障：任务建得成、界面全绿、到点一条都不来。
- * 换过 worker（新库是空的）、或者在另一台设备上登记过（一个用户只存一份，后来的
- * 顶掉先前的），都会落到这里。
+ * 换过 worker（新库是空的）、或者本机不在登记列表里，都会落到这里。
  */
 export type AmsgPushRegistrationState =
   | 'worker-unset'    // 还没填 Worker 地址，无从谈起
   | 'unreachable'     // 问不到 worker（断网，或那台 worker 没有这个端点）
   | 'missing'         // worker 上没有登记
-  | 'other-endpoint'  // 登记着，但不是本机这个端点
-  | 'matched';        // 登记着，且就是本机
+  | 'other-endpoint'  // 登记着，但本机端点不在登记列表里
+  | 'matched';        // 登记着，且包含本机
 
 /**
- * 拿本机端点跟 worker 登记的那份对一下。纯函数，面板和单测共用同一套判定。
+ * 拿本机端点跟 worker 登记的列表对一下。纯函数，面板和单测共用同一套判定。
+ *
+ * 多设备（wrapper 的 endpoints 字段）时只要本机在列表里就算匹配；旧 worker 没有
+ * 这个字段，退回按主订阅的 endpoint 精确比对。
  *
  * 本机还没订阅（localEndpoint 为空）时，只要远端有登记就算 'other-endpoint'——
  * 那份登记确实指向别的地方，说「已登记」会让用户以为这台设备收得到。
@@ -149,6 +154,7 @@ export const compareRemotePushSubscription = (
 ): AmsgPushRegistrationState => {
   if (!remote) return 'unreachable';
   if (!remote.exists || !remote.endpoint) return 'missing';
+  if (localEndpoint && remote.endpoints?.includes(localEndpoint)) return 'matched';
   return remote.endpoint === localEndpoint ? 'matched' : 'other-endpoint';
 };
 
@@ -1436,6 +1442,38 @@ const fetchWithAuthRaw = async (
 const fetchWithAuth = async (path: string, config: ActiveMsg2GlobalConfig, init: RequestInit, phase = '接口') =>
   (await fetchWithAuthRaw(path, config, init, phase)).body;
 
+/**
+ * 多设备推送：调 worker 的端点移除路由（POST /push-subscription/remove）。
+ * 旧 worker 没有这条路由 → 404，调用方当「没有多设备表」处理即可；失败不拦主流程。
+ */
+const removeFanoutEndpoints = async (
+  config: ActiveMsg2GlobalConfig,
+  payload: { endpointHash?: string; all?: true },
+): Promise<void> => {
+  await fetchWithAuthRaw('push-subscription/remove', config, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  }, '移除推送端点');
+};
+
+/**
+ * 多设备推送：把「本机当前端点」从 worker 的登记列表里移除。
+ *
+ * 重置流程专用——重置会换一个新端点，旧端点留在列表里会继续被广播（直到推送服务
+ * 回 410 才被清）。拿不到旧端点或对面是旧 worker 时静默跳过，重置本身照常进行。
+ */
+const removeCurrentEndpointFromFanout = async (config: ActiveMsg2GlobalConfig): Promise<void> => {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    if (!existing?.endpoint) return;
+    await removeFanoutEndpoints(config, { endpointHash: await hashPushEndpoint(existing.endpoint) });
+  } catch (error) {
+    console.warn('[ActiveMsg] 移除本机推送端点失败（忽略）', error);
+  }
+};
+
 const encryptPayload = async (client: ReiClient, payload: unknown) => {
   return (client as unknown as ReiCryptoBridge)._encrypt(JSON.stringify(payload));
 };
@@ -1604,17 +1642,14 @@ export const ActiveMsgClient = {
   },
 
   /**
-   * 把当前这个浏览器的推送订阅登记到 worker——一个用户一份，覆盖写。
+   * 把当前这个浏览器的推送订阅登记到 worker——覆盖写主订阅，同时由 worker 包装层
+   * 镜像进多设备表（新 worker 起逐端点广播；旧 worker 就是覆盖写）。
    *
-   * worker 到点投递时读的就是这一份，包括角色在 fire 里给自己排的、客户端根本
+   * worker 到点投递时读的就是这份登记，包括角色在 fire 里给自己排的、客户端根本
    * 不知道存在的那些任务。所以订阅换了端点只要覆盖这一份，已排的任务一条都不用
    * 碰；反过来说**排程前必须先登记过**，否则 worker 没地方推、直接拒绝建任务。
    *
    * 幂等：重复调用只是把同一份再写一遍，启动自检可以无脑调。
-   *
-   * 「一个用户一份」是有意为之，不是待修的限制：worker 上按 user_id 存单行，后登记的
-   * 设备直接顶掉前一台，主动消息只会推到最后登记的那一台。所以不支持多设备同时收——
-   * 一般也不会有人同时开着两台设备玩，真开了的话，「另一台不响了」就是正常现象。
    */
   async registerPushSubscription(): Promise<void> {
     const config = await ensureWorkerReady();
@@ -1647,6 +1682,10 @@ export const ActiveMsgClient = {
         exists: data.exists,
         endpoint: typeof data.endpoint === 'string' ? data.endpoint : null,
         updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : null,
+        // 多设备列表（新 worker 的包装层补的字段）；旧 worker 没有，留 undefined。
+        endpoints: Array.isArray(data.endpoints)
+          ? data.endpoints.filter((entry: unknown): entry is string => typeof entry === 'string' && entry.length > 0)
+          : undefined,
       };
     } catch {
       return null;
@@ -1668,6 +1707,9 @@ export const ActiveMsgClient = {
     } catch (error) {
       throw normalizeActiveMsgApiError(error, '删除推送订阅登记');
     }
+    // 多设备表里的副本也清掉（旧 worker 没这条路由，404 静默忽略）。失败不抛：
+    // 云端主订阅已经删了，多设备表即使残留也会在下一次发送 410 时被清。
+    await removeFanoutEndpoints(config, { all: true }).catch(() => {});
   },
 
   /**
@@ -1711,6 +1753,9 @@ export const ActiveMsgClient = {
       console.warn('[ActiveMsg] 重置订阅：删除 worker 上的旧订阅失败，继续重建', error);
     }
 
+    // 多设备表里也要把本机旧端点摘掉（新端点随后会重新登记进去）。
+    await removeCurrentEndpointFromFanout(config);
+
     await unsubscribeCurrentPush();
     await resubscribeAndRegister(client);
   },
@@ -1736,6 +1781,9 @@ export const ActiveMsgClient = {
     } catch (error) {
       console.warn('[ActiveMsg] 深度重置：删除 worker 上的旧订阅失败，继续重建', error);
     }
+
+    // 多设备表里也要把本机旧端点摘掉（深度重置后端点必换）。
+    await removeCurrentEndpointFromFanout(config);
 
     await unsubscribeCurrentPush();
 

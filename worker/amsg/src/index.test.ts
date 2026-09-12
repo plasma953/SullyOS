@@ -3652,17 +3652,20 @@ describe('即时对话的推送通知策略', () => {
     });
   });
 
-  it('定时任务的推送不标 show（主动消息前台可见时更该弹）', async () => {
+  it('定时任务的推送：不标 show/silent，但按角色折叠、一批第一段重新提醒', async () => {
     const store = makeStore(false);
     const { decision } = await runFire(store, { metadata: fireMeta(false), llmOutput: '在的。' });
-    for (const push of decision.pushPayloads) {
+    decision.pushPayloads.forEach((push: any, index: number) => {
       expect(push.notification).toBeTruthy();
-      expect((push.notification as any).show).toBeUndefined();
-      // 折叠 / 静音 / 重新提醒都是即时对话专属的，别顺手把主动消息也一起压安静了
-      expect((push.notification as any).silent).toBeUndefined();
-      expect((push.notification as any).tag).toBeUndefined();
-      expect((push.notification as any).renotify).toBeUndefined();
-    }
+      // 弹不弹仍交给 SW 按可见性算（主动消息前台可见时更该弹）
+      expect(push.notification.show).toBeUndefined();
+      expect(push.notification.silent).toBeUndefined();
+      // 到点多条不刷屏：同一角色共 tag，通知栏只留最新一条；
+      // 这一批第一段重新提醒（同 tag 替换时也会响），后面几段静默更新。
+      expect(push.notification.tag).toBe(`amsg-instant-${CHAR_ID}`);
+      if (index === 0) expect(push.notification.renotify).toBe(true);
+      else expect(push.notification).not.toHaveProperty('renotify');
+    });
   });
 });
 
@@ -4528,5 +4531,75 @@ describe('POST /push-test 推送测试', () => {
     );
     expect(second.status).toBe(429);
     expect((await second.json()).error.code).toBe('TOO_MANY_REQUESTS');
+  });
+});
+
+// POST /push-subscription/remove：多设备下「只移除本机端点」或「停用全部」。
+// 鉴权口径与 /push-test 一致；endpointHash 是前端本地算的 SHA-256（服务端只比对哈希，不落明文）。
+describe('POST /push-subscription/remove 多设备端点移除', () => {
+  const HASH = 'b'.repeat(64);
+
+  const removeEnv = (statements: string[]) => ({
+    AMSG_MASTER_KEY: 'a'.repeat(64),
+    VAPID_EMAIL: 'mailto:a@b.c',
+    VAPID_PUBLIC_KEY: 'pub-key',
+    VAPID_PRIVATE_KEY: 'priv-key',
+    AMSG_SERVER_TOKEN: 'shared-secret',
+    DB: {
+      prepare: (sql: string) => ({
+        bind: () => ({ run: async () => { statements.push(sql); } }),
+        run: async () => { statements.push(sql); },
+        first: async () => null,
+        all: async () => ({ results: [] }),
+      }),
+    },
+  }) as any;
+
+  const call = (body: unknown, headers: Record<string, string> = { 'X-Client-Token': 'shared-secret' }, statements: string[] = []) =>
+    (worker as any).fetch(
+      new Request('https://w.example/push-subscription/remove', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+      }),
+      removeEnv(statements),
+      { waitUntil: () => {} },
+    );
+
+  it('只接受 POST', async () => {
+    const response = await (worker as any).fetch(
+      new Request('https://w.example/push-subscription/remove', { method: 'GET', headers: { 'X-Client-Token': 'shared-secret' } }),
+      removeEnv([]),
+      { waitUntil: () => {} },
+    );
+    expect(response.status).toBe(405);
+  });
+
+  it('配了口令而没带/带错 → 401', async () => {
+    expect((await call({ all: true }, {})).status).toBe(401);
+    expect((await call({ all: true }, { 'X-Client-Token': 'wrong' })).status).toBe(401);
+  });
+
+  it('endpointHash：删对应哈希行', async () => {
+    const statements: string[] = [];
+    const response = await call({ endpointHash: HASH }, { 'X-Client-Token': 'shared-secret' }, statements);
+    expect(response.status).toBe(200);
+    expect(statements.some((sql) => sql.includes('DELETE FROM push_subscriptions_multi WHERE endpoint_hash = ?'))).toBe(true);
+  });
+
+  it('all:true：清空该用户全部行', async () => {
+    const statements: string[] = [];
+    const response = await call({ all: true }, { 'X-Client-Token': 'shared-secret' }, statements);
+    expect(response.status).toBe(200);
+    expect(statements.some((sql) => sql.trim() === 'DELETE FROM push_subscriptions_multi')).toBe(true);
+  });
+
+  it('参数缺失/哈希格式不对 → 400，不写库', async () => {
+    const statements: string[] = [];
+    const missing = await call({}, { 'X-Client-Token': 'shared-secret' }, statements);
+    expect(missing.status).toBe(400);
+    const malformed = await call({ endpointHash: 'not-a-hash' }, { 'X-Client-Token': 'shared-secret' }, statements);
+    expect(malformed.status).toBe(400);
+    expect(statements.some((sql) => sql.includes('DELETE'))).toBe(false);
   });
 });

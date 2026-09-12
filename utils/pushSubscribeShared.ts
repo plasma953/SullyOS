@@ -348,3 +348,16 @@ export async function subscribeWithRetry(
     text: `浏览器持续返回 permanently-removed.invalid（已尝试 ${SUBSCRIBE_ATTEMPTS_MAX} 次）— 可能是由于站点参与度 (Site Engagement) 过低或浏览器内部数据残留导致。请尝试清理站点数据后重试，或更换设备/浏览器`,
   });
 }
+
+/**
+ * 推送端点的 SHA-256（hex）：与 worker 端 pushFanout.hashEndpoint 同口径。
+ *
+ * 「只移除本机端点」走它——服务端多设备表里只存哈希、不落明文 endpoint，
+ * 比对和清理都拿这个哈希做。浏览器不支持 crypto.subtle 时抛错，调用方按
+ * 「移除失败但流程继续」处理即可。
+ */
+export async function hashPushEndpoint(endpoint: string): Promise<string> {
+  const bytes = new TextEncoder().encode(String(endpoint || '').trim());
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
