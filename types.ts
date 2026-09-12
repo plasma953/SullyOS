@@ -291,9 +291,9 @@ export interface OSTheme {
   statusBarMode?: 'standard' | 'compact' | 'hidden';
   /** @deprecated 旧版两档开关，仅用于兼容已有存档；新设置写入 statusBarMode。 */
   hideStatusBar?: boolean;
-  /** 桌面端显示模式：auto = 宽屏鼠标自动进手机框；on/off = 强制开/关。默认 auto（undefined 视为 auto）。 */
+  /** 桌面端布局模式：auto = 按窗口尺寸自动（宽>=1024 且高>=600 用电脑版）；on/off = 强制电脑版/手机版。默认 auto（undefined 视为 auto）。 */
   desktopMode?: 'auto' | 'on' | 'off';
-  /** 桌面模式框外背景：blur = 当前壁纸模糊放大（默认）；color = 壁纸主色调纯色。 */
+  /** 电脑版布局背景：blur = 当前壁纸模糊放大（默认）；color = 壁纸主色调纯色。 */
   desktopBackdrop?: 'blur' | 'color';
   // Chat UI customization (global)
   chatAvatarShape?: 'circle' | 'rounded' | 'square';

@@ -1316,9 +1316,9 @@ const Appearance: React.FC = () => {
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">电脑显示 (Desktop)</h2>
                     <div className="grid grid-cols-3 gap-2">
                         {([
-                            { id: 'auto', label: '自动进框', hint: '宽屏鼠标生效', icon: '◐' },
-                            { id: 'on', label: '强制进框', hint: '窄屏也框', icon: '▣' },
-                            { id: 'off', label: '永不进框', hint: '保持铺满', icon: '—' },
+                            { id: 'auto', label: '自动', hint: '按窗口切换', icon: '◐' },
+                            { id: 'on', label: '强制电脑版', hint: '窄窗也用', icon: '▣' },
+                            { id: 'off', label: '强制手机版', hint: '宽窗也用', icon: '—' },
                         ] as Array<{ id: 'auto' | 'on' | 'off'; label: string; hint: string; icon: string }>).map(option => {
                             const active = (theme.desktopMode ?? 'auto') === option.id;
                             return (
@@ -1358,7 +1358,7 @@ const Appearance: React.FC = () => {
                         })}
                     </div>
                     <p className="mt-3 text-[10px] leading-relaxed text-slate-400">
-                        只在电脑宽屏鼠标浏览器下生效，手机端不受影响。
+                        窗口宽 ≥ 1024 且高 ≥ 600 时自动用电脑版布局；手机与平板竖屏不受影响。
                     </p>
                 </section>
 

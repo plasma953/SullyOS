@@ -250,3 +250,5 @@ node_modules\.bin\tsc.CMD --noEmit -p tsconfig.json   # 触碰文件零新增命
 
 **后续增量（未做）：** Chat 中央列浮动头、GroupChat 双栏、Settings 左锚点导航、桌面弹窗居中化、平板横竖屏真机验收。
 
+**2026-09-11 后续变更：** 窗口化手机框（`DesktopFrame`）已删除——电脑窗口不够宽（<1024 或高 <600）时手机 UI 直接铺满窗口，不再套居中金属框；`utils/desktopShell.ts` 与 `utils/portalHost.ts` 的框内宿主、`utils/hostViewport.ts` 的框内坐标系一并移除。`desktopMode` 保留为布局强制开关，设置文案改为「自动 / 强制电脑版 / 强制手机版」。详见 `plans/2026-09-11-remove-phone-frame.md`。
+

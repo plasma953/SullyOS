@@ -1085,7 +1085,7 @@ const Launcher: React.FC<{ desktop?: boolean }> = ({ desktop = false }) => {
            <div
               className={`rounded-[1.75rem] px-4 py-3 flex gap-3 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu ${acnh || paper ? '' : 'bg-white/30 border border-white/25 shadow-[0_8px_40px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.08)]'}`}
               style={{
-                  '--app-icon-size': 'clamp(2.75rem, calc((var(--vp-width, 100vw) - 6.5rem) / 4), 3.5rem)',
+                  '--app-icon-size': 'clamp(2.75rem, calc((100vw - 6.5rem) / 4), 3.5rem)',
                   ...(acnh ? { background: 'transparent' } as React.CSSProperties : paper ? {
                       background: 'rgba(224,221,215,0.42)',
                       border: '1px solid rgba(91,72,51,0.07)',

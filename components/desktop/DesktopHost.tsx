@@ -1,20 +1,16 @@
 import React from 'react';
 import { useOS } from '../../context/OSContext';
-import { resolveDesktopMode, useDesktopViewport } from '../../utils/desktopShell';
 import { useLayoutMode } from '../../utils/layoutMode';
 import { DesktopBackdrop } from './DesktopBackdrop';
-import { DesktopFrame } from './DesktopFrame';
 
 /**
- * 桌面外壳总装，三态：
- *   1. desktop（宽 >= 1024 或用户强制 on）→ 全屏桌面 UI，无手机框；
- *      左侧全局 Dock 由 PhoneShell 内部渲染。
- *   2. phone + 桌面窗口化（900x600 + 鼠标）→ 保留居中手机框（DesktopFrame）。
- *   3. 其余 → 透传（手机/平板铺满）。
+ * 桌面外壳两态：
+ *   1. desktop（宽 >= 1024 且高 >= 600，或用户强制）→ 全屏电脑版 UI（左侧 Dock 由 PhoneShell 内部渲染）；
+ *   2. 其余（手机/平板竖屏/窄窗）→ 透传，手机 UI 铺满窗口。
+ * 2026-09-11 起移除「窗口化手机框」仿真层，不再有居中金属外框。
  */
 export const DesktopHost: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { theme } = useOS();
-    const vp = useDesktopViewport();
     const layoutMode = useLayoutMode(theme.desktopMode);
 
     if (layoutMode === 'desktop') {
@@ -25,15 +21,5 @@ export const DesktopHost: React.FC<{ children: React.ReactNode }> = ({ children 
             </div>
         );
     }
-
-    if (!resolveDesktopMode(theme.desktopMode, vp)) return <>{children}</>;
-
-    return (
-        <div className="fixed inset-0 z-0 overflow-hidden bg-black">
-            <DesktopBackdrop wallpaper={theme.wallpaper ?? ''} mode={theme.desktopBackdrop ?? 'blur'} />
-            <div className="relative z-10 flex h-full w-full items-center justify-center">
-                <DesktopFrame>{children}</DesktopFrame>
-            </div>
-        </div>
-    );
+    return <>{children}</>;
 };
